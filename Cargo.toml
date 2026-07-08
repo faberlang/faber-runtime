@@ -1,0 +1,11 @@
+[package]
+name = "faber-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Faber language runtime types for generated Rust (crate name: faber)"
+license = "MIT"
+readme = "README.md"
+
+[lib]
+name = "faber"
+path = "src/lib.rs"
