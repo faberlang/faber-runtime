@@ -522,6 +522,26 @@ fn solum_scribe_route_materializes_vacuum_after_writing_file() {
 }
 
 #[test]
+fn processus_exsequi_route_materializes_stdout() {
+    let mut sermo = frame::sermo_open("processus:exsequi");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus("printf runtime-process-ok".into()));
+
+    let output = frame::sermo_materialize_textus(&mut sermo);
+
+    assert_eq!(output, "runtime-process-ok");
+}
+
+#[test]
+fn solum_parens_route_materializes_parent_path() {
+    let mut sermo = frame::sermo_open("solum:parens");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus("/tmp/faber/path.txt".into()));
+
+    let output = frame::sermo_materialize_textus(&mut sermo);
+
+    assert_eq!(output, "/tmp/faber");
+}
+
+#[test]
 fn try_sermo_materialize_scalar_returns_error_for_bad_payload() {
     let mut sermo = frame::sermo_open("runtime:echo");
     frame::sermo_set_opener(&mut sermo, Valor::Textus("not a number".into()));

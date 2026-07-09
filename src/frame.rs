@@ -405,8 +405,14 @@ fn ensure_runtime_response_inner(inner: &mut SermoInner) {
         "solum:scribe" | "solum:scribet" | "solum:appone" | "solum:apponet" => {
             dispatch_solum_write_text(inner);
         }
+        "solum:parens" => {
+            dispatch_solum_parens(inner);
+        }
         "solum:partem" => {
             try_generate_solum_partem_response::<Vec<u8>>(inner);
+        }
+        "processus:exsequi" | "processus:exsequetur" => {
+            dispatch_processus_exsequi(inner);
         }
         _ => {}
     }
@@ -542,6 +548,36 @@ fn dispatch_solum_write_text(inner: &mut SermoInner) {
 
     match result {
         Ok(()) => push_runtime_done(inner),
+        Err(message) => push_runtime_error(inner, message),
+    }
+}
+
+fn dispatch_solum_parens(inner: &mut SermoInner) {
+    let Some(path) = request_text(inner) else {
+        push_runtime_error(inner, "solum:parens opener must be textus");
+        return;
+    };
+    let parent = std::path::Path::new(&path)
+        .parent()
+        .map(|parent| parent.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    push_runtime_item_done(inner, Valor::Textus(parent));
+}
+
+fn dispatch_processus_exsequi(inner: &mut SermoInner) {
+    let Some(command) = request_text(inner) else {
+        push_runtime_error(inner, "processus:exsequi opener must be textus");
+        return;
+    };
+    let result = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&command)
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+        .map_err(|err| format!("processus.exsequi failed: {err}"));
+
+    match result {
+        Ok(stdout) => push_runtime_item_done(inner, Valor::Textus(stdout)),
         Err(message) => push_runtime_error(inner, message),
     }
 }
