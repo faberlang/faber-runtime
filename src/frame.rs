@@ -5,7 +5,9 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{Read, Seek, SeekFrom};
 use std::marker::PhantomData;
+use std::pin::Pin;
 use std::rc::Rc;
+use std::task::{Context, Poll, Waker};
 use std::thread;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -55,6 +57,8 @@ struct SermoInner {
     incoming_drained: bool,
     /// Terminal `status` observed on the inbound direction (`done`, `error`, or `cancel`).
     incoming_terminal: Option<FrameStatus>,
+    incoming_wake_epoch: u64,
+    incoming_waiters: Vec<Waker>,
     detached: bool,
     meus_closed: bool,
 }
@@ -169,6 +173,7 @@ impl Sermo {
         let mut inner = self.inner.borrow_mut();
         inner.runtime_response_generated = true;
         inner.incoming.push_back(frame);
+        wake_incoming(&mut inner);
     }
 
     pub fn first_outgoing(&self) -> Option<Scrinium> {
@@ -204,6 +209,8 @@ pub fn sermo_open(route: &str) -> Sermo {
             runtime_response_generated: false,
             incoming_drained: false,
             incoming_terminal: None,
+            incoming_wake_epoch: 0,
+            incoming_waiters: Vec::new(),
             detached: false,
             meus_closed: false,
         })),
@@ -320,6 +327,13 @@ fn record_incoming_terminal(inner: &mut SermoInner, status: FrameStatus) {
     inner.incoming_drained = true;
 }
 
+fn wake_incoming(inner: &mut SermoInner) {
+    inner.incoming_wake_epoch = inner.incoming_wake_epoch.wrapping_add(1);
+    for waiter in inner.incoming_waiters.drain(..) {
+        waiter.wake();
+    }
+}
+
 fn recv_content_frame(inner: &mut SermoInner) -> Option<Scrinium> {
     if inner.detached || inner.incoming_drained {
         return None;
@@ -372,6 +386,68 @@ pub fn sermo_recv(sermo: &mut Sermo) -> Option<Scrinium> {
         record_incoming_terminal(&mut inner, frame.status);
     }
     Some(frame)
+}
+
+pub async fn sermo_recv_async(sermo: &mut Sermo) -> Option<Scrinium> {
+    loop {
+        if let Some(frame) = sermo_recv_ready(sermo) {
+            return Some(frame);
+        }
+        let wait = {
+            let inner = sermo.inner.borrow();
+            if inner.detached || inner.incoming_drained {
+                return None;
+            }
+            IncomingWake {
+                inner: sermo.inner.clone(),
+                seen_epoch: inner.incoming_wake_epoch,
+            }
+        };
+        wait.await;
+    }
+}
+
+fn sermo_recv_ready(sermo: &mut Sermo) -> Option<Scrinium> {
+    let mut inner = sermo.inner.borrow_mut();
+    if inner.detached {
+        return None;
+    }
+    if inner.incoming.is_empty() {
+        ensure_runtime_response_inner(&mut inner);
+    }
+    let frame = inner.incoming.pop_front()?;
+    if frame.status.is_terminal() {
+        record_incoming_terminal(&mut inner, frame.status);
+    }
+    Some(frame)
+}
+
+struct IncomingWake {
+    inner: Rc<RefCell<SermoInner>>,
+    seen_epoch: u64,
+}
+
+impl std::future::Future for IncomingWake {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut inner = self.inner.borrow_mut();
+        if inner.detached
+            || inner.incoming_drained
+            || !inner.incoming.is_empty()
+            || inner.incoming_wake_epoch != self.seen_epoch
+        {
+            return Poll::Ready(());
+        }
+        if !inner
+            .incoming_waiters
+            .iter()
+            .any(|waiter| waiter.will_wake(cx.waker()))
+        {
+            inner.incoming_waiters.push(cx.waker().clone());
+        }
+        Poll::Pending
+    }
 }
 
 fn ensure_runtime_response_inner(inner: &mut SermoInner) {
@@ -459,6 +535,7 @@ fn push_runtime_frame(inner: &mut SermoInner, status: FrameStatus, data: Valor) 
         from: Some("faber-runtime".into()),
         trace: None,
     });
+    wake_incoming(inner);
 }
 
 fn request_data(inner: &SermoInner) -> Valor {
@@ -984,6 +1061,24 @@ pub fn try_sermo_materialize_vacuum(sermo: &mut Sermo) -> Result<(), FrameError>
     Ok(())
 }
 
+pub async fn sermo_materialize_vacuum_async(sermo: &mut Sermo) {
+    try_sermo_materialize_vacuum_async(sermo)
+        .await
+        .expect("sermo ↦ vacuum async materialization failed");
+}
+
+pub async fn try_sermo_materialize_vacuum_async(sermo: &mut Sermo) -> Result<(), FrameError> {
+    while let Some(frame) = sermo_recv_async(sermo).await {
+        if let Some(message) = terminal_error(&frame) {
+            return Err(message);
+        }
+        if frame.status.is_terminal() {
+            break;
+        }
+    }
+    Ok(())
+}
+
 pub fn sermo_materialize_textus(sermo: &mut Sermo) -> String {
     try_sermo_materialize_textus(sermo).expect("sermo ↦ textus materialization failed")
 }
@@ -1005,6 +1100,36 @@ pub fn try_sermo_materialize_textus(sermo: &mut Sermo) -> Result<String, FrameEr
                     "sermo ↦ textus: content frame payload was not textus",
                 ),
             );
+        };
+        out.push_str(s);
+    }
+    Ok(out)
+}
+
+pub async fn sermo_materialize_textus_async(sermo: &mut Sermo) -> String {
+    try_sermo_materialize_textus_async(sermo)
+        .await
+        .expect("sermo ↦ textus async materialization failed")
+}
+
+pub async fn try_sermo_materialize_textus_async(sermo: &mut Sermo) -> Result<String, FrameError> {
+    let mut out = String::new();
+    while let Some(frame) = sermo_recv_async(sermo).await {
+        if let Some(message) = terminal_error(&frame) {
+            return Err(message);
+        }
+        if frame.status.is_terminal() {
+            break;
+        }
+        let Valor::Textus(s) = &frame.data else {
+            return drain_remaining_then_err_async(
+                sermo,
+                FrameError::new(
+                    "frame_textus_payload_not_textus",
+                    "sermo ↦ textus: content frame payload was not textus",
+                ),
+            )
+            .await;
         };
         out.push_str(s);
     }
@@ -1071,6 +1196,71 @@ pub fn try_sermo_materialize_octeti(sermo: &mut Sermo) -> Result<Vec<u8>, FrameE
     Ok(out)
 }
 
+pub async fn sermo_materialize_octeti_async(sermo: &mut Sermo) -> Vec<u8> {
+    try_sermo_materialize_octeti_async(sermo)
+        .await
+        .expect("sermo ↦ octeti async materialization failed")
+}
+
+pub async fn try_sermo_materialize_octeti_async(sermo: &mut Sermo) -> Result<Vec<u8>, FrameError> {
+    {
+        let mut inner = sermo.inner.borrow_mut();
+        if !inner.runtime_response_generated
+            && !try_generate_solum_lege_response::<Vec<u8>>(&mut inner)
+        {
+            try_generate_solum_partem_response::<Vec<u8>>(&mut inner);
+        }
+    }
+    let mut out = Vec::new();
+    while let Some(frame) = sermo_recv_async(sermo).await {
+        if let Some(message) = terminal_error(&frame) {
+            return Err(message);
+        }
+        if frame.status.is_terminal() {
+            break;
+        }
+        match &frame.data {
+            Valor::Octeti(bytes) => out.extend_from_slice(bytes),
+            Valor::Lista(bytes) => {
+                for v in bytes {
+                    let Valor::Numerus(n) = v else {
+                        return drain_remaining_then_err_async(
+                            sermo,
+                            FrameError::new(
+                                "frame_octeti_byte_not_numerus",
+                                "sermo ↦ octeti: byte payload contained a non-numerus value",
+                            ),
+                        )
+                        .await;
+                    };
+                    let Ok(byte) = u8::try_from(*n) else {
+                        return drain_remaining_then_err_async(
+                            sermo,
+                            FrameError::new(
+                                "frame_octeti_byte_out_of_range",
+                                "sermo ↦ octeti: byte payload value was outside 0..255",
+                            ),
+                        )
+                        .await;
+                    };
+                    out.push(byte);
+                }
+            }
+            _ => {
+                return drain_remaining_then_err_async(
+                    sermo,
+                    FrameError::new(
+                        "frame_octeti_payload_not_bytes",
+                        "sermo ↦ octeti: content frame payload was not octeti or byte lista",
+                    ),
+                )
+                .await;
+            }
+        }
+    }
+    Ok(out)
+}
+
 pub fn sermo_materialize_valor(sermo: &mut Sermo) -> Valor {
     try_sermo_materialize_valor(sermo).expect("sermo ↦ valor materialization failed")
 }
@@ -1078,6 +1268,28 @@ pub fn sermo_materialize_valor(sermo: &mut Sermo) -> Valor {
 pub fn try_sermo_materialize_valor(sermo: &mut Sermo) -> Result<Valor, FrameError> {
     let mut captured: Option<Valor> = None;
     while let Some(frame) = sermo_recv(sermo) {
+        if let Some(message) = terminal_error(&frame) {
+            return Err(message);
+        }
+        if frame.status.is_terminal() {
+            break;
+        }
+        if captured.is_none() {
+            captured = Some(frame.data);
+        }
+    }
+    Ok(captured.unwrap_or(Valor::Nihil))
+}
+
+pub async fn sermo_materialize_valor_async(sermo: &mut Sermo) -> Valor {
+    try_sermo_materialize_valor_async(sermo)
+        .await
+        .expect("sermo ↦ valor async materialization failed")
+}
+
+pub async fn try_sermo_materialize_valor_async(sermo: &mut Sermo) -> Result<Valor, FrameError> {
+    let mut captured: Option<Valor> = None;
+    while let Some(frame) = sermo_recv_async(sermo).await {
         if let Some(message) = terminal_error(&frame) {
             return Err(message);
         }
@@ -1124,11 +1336,56 @@ where
     Ok(out)
 }
 
+pub async fn sermo_materialize_lista_async<T>(sermo: &mut Sermo) -> Vec<T>
+where
+    T: crate::FromValor,
+{
+    try_sermo_materialize_lista_async(sermo)
+        .await
+        .expect("sermo ↦ lista<T> async materialization failed")
+}
+
+pub async fn try_sermo_materialize_lista_async<T>(sermo: &mut Sermo) -> Result<Vec<T>, FrameError>
+where
+    T: crate::FromValor,
+{
+    let mut out = Vec::new();
+    while let Some(frame) = sermo_recv_async(sermo).await {
+        if let Some(message) = terminal_error(&frame) {
+            return Err(message);
+        }
+        if frame.status.is_terminal() {
+            break;
+        }
+        let Some(v) = T::from_valor(&frame.data) else {
+            return drain_remaining_then_err_async(
+                sermo,
+                FrameError::new(
+                    "frame_lista_payload_element_type_mismatch",
+                    "sermo ↦ lista<T>: content frame payload did not match element type",
+                ),
+            )
+            .await;
+        };
+        out.push(v);
+    }
+    Ok(out)
+}
+
 pub fn sermo_materialize_scalar<T>(sermo: &mut Sermo) -> T
 where
     T: crate::FromValor,
 {
     try_sermo_materialize_scalar(sermo).expect("sermo ↦ T scalar materialization failed")
+}
+
+pub async fn sermo_materialize_scalar_async<T>(sermo: &mut Sermo) -> T
+where
+    T: crate::FromValor,
+{
+    try_sermo_materialize_scalar_async(sermo)
+        .await
+        .expect("sermo ↦ T scalar async materialization failed")
 }
 
 pub fn sermo_materialize_instans(sermo: &mut Sermo, precision: InstansPraecisio) -> Instans {
@@ -1146,6 +1403,60 @@ pub fn try_sermo_materialize_instans(
     let mut extracted: Option<Instans> = None;
     let mut content_count = 0u32;
     while let Some(frame) = sermo_recv(sermo) {
+        if let Some(message) = terminal_error(&frame) {
+            return Err(message);
+        }
+        if frame.status.is_terminal() {
+            break;
+        }
+        content_count += 1;
+        if extracted.is_none() {
+            extracted = Instans::try_from_valor(&frame.data, precision);
+        }
+    }
+    if content_count == 0 {
+        return Err(FrameError::new(
+            "frame_instans_no_content_frame",
+            "sermo ↦ instans: no content frame before terminal",
+        ));
+    }
+    if content_count > 1 {
+        return Err(FrameError::new(
+            "frame_instans_multiple_content_frames",
+            format!(
+                "sermo ↦ instans: more than one content frame (found {})",
+                content_count
+            ),
+        ));
+    }
+    extracted.ok_or_else(|| {
+        FrameError::new(
+            "frame_instans_payload_target_type_mismatch",
+            "sermo ↦ instans: content frame payload did not match target type",
+        )
+    })
+}
+
+pub async fn sermo_materialize_instans_async(
+    sermo: &mut Sermo,
+    precision: InstansPraecisio,
+) -> Instans {
+    try_sermo_materialize_instans_async(sermo, precision)
+        .await
+        .expect("sermo ↦ instans async materialization failed")
+}
+
+pub async fn try_sermo_materialize_instans_async(
+    sermo: &mut Sermo,
+    precision: InstansPraecisio,
+) -> Result<Instans, FrameError> {
+    {
+        let mut inner = sermo.inner.borrow_mut();
+        ensure_runtime_response_inner(&mut inner);
+    }
+    let mut extracted: Option<Instans> = None;
+    let mut content_count = 0u32;
+    while let Some(frame) = sermo_recv_async(sermo).await {
         if let Some(message) = terminal_error(&frame) {
             return Err(message);
         }
@@ -1220,4 +1531,62 @@ where
             "sermo ↦ T scalar: content frame payload did not match target type",
         )
     })
+}
+
+pub async fn try_sermo_materialize_scalar_async<T>(sermo: &mut Sermo) -> Result<T, FrameError>
+where
+    T: crate::FromValor,
+{
+    ensure_scalar_runtime_response::<T>(sermo);
+    let mut extracted: Option<T> = None;
+    let mut content_count = 0u32;
+    while let Some(frame) = sermo_recv_async(sermo).await {
+        if let Some(message) = terminal_error(&frame) {
+            return Err(message);
+        }
+        if frame.status.is_terminal() {
+            break;
+        }
+        content_count += 1;
+        if extracted.is_none() {
+            extracted = T::from_valor(&frame.data);
+        }
+    }
+    if content_count == 0 {
+        return Err(FrameError::new(
+            "frame_scalar_no_content_frame",
+            "sermo ↦ T scalar: no content frame before terminal",
+        ));
+    }
+    if content_count > 1 {
+        return Err(FrameError::new(
+            "frame_scalar_multiple_content_frames",
+            format!(
+                "sermo ↦ T scalar: more than one content frame (found {})",
+                content_count
+            ),
+        ));
+    }
+    extracted.ok_or_else(|| {
+        FrameError::new(
+            "frame_scalar_payload_target_type_mismatch",
+            "sermo ↦ T scalar: content frame payload did not match target type",
+        )
+    })
+}
+
+async fn drain_remaining_then_err_async<T>(
+    sermo: &mut Sermo,
+    error: FrameError,
+) -> Result<T, FrameError> {
+    while let Some(frame) = sermo_recv_async(sermo).await {
+        if frame.status.is_terminal() {
+            break;
+        }
+    }
+    let mut inner = sermo.inner.borrow_mut();
+    if !inner.incoming_drained {
+        record_incoming_terminal(&mut inner, FrameStatus::Done);
+    }
+    Err(error)
 }

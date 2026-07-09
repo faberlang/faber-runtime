@@ -1,5 +1,42 @@
 use crate::frame::{self, FrameStatus, Scrinium};
 use crate::Valor;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::task::{Context, Poll, Wake, Waker};
+
+#[derive(Default)]
+struct CountingWake {
+    count: AtomicUsize,
+}
+
+impl Wake for CountingWake {
+    fn wake(self: Arc<Self>) {
+        self.count.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.count.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+fn test_waker(wake: &Arc<CountingWake>) -> Waker {
+    Waker::from(wake.clone())
+}
+
+fn block_on<F: Future>(future: F) -> F::Output {
+    let wake = Arc::new(CountingWake::default());
+    let waker = test_waker(&wake);
+    let mut cx = Context::from_waker(&waker);
+    let mut future = Box::pin(future);
+    loop {
+        match Future::poll(Pin::as_mut(&mut future), &mut cx) {
+            Poll::Ready(output) => return output,
+            Poll::Pending => std::thread::yield_now(),
+        }
+    }
+}
 
 #[test]
 fn runtime_echo_returns_opener_then_done() {
@@ -20,6 +57,36 @@ fn runtime_echo_returns_opener_then_done() {
     assert_eq!(done.status, FrameStatus::Done);
     assert!(sermo.incoming_drained());
     assert!(frame::sermo_recv(&mut sermo).is_none());
+}
+
+#[test]
+fn sermo_recv_async_registers_runtime_neutral_wake() {
+    let mut sermo = frame::sermo_open("test:manual-wake");
+    let wake = Arc::new(CountingWake::default());
+    let waker = test_waker(&wake);
+    let mut cx = Context::from_waker(&waker);
+    {
+        let mut future = Box::pin(frame::sermo_recv_async(&mut sermo));
+        assert!(matches!(
+            Future::poll(Pin::as_mut(&mut future), &mut cx),
+            Poll::Pending
+        ));
+    }
+
+    sermo.push_incoming(Scrinium {
+        id: "manual".into(),
+        parent_id: Some(sermo.conversation_id()),
+        call: "test:manual-wake".into(),
+        status: FrameStatus::Item,
+        data: Valor::Textus("awakened".into()),
+        created_ms: 0,
+        from: Some("test".into()),
+        trace: None,
+    });
+    assert_eq!(wake.count.load(Ordering::SeqCst), 1);
+
+    let frame = block_on(frame::sermo_recv_async(&mut sermo)).expect("manual frame");
+    assert_eq!(frame.data, Valor::Textus("awakened".into()));
 }
 
 // ---- `sermo ↦ T` materializers ----
@@ -686,4 +753,104 @@ fn sermo_materialize_scalar_multiple_content_frames_panics() {
         trace: None,
     });
     let _: i64 = frame::sermo_materialize_scalar(&mut sermo);
+}
+
+#[test]
+fn async_materializer_twins_mirror_sync_materializers() {
+    let mut vacuum = frame::sermo_open("test:vacuum-async");
+    vacuum.push_incoming(Scrinium {
+        id: "done".into(),
+        parent_id: Some(vacuum.conversation_id()),
+        call: "test:vacuum-async".into(),
+        status: FrameStatus::Done,
+        data: Valor::Nihil,
+        created_ms: 0,
+        from: None,
+        trace: None,
+    });
+    block_on(frame::sermo_materialize_vacuum_async(&mut vacuum));
+    assert!(vacuum.incoming_drained());
+
+    let mut textus = frame::sermo_open("runtime:echo");
+    frame::sermo_set_opener(&mut textus, Valor::Textus("salve".into()));
+    assert_eq!(
+        block_on(frame::sermo_materialize_textus_async(&mut textus)),
+        "salve"
+    );
+
+    let mut octeti = frame::sermo_open("test:octeti-async");
+    octeti.push_incoming(Scrinium {
+        id: "bytes".into(),
+        parent_id: Some(octeti.conversation_id()),
+        call: "test:octeti-async".into(),
+        status: FrameStatus::Byte,
+        data: Valor::Octeti(vec![1, 2, 3]),
+        created_ms: 0,
+        from: None,
+        trace: None,
+    });
+    octeti.push_incoming(Scrinium {
+        id: "done".into(),
+        parent_id: Some(octeti.conversation_id()),
+        call: "test:octeti-async".into(),
+        status: FrameStatus::Done,
+        data: Valor::Nihil,
+        created_ms: 0,
+        from: None,
+        trace: None,
+    });
+    assert_eq!(
+        block_on(frame::sermo_materialize_octeti_async(&mut octeti)),
+        vec![1, 2, 3]
+    );
+
+    let mut valor = frame::sermo_open("runtime:echo");
+    frame::sermo_set_opener(&mut valor, Valor::Numerus(7));
+    assert_eq!(
+        block_on(frame::sermo_materialize_valor_async(&mut valor)),
+        Valor::Numerus(7)
+    );
+
+    let mut lista = frame::sermo_open("test:lista-async");
+    lista.push_incoming(Scrinium {
+        id: "one".into(),
+        parent_id: Some(lista.conversation_id()),
+        call: "test:lista-async".into(),
+        status: FrameStatus::Item,
+        data: Valor::Textus("one".into()),
+        created_ms: 0,
+        from: None,
+        trace: None,
+    });
+    lista.push_incoming(Scrinium {
+        id: "done".into(),
+        parent_id: Some(lista.conversation_id()),
+        call: "test:lista-async".into(),
+        status: FrameStatus::Done,
+        data: Valor::Nihil,
+        created_ms: 0,
+        from: None,
+        trace: None,
+    });
+    assert_eq!(
+        block_on(frame::sermo_materialize_lista_async::<String>(&mut lista)),
+        vec!["one".to_owned()]
+    );
+
+    let mut scalar = frame::sermo_open("runtime:echo");
+    frame::sermo_set_opener(&mut scalar, Valor::Numerus(9));
+    assert_eq!(
+        block_on(frame::sermo_materialize_scalar_async::<i64>(&mut scalar)),
+        9
+    );
+
+    let mut instans = frame::sermo_open("tempus:nunc");
+    let materialized = block_on(frame::sermo_materialize_instans_async(
+        &mut instans,
+        crate::InstansPraecisio::Nanosecunda,
+    ));
+    assert_eq!(
+        materialized.praecisio(),
+        crate::InstansPraecisio::Nanosecunda
+    );
 }
