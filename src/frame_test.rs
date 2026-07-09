@@ -118,6 +118,33 @@ fn sermo_materialize_octeti_concatenates_bytes() {
 }
 
 #[test]
+fn sermo_materialize_octeti_accepts_dense_byte_payload() {
+    let mut sermo = frame::sermo_open("test:bytes");
+    sermo.push_incoming(Scrinium {
+        id: "b1".into(),
+        parent_id: Some(sermo.conversation_id()),
+        call: "test:bytes".into(),
+        status: FrameStatus::Byte,
+        data: Valor::Octeti(vec![1, 2, 3, 4]),
+        created_ms: 0,
+        from: None,
+        trace: None,
+    });
+    sermo.push_incoming(Scrinium {
+        id: "done".into(),
+        parent_id: Some(sermo.conversation_id()),
+        call: "test:bytes".into(),
+        status: FrameStatus::Done,
+        data: Valor::Nihil,
+        created_ms: 0,
+        from: None,
+        trace: None,
+    });
+    let out = frame::sermo_materialize_octeti(&mut sermo);
+    assert_eq!(out, vec![1u8, 2, 3, 4]);
+}
+
+#[test]
 fn try_sermo_materialize_octeti_rejects_out_of_range_bytes() {
     let mut sermo = frame::sermo_open("test:bytes");
     sermo.push_incoming(Scrinium {
@@ -310,6 +337,118 @@ fn solum_lege_route_materializes_scalar_target_shape() {
 }
 
 #[test]
+fn solum_partem_route_materializes_dense_bounded_byte_range() {
+    let path = std::env::temp_dir().join(format!("{}.bin", frame::next_frame_id()));
+    std::fs::write(&path, [10u8, 11, 12, 13, 14]).expect("write byte range fixture");
+    let path = path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:partem");
+    frame::sermo_set_opener(
+        &mut sermo,
+        Valor::Lista(vec![
+            Valor::Textus(path.clone()),
+            Valor::Numerus(1),
+            Valor::Numerus(3),
+        ]),
+    );
+    let chunk = frame::sermo_recv(&mut sermo).expect("byte frame");
+    assert_eq!(chunk.status, FrameStatus::Byte);
+    assert_eq!(chunk.data, Valor::Octeti(vec![11, 12, 13]));
+    let done = frame::sermo_recv(&mut sermo).expect("done frame");
+    assert_eq!(done.status, FrameStatus::Done);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn solum_partem_route_materializes_large_range_without_valor_list() {
+    let path = std::env::temp_dir().join(format!("{}.bin", frame::next_frame_id()));
+    let mut data = vec![42u8; 2 * 1024 * 1024];
+    data[0] = 7;
+    let last = data.len() - 1;
+    data[last] = 9;
+    std::fs::write(&path, &data).expect("write large range fixture");
+    let path = path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:partem");
+    frame::sermo_set_opener(
+        &mut sermo,
+        Valor::Lista(vec![
+            Valor::Textus(path.clone()),
+            Valor::Numerus(0),
+            Valor::Numerus(data.len() as i64),
+        ]),
+    );
+    let chunk = frame::sermo_recv(&mut sermo).expect("large byte frame");
+    assert_eq!(chunk.status, FrameStatus::Byte);
+    let Valor::Octeti(bytes) = chunk.data else {
+        panic!("solum:partem must return dense octeti");
+    };
+    assert_eq!(bytes.len(), data.len());
+    assert_eq!(bytes[0], 7);
+    assert_eq!(bytes[bytes.len() - 1], 9);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn solum_partem_route_materializes_octeti() {
+    let path = std::env::temp_dir().join(format!("{}.bin", frame::next_frame_id()));
+    std::fs::write(&path, [20u8, 21, 22, 23, 24]).expect("write octeti range fixture");
+    let path = path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:partem");
+    frame::sermo_set_opener(
+        &mut sermo,
+        Valor::Lista(vec![
+            Valor::Textus(path.clone()),
+            Valor::Numerus(2),
+            Valor::Numerus(2),
+        ]),
+    );
+    let bytes = frame::sermo_materialize_octeti(&mut sermo);
+    assert_eq!(bytes, vec![22, 23]);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn solum_mensura_route_materializes_file_size() {
+    let path = std::env::temp_dir().join(format!("{}.bin", frame::next_frame_id()));
+    std::fs::write(&path, [30u8, 31, 32, 33]).expect("write size fixture");
+    let path = path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:mensura");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus(path.clone()));
+    let size: i64 = frame::sermo_materialize_scalar(&mut sermo);
+    assert_eq!(size, 4);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn solum_inveni_route_materializes_pattern_offset() {
+    let path = std::env::temp_dir().join(format!("{}.bin", frame::next_frame_id()));
+    std::fs::write(&path, b"prefix-general.file_type-suffix").expect("write search fixture");
+    let path = path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:inveni");
+    frame::sermo_set_opener(
+        &mut sermo,
+        Valor::Lista(vec![
+            Valor::Textus(path.clone()),
+            Valor::Textus("general.file_type".to_owned()),
+            Valor::Numerus(0),
+            Valor::Numerus(64),
+        ]),
+    );
+    let offset: i64 = frame::sermo_materialize_scalar(&mut sermo);
+    assert_eq!(offset, 7);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn solum_exstat_route_materializes_bool() {
     let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
     std::fs::write(&path, "present").expect("write existence fixture");
@@ -344,7 +483,9 @@ fn solum_path_bool_routes_materialize_bool() {
 
     let mut dir_regular_sermo = frame::sermo_open("solum:regularene");
     frame::sermo_set_opener(&mut dir_regular_sermo, Valor::Textus(dir_path.clone()));
-    assert!(!frame::sermo_materialize_scalar::<bool>(&mut dir_regular_sermo));
+    assert!(!frame::sermo_materialize_scalar::<bool>(
+        &mut dir_regular_sermo
+    ));
 
     let mut dir_sermo = frame::sermo_open("solum:directoriumne");
     frame::sermo_set_opener(&mut dir_sermo, Valor::Textus(dir_path));

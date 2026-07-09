@@ -46,6 +46,7 @@ pub fn display_valor(value: &Valor) -> String {
         Valor::Numerus(value) => value.to_string(),
         Valor::Fractus(value) => display_fractus(*value),
         Valor::Textus(value) | Valor::Instans(value) => value.clone(),
+        Valor::Octeti(bytes) => format!("<{} bytes>", bytes.len()),
         Valor::Lista(items) => {
             let inner = items
                 .iter()

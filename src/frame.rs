@@ -3,6 +3,7 @@
 use crate::{Instans, InstansPraecisio, Valor};
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::io::{Read, Seek, SeekFrom};
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::thread;
@@ -404,6 +405,9 @@ fn ensure_runtime_response_inner(inner: &mut SermoInner) {
         "solum:scribe" | "solum:scribet" | "solum:appone" | "solum:apponet" => {
             dispatch_solum_write_text(inner);
         }
+        "solum:partem" => {
+            try_generate_solum_partem_response::<Vec<u8>>(inner);
+        }
         _ => {}
     }
 }
@@ -411,6 +415,12 @@ fn ensure_runtime_response_inner(inner: &mut SermoInner) {
 fn push_runtime_item_done(inner: &mut SermoInner, data: Valor) {
     inner.runtime_response_generated = true;
     push_runtime_frame(inner, FrameStatus::Item, data);
+    push_runtime_frame(inner, FrameStatus::Done, Valor::Nihil);
+}
+
+fn push_runtime_bytes_done(inner: &mut SermoInner, bytes: Vec<u8>) {
+    inner.runtime_response_generated = true;
+    push_runtime_frame(inner, FrameStatus::Byte, Valor::Octeti(bytes));
     push_runtime_frame(inner, FrameStatus::Done, Valor::Nihil);
 }
 
@@ -472,6 +482,47 @@ fn request_text_pair(inner: &SermoInner) -> Result<(String, String), String> {
     Ok((path, data))
 }
 
+fn request_text_range(inner: &SermoInner) -> Result<(String, i64, i64), String> {
+    let Valor::Lista(items) = request_data(inner) else {
+        return Err("route opener must be [textus, numerus, numerus]".to_owned());
+    };
+    let mut iter = items.into_iter();
+    let (
+        Some(Valor::Textus(path)),
+        Some(Valor::Numerus(start)),
+        Some(Valor::Numerus(length)),
+        None,
+    ) = (iter.next(), iter.next(), iter.next(), iter.next())
+    else {
+        return Err("route opener must be [textus, numerus, numerus]".to_owned());
+    };
+    Ok((path, start, length))
+}
+
+fn request_text_pattern_range(inner: &SermoInner) -> Result<(String, String, i64, i64), String> {
+    let Valor::Lista(items) = request_data(inner) else {
+        return Err("route opener must be [textus, textus, numerus, numerus]".to_owned());
+    };
+    let mut iter = items.into_iter();
+    let (
+        Some(Valor::Textus(path)),
+        Some(Valor::Textus(pattern)),
+        Some(Valor::Numerus(start)),
+        Some(Valor::Numerus(length)),
+        None,
+    ) = (
+        iter.next(),
+        iter.next(),
+        iter.next(),
+        iter.next(),
+        iter.next(),
+    )
+    else {
+        return Err("route opener must be [textus, textus, numerus, numerus]".to_owned());
+    };
+    Ok((path, pattern, start, length))
+}
+
 fn dispatch_solum_write_text(inner: &mut SermoInner) {
     let route = inner.route.clone();
     let result = request_text_pair(inner).and_then(|(path, data)| {
@@ -504,6 +555,15 @@ where
         return;
     }
     if try_generate_solum_lege_response::<T>(&mut inner) {
+        return;
+    }
+    if try_generate_solum_partem_response::<T>(&mut inner) {
+        return;
+    }
+    if try_generate_solum_mensura_response::<T>(&mut inner) {
+        return;
+    }
+    if try_generate_solum_inveni_response::<T>(&mut inner) {
         return;
     }
     if try_generate_solum_path_bool_response::<T>(&mut inner) {
@@ -566,6 +626,155 @@ where
         inner,
         format!("solum:lege target `{target}` is not supported"),
     );
+    true
+}
+
+fn try_generate_solum_partem_response<T>(inner: &mut SermoInner) -> bool
+where
+    T: crate::FromValor,
+{
+    if inner.route != "solum:partem" {
+        return false;
+    }
+
+    let Ok((path, start, length)) = request_text_range(inner) else {
+        push_runtime_error(
+            inner,
+            "solum:partem opener must be [textus, numerus, numerus]",
+        );
+        return true;
+    };
+
+    let target = std::any::type_name::<T>();
+    if target != std::any::type_name::<Vec<u8>>() {
+        push_runtime_error(
+            inner,
+            format!("solum:partem target `{target}` is not supported"),
+        );
+        return true;
+    }
+
+    let Ok(start) = u64::try_from(start) else {
+        push_runtime_error(inner, "solum:partem start must be non-negative");
+        return true;
+    };
+    let Ok(length) = usize::try_from(length) else {
+        push_runtime_error(inner, "solum:partem length must be non-negative");
+        return true;
+    };
+
+    match std::fs::File::open(&path) {
+        Ok(mut file) => {
+            if let Err(err) = file.seek(SeekFrom::Start(start)) {
+                push_runtime_error(inner, format!("failed to seek file: {err}"));
+                return true;
+            }
+            let mut bytes = vec![0_u8; length];
+            match file.read(&mut bytes) {
+                Ok(count) => {
+                    bytes.truncate(count);
+                    push_runtime_bytes_done(inner, bytes);
+                }
+                Err(err) => push_runtime_error(inner, format!("failed to read file: {err}")),
+            }
+        }
+        Err(err) => push_runtime_error(inner, format!("failed to open file: {err}")),
+    }
+    true
+}
+
+fn try_generate_solum_mensura_response<T>(inner: &mut SermoInner) -> bool
+where
+    T: crate::FromValor,
+{
+    if inner.route != "solum:mensura" {
+        return false;
+    }
+
+    let Some(path) = request_text(inner) else {
+        push_runtime_error(inner, "solum:mensura opener must be textus");
+        return true;
+    };
+
+    let target = std::any::type_name::<T>();
+    if target != std::any::type_name::<i64>() {
+        push_runtime_error(
+            inner,
+            format!("solum:mensura target `{target}` is not supported"),
+        );
+        return true;
+    }
+
+    match std::fs::metadata(path) {
+        Ok(metadata) => match i64::try_from(metadata.len()) {
+            Ok(size) => push_runtime_item_done(inner, Valor::Numerus(size)),
+            Err(_) => push_runtime_error(inner, "file size exceeds numerus range"),
+        },
+        Err(err) => push_runtime_error(inner, format!("failed to read file metadata: {err}")),
+    }
+    true
+}
+
+fn try_generate_solum_inveni_response<T>(inner: &mut SermoInner) -> bool
+where
+    T: crate::FromValor,
+{
+    if inner.route != "solum:inveni" {
+        return false;
+    }
+
+    let Ok((path, pattern, start, length)) = request_text_pattern_range(inner) else {
+        push_runtime_error(
+            inner,
+            "solum:inveni opener must be [textus, textus, numerus, numerus]",
+        );
+        return true;
+    };
+
+    let target = std::any::type_name::<T>();
+    if target != std::any::type_name::<i64>() {
+        push_runtime_error(
+            inner,
+            format!("solum:inveni target `{target}` is not supported"),
+        );
+        return true;
+    }
+    let Ok(start) = u64::try_from(start) else {
+        push_runtime_error(inner, "solum:inveni start must be non-negative");
+        return true;
+    };
+    let Ok(length) = usize::try_from(length) else {
+        push_runtime_error(inner, "solum:inveni length must be non-negative");
+        return true;
+    };
+    let pattern = pattern.into_bytes();
+    if pattern.is_empty() {
+        push_runtime_item_done(inner, Valor::Numerus(-1));
+        return true;
+    }
+
+    match std::fs::File::open(&path) {
+        Ok(mut file) => {
+            if let Err(err) = file.seek(SeekFrom::Start(start)) {
+                push_runtime_error(inner, format!("failed to seek file: {err}"));
+                return true;
+            }
+            let mut bytes = vec![0_u8; length];
+            match file.read(&mut bytes) {
+                Ok(count) => {
+                    bytes.truncate(count);
+                    let found = bytes
+                        .windows(pattern.len())
+                        .position(|window| window == pattern.as_slice())
+                        .and_then(|offset| i64::try_from(start.saturating_add(offset as u64)).ok())
+                        .unwrap_or(-1);
+                    push_runtime_item_done(inner, Valor::Numerus(found));
+                }
+                Err(err) => push_runtime_error(inner, format!("failed to read file: {err}")),
+            }
+        }
+        Err(err) => push_runtime_error(inner, format!("failed to open file: {err}")),
+    }
     true
 }
 
@@ -703,6 +912,14 @@ pub fn sermo_materialize_octeti(sermo: &mut Sermo) -> Vec<u8> {
 }
 
 pub fn try_sermo_materialize_octeti(sermo: &mut Sermo) -> Result<Vec<u8>, FrameError> {
+    {
+        let mut inner = sermo.inner.borrow_mut();
+        if !inner.runtime_response_generated {
+            if !try_generate_solum_lege_response::<Vec<u8>>(&mut inner) {
+                try_generate_solum_partem_response::<Vec<u8>>(&mut inner);
+            }
+        }
+    }
     let mut out = Vec::new();
     while let Some(frame) = sermo_recv(sermo) {
         if let Some(message) = terminal_error(&frame) {
@@ -711,35 +928,40 @@ pub fn try_sermo_materialize_octeti(sermo: &mut Sermo) -> Result<Vec<u8>, FrameE
         if frame.status.is_terminal() {
             break;
         }
-        let Valor::Lista(bytes) = &frame.data else {
-            return drain_remaining_then_err(
-                sermo,
-                FrameError::new(
-                    "frame_octeti_payload_not_byte_lista",
-                    "sermo ↦ octeti: content frame payload was not byte lista",
-                ),
-            );
-        };
-        for v in bytes {
-            let Valor::Numerus(n) = v else {
+        match &frame.data {
+            Valor::Octeti(bytes) => out.extend_from_slice(bytes),
+            Valor::Lista(bytes) => {
+                for v in bytes {
+                    let Valor::Numerus(n) = v else {
+                        return drain_remaining_then_err(
+                            sermo,
+                            FrameError::new(
+                                "frame_octeti_byte_not_numerus",
+                                "sermo ↦ octeti: byte payload contained a non-numerus value",
+                            ),
+                        );
+                    };
+                    let Ok(byte) = u8::try_from(*n) else {
+                        return drain_remaining_then_err(
+                            sermo,
+                            FrameError::new(
+                                "frame_octeti_byte_out_of_range",
+                                "sermo ↦ octeti: byte payload value was outside 0..255",
+                            ),
+                        );
+                    };
+                    out.push(byte);
+                }
+            }
+            _ => {
                 return drain_remaining_then_err(
                     sermo,
                     FrameError::new(
-                        "frame_octeti_byte_not_numerus",
-                        "sermo ↦ octeti: byte payload contained a non-numerus value",
+                        "frame_octeti_payload_not_bytes",
+                        "sermo ↦ octeti: content frame payload was not octeti or byte lista",
                     ),
                 );
-            };
-            let Ok(byte) = u8::try_from(*n) else {
-                return drain_remaining_then_err(
-                    sermo,
-                    FrameError::new(
-                        "frame_octeti_byte_out_of_range",
-                        "sermo ↦ octeti: byte payload value was outside 0..255",
-                    ),
-                );
-            };
-            out.push(byte);
+            }
         }
     }
     Ok(out)

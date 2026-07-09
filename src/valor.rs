@@ -12,6 +12,7 @@ pub enum Valor {
     Numerus(i64),
     Fractus(f64),
     Textus(String),
+    Octeti(Vec<u8>),
     Lista(Vec<Valor>),
     Tabula(BTreeMap<String, Valor>),
     /// RFC3339 datetime wire form — not HAL `tempus`; typed extraction is `instans`.
