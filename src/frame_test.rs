@@ -310,6 +310,25 @@ fn solum_lege_route_materializes_scalar_target_shape() {
 }
 
 #[test]
+fn solum_exstat_route_materializes_bool() {
+    let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
+    std::fs::write(&path, "present").expect("write existence fixture");
+    let missing = path.with_extension("missing");
+    let path = path.to_string_lossy().into_owned();
+    let missing = missing.to_string_lossy().into_owned();
+
+    let mut present_sermo = frame::sermo_open("solum:exstat");
+    frame::sermo_set_opener(&mut present_sermo, Valor::Textus(path.clone()));
+    assert!(frame::sermo_materialize_scalar::<bool>(&mut present_sermo));
+
+    let mut missing_sermo = frame::sermo_open("solum:exstat");
+    frame::sermo_set_opener(&mut missing_sermo, Valor::Textus(missing));
+    assert!(!frame::sermo_materialize_scalar::<bool>(&mut missing_sermo));
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn solum_scribe_route_materializes_vacuum_after_writing_file() {
     let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
     let path = path.to_string_lossy().into_owned();

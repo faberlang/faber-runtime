@@ -506,6 +506,9 @@ where
     if try_generate_solum_lege_response::<T>(&mut inner) {
         return;
     }
+    if try_generate_solum_exstat_response::<T>(&mut inner) {
+        return;
+    }
     ensure_runtime_response_inner(&mut inner);
 }
 
@@ -562,6 +565,32 @@ where
     push_runtime_error(
         inner,
         format!("solum:lege target `{target}` is not supported"),
+    );
+    true
+}
+
+fn try_generate_solum_exstat_response<T>(inner: &mut SermoInner) -> bool
+where
+    T: crate::FromValor,
+{
+    if inner.route != "solum:exstat" {
+        return false;
+    }
+
+    let Some(path) = request_text(inner) else {
+        push_runtime_error(inner, "solum:exstat opener must be textus");
+        return true;
+    };
+
+    let target = std::any::type_name::<T>();
+    if target == std::any::type_name::<bool>() {
+        push_runtime_item_done(inner, Valor::Bivalens(std::path::Path::new(&path).exists()));
+        return true;
+    }
+
+    push_runtime_error(
+        inner,
+        format!("solum:exstat target `{target}` is not supported"),
     );
     true
 }
