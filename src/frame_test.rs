@@ -522,9 +522,25 @@ fn solum_scribe_route_materializes_vacuum_after_writing_file() {
 }
 
 #[test]
+fn solum_dele_route_materializes_vacuum_after_removing_file() {
+    let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
+    std::fs::write(&path, "stale").expect("write temp file");
+    let path = path.to_string_lossy().into_owned();
+    let mut sermo = frame::sermo_open("solum:dele");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus(path.clone()));
+
+    frame::sermo_materialize_vacuum(&mut sermo);
+
+    assert!(!std::path::Path::new(&path).exists());
+}
+
+#[test]
 fn processus_exsequi_route_materializes_stdout() {
     let mut sermo = frame::sermo_open("processus:exsequi");
-    frame::sermo_set_opener(&mut sermo, Valor::Textus("printf runtime-process-ok".into()));
+    frame::sermo_set_opener(
+        &mut sermo,
+        Valor::Textus("printf runtime-process-ok".into()),
+    );
 
     let output = frame::sermo_materialize_textus(&mut sermo);
 

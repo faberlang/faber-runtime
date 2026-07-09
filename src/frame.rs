@@ -405,6 +405,9 @@ fn ensure_runtime_response_inner(inner: &mut SermoInner) {
         "solum:scribe" | "solum:scribet" | "solum:appone" | "solum:apponet" => {
             dispatch_solum_write_text(inner);
         }
+        "solum:dele" | "solum:delet" => {
+            dispatch_solum_delete(inner);
+        }
         "solum:parens" => {
             dispatch_solum_parens(inner);
         }
@@ -562,6 +565,18 @@ fn dispatch_solum_parens(inner: &mut SermoInner) {
         .map(|parent| parent.to_string_lossy().into_owned())
         .unwrap_or_default();
     push_runtime_item_done(inner, Valor::Textus(parent));
+}
+
+fn dispatch_solum_delete(inner: &mut SermoInner) {
+    let Some(path) = request_text(inner) else {
+        push_runtime_error(inner, "solum:dele opener must be textus");
+        return;
+    };
+    match std::fs::remove_file(&path) {
+        Ok(()) => push_runtime_done(inner),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => push_runtime_done(inner),
+        Err(err) => push_runtime_error(inner, format!("solum.dele failed for {path}: {err}")),
+    }
 }
 
 fn dispatch_processus_exsequi(inner: &mut SermoInner) {
