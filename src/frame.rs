@@ -166,7 +166,9 @@ impl Sermo {
     }
 
     pub fn push_incoming(&mut self, frame: Scrinium) {
-        self.inner.borrow_mut().incoming.push_back(frame);
+        let mut inner = self.inner.borrow_mut();
+        inner.runtime_response_generated = true;
+        inner.incoming.push_back(frame);
     }
 
     pub fn first_outgoing(&self) -> Option<Scrinium> {

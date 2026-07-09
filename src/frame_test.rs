@@ -522,6 +522,34 @@ fn solum_scribe_route_materializes_vacuum_after_writing_file() {
 }
 
 #[test]
+fn externally_supplied_incoming_frames_suppress_runtime_fallback() {
+    let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
+    let path = path.to_string_lossy().into_owned();
+    let mut sermo = frame::sermo_open("solum:appone");
+    frame::sermo_set_opener(
+        &mut sermo,
+        Valor::Lista(vec![
+            Valor::Textus(path.clone()),
+            Valor::Textus("salve".to_owned()),
+        ]),
+    );
+    sermo.push_incoming(Scrinium {
+        id: "host-done".into(),
+        parent_id: Some(sermo.conversation_id()),
+        call: "solum:appone".into(),
+        status: FrameStatus::Done,
+        data: Valor::Nihil,
+        created_ms: 0,
+        from: Some("host".into()),
+        trace: None,
+    });
+
+    frame::sermo_materialize_vacuum(&mut sermo);
+
+    assert!(!std::path::Path::new(&path).exists());
+}
+
+#[test]
 fn solum_dele_route_materializes_vacuum_after_removing_file() {
     let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
     std::fs::write(&path, "stale").expect("write temp file");
