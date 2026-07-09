@@ -2,7 +2,7 @@
 
 use crate::{Instans, InstansPraecisio, Valor};
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::io::{Read, Seek, SeekFrom};
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -417,6 +417,9 @@ fn ensure_runtime_response_inner(inner: &mut SermoInner) {
         "processus:exsequi" | "processus:exsequetur" => {
             dispatch_processus_exsequi(inner);
         }
+        "processus:captura" => {
+            dispatch_processus_captura(inner);
+        }
         _ => {}
     }
 }
@@ -469,6 +472,19 @@ fn request_text(inner: &SermoInner) -> Option<String> {
         Valor::Textus(text) => Some(text),
         _ => None,
     }
+}
+
+fn request_text_list(inner: &SermoInner) -> Option<Vec<String>> {
+    let Valor::Lista(items) = request_data(inner) else {
+        return None;
+    };
+    items
+        .into_iter()
+        .map(|item| match item {
+            Valor::Textus(value) => Some(value),
+            _ => None,
+        })
+        .collect()
 }
 
 fn request_numerus(inner: &SermoInner) -> Option<i64> {
@@ -593,6 +609,41 @@ fn dispatch_processus_exsequi(inner: &mut SermoInner) {
 
     match result {
         Ok(stdout) => push_runtime_item_done(inner, Valor::Textus(stdout)),
+        Err(message) => push_runtime_error(inner, message),
+    }
+}
+
+fn dispatch_processus_captura(inner: &mut SermoInner) {
+    let Some(args) = request_text_list(inner) else {
+        push_runtime_error(inner, "processus:captura opener must be lista<textus>");
+        return;
+    };
+    let Some((program, program_args)) = args.split_first() else {
+        push_runtime_error(inner, "processus:captura requires a non-empty args list");
+        return;
+    };
+    let result = std::process::Command::new(program)
+        .args(program_args)
+        .output()
+        .map_err(|err| format!("processus.captura failed: {err}"));
+
+    match result {
+        Ok(output) => {
+            let mut fields = BTreeMap::new();
+            fields.insert(
+                "status".to_owned(),
+                Valor::Numerus(output.status.code().unwrap_or(-1) as i64),
+            );
+            fields.insert(
+                "stdout".to_owned(),
+                Valor::Textus(String::from_utf8_lossy(&output.stdout).into_owned()),
+            );
+            fields.insert(
+                "stderr".to_owned(),
+                Valor::Textus(String::from_utf8_lossy(&output.stderr).into_owned()),
+            );
+            push_runtime_item_done(inner, Valor::Tabula(fields));
+        }
         Err(message) => push_runtime_error(inner, message),
     }
 }

@@ -548,6 +548,28 @@ fn processus_exsequi_route_materializes_stdout() {
 }
 
 #[test]
+fn processus_captura_route_materializes_status_stdout_and_stderr() {
+    let mut sermo = frame::sermo_open("processus:captura");
+    frame::sermo_set_opener(
+        &mut sermo,
+        Valor::Lista(vec![
+            Valor::Textus("sh".into()),
+            Valor::Textus("-c".into()),
+            Valor::Textus("printf out; printf err >&2; exit 7".into()),
+        ]),
+    );
+
+    let output = frame::sermo_materialize_valor(&mut sermo);
+
+    let Valor::Tabula(fields) = output else {
+        panic!("expected processus:captura to return a tabula");
+    };
+    assert_eq!(fields.get("status"), Some(&Valor::Numerus(7)));
+    assert_eq!(fields.get("stdout"), Some(&Valor::Textus("out".into())));
+    assert_eq!(fields.get("stderr"), Some(&Valor::Textus("err".into())));
+}
+
+#[test]
 fn solum_parens_route_materializes_parent_path() {
     let mut sermo = frame::sermo_open("solum:parens");
     frame::sermo_set_opener(&mut sermo, Valor::Textus("/tmp/faber/path.txt".into()));
