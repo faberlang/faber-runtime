@@ -1018,10 +1018,10 @@ pub fn sermo_materialize_octeti(sermo: &mut Sermo) -> Vec<u8> {
 pub fn try_sermo_materialize_octeti(sermo: &mut Sermo) -> Result<Vec<u8>, FrameError> {
     {
         let mut inner = sermo.inner.borrow_mut();
-        if !inner.runtime_response_generated {
-            if !try_generate_solum_lege_response::<Vec<u8>>(&mut inner) {
-                try_generate_solum_partem_response::<Vec<u8>>(&mut inner);
-            }
+        if !inner.runtime_response_generated
+            && !try_generate_solum_lege_response::<Vec<u8>>(&mut inner)
+        {
+            try_generate_solum_partem_response::<Vec<u8>>(&mut inner);
         }
     }
     let mut out = Vec::new();
