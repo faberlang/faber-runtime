@@ -329,6 +329,36 @@ fn solum_exstat_route_materializes_bool() {
 }
 
 #[test]
+fn solum_path_bool_routes_materialize_bool() {
+    let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
+    let dir = std::env::temp_dir().join(format!("{}.dir", frame::next_frame_id()));
+    std::fs::write(&path, "present").expect("write path bool fixture");
+    std::fs::create_dir(&dir).expect("create path bool directory");
+
+    let file_path = path.to_string_lossy().into_owned();
+    let dir_path = dir.to_string_lossy().into_owned();
+
+    let mut regular_sermo = frame::sermo_open("solum:regularene");
+    frame::sermo_set_opener(&mut regular_sermo, Valor::Textus(file_path.clone()));
+    assert!(frame::sermo_materialize_scalar::<bool>(&mut regular_sermo));
+
+    let mut dir_regular_sermo = frame::sermo_open("solum:regularene");
+    frame::sermo_set_opener(&mut dir_regular_sermo, Valor::Textus(dir_path.clone()));
+    assert!(!frame::sermo_materialize_scalar::<bool>(&mut dir_regular_sermo));
+
+    let mut dir_sermo = frame::sermo_open("solum:directoriumne");
+    frame::sermo_set_opener(&mut dir_sermo, Valor::Textus(dir_path));
+    assert!(frame::sermo_materialize_scalar::<bool>(&mut dir_sermo));
+
+    let mut readable_sermo = frame::sermo_open("solum:legibilene");
+    frame::sermo_set_opener(&mut readable_sermo, Valor::Textus(file_path.clone()));
+    assert!(frame::sermo_materialize_scalar::<bool>(&mut readable_sermo));
+
+    let _ = std::fs::remove_file(file_path);
+    let _ = std::fs::remove_dir(dir);
+}
+
+#[test]
 fn solum_scribe_route_materializes_vacuum_after_writing_file() {
     let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
     let path = path.to_string_lossy().into_owned();

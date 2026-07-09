@@ -506,7 +506,7 @@ where
     if try_generate_solum_lege_response::<T>(&mut inner) {
         return;
     }
-    if try_generate_solum_exstat_response::<T>(&mut inner) {
+    if try_generate_solum_path_bool_response::<T>(&mut inner) {
         return;
     }
     ensure_runtime_response_inner(&mut inner);
@@ -569,28 +569,39 @@ where
     true
 }
 
-fn try_generate_solum_exstat_response<T>(inner: &mut SermoInner) -> bool
+fn try_generate_solum_path_bool_response<T>(inner: &mut SermoInner) -> bool
 where
     T: crate::FromValor,
 {
-    if inner.route != "solum:exstat" {
+    if !matches!(
+        inner.route.as_str(),
+        "solum:exstat" | "solum:directoriumne" | "solum:regularene" | "solum:legibilene"
+    ) {
         return false;
     }
 
     let Some(path) = request_text(inner) else {
-        push_runtime_error(inner, "solum:exstat opener must be textus");
+        push_runtime_error(inner, format!("{} opener must be textus", inner.route));
         return true;
     };
 
     let target = std::any::type_name::<T>();
     if target == std::any::type_name::<bool>() {
-        push_runtime_item_done(inner, Valor::Bivalens(std::path::Path::new(&path).exists()));
+        let path = std::path::Path::new(&path);
+        let result = match inner.route.as_str() {
+            "solum:exstat" => path.exists(),
+            "solum:directoriumne" => path.is_dir(),
+            "solum:regularene" => path.is_file(),
+            "solum:legibilene" => path.is_file() && std::fs::File::open(path).is_ok(),
+            _ => false,
+        };
+        push_runtime_item_done(inner, Valor::Bivalens(result));
         return true;
     }
 
     push_runtime_error(
         inner,
-        format!("solum:exstat target `{target}` is not supported"),
+        format!("{} target `{target}` is not supported", inner.route),
     );
     true
 }
