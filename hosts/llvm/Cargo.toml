@@ -1,0 +1,12 @@
+[package]
+name = "faber-host-llvm"
+version = "0.1.0"
+edition = "2021"
+description = "Versioned host runtime for Faber LLVM executables"
+license = "MIT"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+faber = { package = "faber-runtime", path = "../.." }
