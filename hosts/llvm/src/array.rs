@@ -8,8 +8,8 @@ use faber::llvm_abi::{
     ARRAY_OPTION_REMOVE_FIRST, ARRAY_OPTION_REMOVE_LAST, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE,
     ARRAY_RANGE_TAKE, ARRAY_RANGE_TAKE_LAST, STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC,
     VALUE_KIND_F16, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I16, VALUE_KIND_I32,
-    VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR, VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64,
-    VALUE_KIND_U8,
+    VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR, VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32,
+    VALUE_KIND_U64, VALUE_KIND_U8,
 };
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
@@ -48,14 +48,19 @@ pub unsafe extern "C" fn __faber_rt_v1_array_new(
         if !valid_kind(kind) {
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         }
-        let mut array = Box::new(RuntimeArray {
-            kind,
-            values: Vec::new(),
-        });
-        let handle = std::ptr::from_mut(array.as_mut()).cast::<c_void>();
-        runtime.arrays.push(array);
-        FaberRtPtrResultV1::success(handle)
+        store_array(runtime, kind, Vec::new())
     })
+}
+
+pub(super) fn store_array(
+    runtime: &mut RuntimeContext,
+    kind: FaberRtValueKindV1,
+    values: Vec<RuntimeValue>,
+) -> FaberRtPtrResultV1 {
+    let mut array = Box::new(RuntimeArray { kind, values });
+    let handle = std::ptr::from_mut(array.as_mut()).cast::<c_void>();
+    runtime.arrays.push(array);
+    FaberRtPtrResultV1::success(handle)
 }
 
 #[no_mangle]
@@ -329,17 +334,6 @@ pub unsafe extern "C" fn __faber_rt_v1_array_option(
     })
 }
 
-fn store_array(
-    runtime: &mut RuntimeContext,
-    kind: FaberRtValueKindV1,
-    values: Vec<RuntimeValue>,
-) -> FaberRtPtrResultV1 {
-    let mut array = Box::new(RuntimeArray { kind, values });
-    let handle = std::ptr::from_mut(array.as_mut()).cast::<c_void>();
-    runtime.arrays.push(array);
-    FaberRtPtrResultV1::success(handle)
-}
-
 fn range_bounds(
     mode: FaberRtArrayRangeModeV1,
     first: i64,
@@ -376,6 +370,7 @@ pub(super) fn valid_kind(kind: FaberRtValueKindV1) -> bool {
             | VALUE_KIND_F32
             | VALUE_KIND_F64
             | VALUE_KIND_PTR
+            | VALUE_KIND_TEXT
     )
 }
 
@@ -423,7 +418,7 @@ pub(super) unsafe fn read_value(
         VALUE_KIND_F16 => RuntimeValue::F16(unsafe { read_typed(value) }?),
         VALUE_KIND_F32 => RuntimeValue::F32(unsafe { read_typed(value) }?),
         VALUE_KIND_F64 => RuntimeValue::F64(unsafe { read_typed(value) }?),
-        VALUE_KIND_PTR => RuntimeValue::Ptr(unsafe { read_typed(value) }?),
+        VALUE_KIND_PTR | VALUE_KIND_TEXT => RuntimeValue::Ptr(unsafe { read_typed(value) }?),
         _ => return None,
     })
 }

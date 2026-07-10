@@ -1,4 +1,5 @@
 use super::*;
+use std::ffi::c_void;
 
 #[test]
 fn init_write_and_shutdown_round_trip() {
@@ -360,6 +361,221 @@ fn text_scalar_conversion_family_honors_width_radix_recovery_status() {
         STATUS_OK
     );
     assert_eq!(truthy, 0);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn typed_map_and_set_family_preserves_value_semantics() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let map = unsafe { __faber_rt_v1_map_new(context, VALUE_KIND_TEXT, VALUE_KIND_I64) };
+    assert_eq!(map.status, STATUS_OK);
+    let first_key = FaberRtSliceV1::from_static("aelia".as_bytes());
+    let equal_key = FaberRtSliceV1::from_static("aelia".as_bytes());
+    let missing_key = FaberRtSliceV1::from_static("balbus".as_bytes());
+    let first_handle = std::ptr::from_ref(&first_key).cast_mut().cast::<c_void>();
+    let equal_handle = std::ptr::from_ref(&equal_key).cast_mut().cast::<c_void>();
+    let missing_handle = std::ptr::from_ref(&missing_key).cast_mut().cast::<c_void>();
+    let value = 95i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_map_put(
+                context,
+                map.value,
+                VALUE_KIND_TEXT,
+                std::ptr::from_ref(&first_handle).cast(),
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&value).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    let mut answer = 0u8;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_map_contains(
+                context,
+                map.value,
+                VALUE_KIND_TEXT,
+                std::ptr::from_ref(&equal_handle).cast(),
+                &mut answer,
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(
+        answer, 1,
+        "distinct text descriptors compare by UTF-8 value"
+    );
+    let present = unsafe {
+        __faber_rt_v1_map_option(
+            context,
+            map.value,
+            VALUE_KIND_TEXT,
+            std::ptr::from_ref(&equal_handle).cast(),
+            VALUE_KIND_I64,
+        )
+    };
+    let missing = unsafe {
+        __faber_rt_v1_map_option(
+            context,
+            map.value,
+            VALUE_KIND_TEXT,
+            std::ptr::from_ref(&missing_handle).cast(),
+            VALUE_KIND_I64,
+        )
+    };
+    assert!(unsafe { &*present.value.cast::<RuntimeOption>() }
+        .value
+        .is_some());
+    assert!(unsafe { &*missing.value.cast::<RuntimeOption>() }
+        .value
+        .is_none());
+    let mut length = 0i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_map_length(context, map.value, &mut length) },
+        STATUS_OK
+    );
+    assert_eq!(length, 1);
+    let keys = unsafe { __faber_rt_v1_map_keys(context, map.value) };
+    let values = unsafe { __faber_rt_v1_map_values(context, map.value) };
+    assert_eq!(
+        unsafe { &*keys.value.cast::<RuntimeArray>() }.kind,
+        VALUE_KIND_TEXT
+    );
+    assert_eq!(
+        unsafe { &*values.value.cast::<RuntimeArray>() }.kind,
+        VALUE_KIND_I64
+    );
+    assert_eq!(
+        unsafe { &*keys.value.cast::<RuntimeArray>() }.values.len(),
+        1
+    );
+    assert_eq!(
+        unsafe { &*values.value.cast::<RuntimeArray>() }
+            .values
+            .len(),
+        1
+    );
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_map_delete(
+                context,
+                map.value,
+                VALUE_KIND_TEXT,
+                std::ptr::from_ref(&equal_handle).cast(),
+                &mut answer,
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(answer, 1);
+    assert_eq!(
+        unsafe { __faber_rt_v1_map_is_empty(context, map.value, &mut answer) },
+        STATUS_OK
+    );
+    assert_eq!(answer, 1);
+
+    let left = unsafe { __faber_rt_v1_set_new(context, VALUE_KIND_I64) };
+    let right = unsafe { __faber_rt_v1_set_new(context, VALUE_KIND_I64) };
+    for (set, values) in [
+        (left.value, &[1i64, 2, 3][..]),
+        (right.value, &[2i64, 4][..]),
+    ] {
+        for value in values {
+            assert_eq!(
+                unsafe {
+                    __faber_rt_v1_set_add(
+                        context,
+                        set,
+                        VALUE_KIND_I64,
+                        std::ptr::from_ref(value).cast(),
+                    )
+                },
+                STATUS_OK
+            );
+        }
+    }
+    let union = unsafe { __faber_rt_v1_set_union(context, left.value, right.value) };
+    let intersection = unsafe { __faber_rt_v1_set_intersection(context, left.value, right.value) };
+    let difference = unsafe { __faber_rt_v1_set_difference(context, left.value, right.value) };
+    let symmetric =
+        unsafe { __faber_rt_v1_set_symmetric_difference(context, left.value, right.value) };
+    assert_eq!(
+        unsafe { &*union.value.cast::<RuntimeSet>() }.values.len(),
+        4
+    );
+    assert_eq!(
+        unsafe { &*intersection.value.cast::<RuntimeSet>() }
+            .values
+            .len(),
+        1
+    );
+    assert_eq!(
+        unsafe { &*difference.value.cast::<RuntimeSet>() }
+            .values
+            .len(),
+        2
+    );
+    assert_eq!(
+        unsafe { &*symmetric.value.cast::<RuntimeSet>() }
+            .values
+            .len(),
+        3
+    );
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_set_is_subset(context, intersection.value, union.value, &mut answer)
+        },
+        STATUS_OK
+    );
+    assert_eq!(answer, 1);
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_set_is_superset(context, union.value, intersection.value, &mut answer)
+        },
+        STATUS_OK
+    );
+    assert_eq!(answer, 1);
+    let two = 2i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_set_contains(
+                context,
+                left.value,
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&two).cast(),
+                &mut answer,
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(answer, 1);
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_set_delete(
+                context,
+                left.value,
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&two).cast(),
+                &mut answer,
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_set_length(context, left.value, &mut length) },
+        STATUS_OK
+    );
+    assert_eq!(length, 2);
+    assert_eq!(
+        unsafe { __faber_rt_v1_set_is_empty(context, left.value, &mut answer) },
+        STATUS_OK
+    );
+    assert_eq!(answer, 0);
     unsafe { __faber_rt_v1_shutdown(context) };
 }
 

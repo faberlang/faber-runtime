@@ -1,5 +1,6 @@
 mod array;
 mod array_numeric;
+mod collection_map;
 mod convert;
 mod format;
 mod option;
@@ -16,6 +17,17 @@ use array::{
 #[cfg(test)]
 use array_numeric::{__faber_rt_v1_array_sort, __faber_rt_v1_array_sum};
 #[cfg(test)]
+use collection_map::{
+    __faber_rt_v1_map_contains, __faber_rt_v1_map_delete, __faber_rt_v1_map_is_empty,
+    __faber_rt_v1_map_keys, __faber_rt_v1_map_length, __faber_rt_v1_map_new,
+    __faber_rt_v1_map_option, __faber_rt_v1_map_put, __faber_rt_v1_map_values,
+    __faber_rt_v1_set_add, __faber_rt_v1_set_contains, __faber_rt_v1_set_delete,
+    __faber_rt_v1_set_difference, __faber_rt_v1_set_intersection, __faber_rt_v1_set_is_empty,
+    __faber_rt_v1_set_is_subset, __faber_rt_v1_set_is_superset, __faber_rt_v1_set_length,
+    __faber_rt_v1_set_new, __faber_rt_v1_set_symmetric_difference, __faber_rt_v1_set_union,
+};
+use collection_map::{RuntimeMap, RuntimeSet};
+#[cfg(test)]
 use convert::{__faber_rt_v1_valor_f64, __faber_rt_v1_valor_i1, __faber_rt_v1_valor_i64};
 #[cfg(not(test))]
 use faber::llvm_abi::FaberRtExitV1;
@@ -30,8 +42,8 @@ use faber::llvm_abi::{
     ARRAY_OPTION_FIRST, ARRAY_OPTION_INDEX, ARRAY_OPTION_LAST, ARRAY_OPTION_REMOVE_FIRST,
     ARRAY_OPTION_REMOVE_LAST, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE, ARRAY_RANGE_TAKE,
     ARRAY_RANGE_TAKE_LAST, VALUE_KIND_F16, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1,
-    VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR, VALUE_KIND_U16,
-    VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,
+    VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR, VALUE_KIND_TEXT,
+    VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,
 };
 use faber::Valor;
 use format::RuntimeText;
@@ -68,6 +80,8 @@ struct RuntimeContext {
     valors: Vec<Box<Valor>>,
     arrays: Vec<Box<RuntimeArray>>,
     options: Vec<Box<RuntimeOption>>,
+    maps: Vec<Box<RuntimeMap>>,
+    sets: Vec<Box<RuntimeSet>>,
 }
 
 /// Initialize one process-lifetime LLVM host context.
@@ -101,6 +115,8 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             valors: Vec::new(),
             arrays: Vec::new(),
             options: Vec::new(),
+            maps: Vec::new(),
+            sets: Vec::new(),
         });
         *out_context = Box::into_raw(context).cast();
         STATUS_OK

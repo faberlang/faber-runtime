@@ -1,0 +1,603 @@
+//! Arena-owned typed maps and sets for the LLVM host ABI.
+
+use super::array::{read_value, store_array, valid_kind, RuntimeValue};
+use super::option::store_option;
+use super::RuntimeContext;
+use faber::llvm_abi::{
+    FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, FaberRtValueKindV1,
+    STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_TEXT,
+};
+use std::ffi::c_void;
+use std::panic::{self, AssertUnwindSafe};
+
+pub(super) struct RuntimeMap {
+    pub(super) key_kind: FaberRtValueKindV1,
+    pub(super) value_kind: FaberRtValueKindV1,
+    pub(super) entries: Vec<(RuntimeValue, RuntimeValue)>,
+}
+
+pub(super) struct RuntimeSet {
+    pub(super) kind: FaberRtValueKindV1,
+    pub(super) values: Vec<RuntimeValue>,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_map_new(
+    context: *mut FaberRtContextV1,
+    key_kind: FaberRtValueKindV1,
+    value_kind: FaberRtValueKindV1,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        if !valid_kind(key_kind) || !valid_kind(value_kind) {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        }
+        store_map(runtime, key_kind, value_kind, Vec::new())
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_map_put(
+    context: *mut FaberRtContextV1,
+    map: *mut c_void,
+    key_kind: FaberRtValueKindV1,
+    key: *const c_void,
+    value_kind: FaberRtValueKindV1,
+    value: *const c_void,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(key) = (unsafe { read_value(key_kind, key) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(value) = (unsafe { read_value(value_kind, value) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(map) = find_map_mut(runtime, map) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if map.key_kind != key_kind || map.value_kind != value_kind {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        if let Some((_, existing)) = map
+            .entries
+            .iter_mut()
+            .find(|(candidate, _)| values_equal(key_kind, *candidate, key))
+        {
+            *existing = value;
+        } else {
+            map.entries.push((key, value));
+        }
+        STATUS_OK
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_map_option(
+    context: *mut FaberRtContextV1,
+    map: *mut c_void,
+    key_kind: FaberRtValueKindV1,
+    key: *const c_void,
+    value_kind: FaberRtValueKindV1,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let Some(key) = (unsafe { read_value(key_kind, key) }) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let value = {
+            let Some(map) = find_map(runtime, map) else {
+                return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+            };
+            if map.key_kind != key_kind || map.value_kind != value_kind {
+                return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+            }
+            map.entries
+                .iter()
+                .find(|(candidate, _)| values_equal(key_kind, *candidate, key))
+                .map(|(_, value)| *value)
+        };
+        store_option(runtime, value_kind, value)
+    })
+}
+
+macro_rules! map_query {
+    ($name:ident, $predicate:expr) => {
+        #[no_mangle]
+        pub unsafe extern "C" fn $name(
+            context: *mut FaberRtContextV1,
+            map: *mut c_void,
+            key_kind: FaberRtValueKindV1,
+            key: *const c_void,
+            output: *mut u8,
+        ) -> FaberRtStatusV1 {
+            ffi_status(|| {
+                let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+                    return STATUS_INVALID_ARGUMENT;
+                };
+                let Some(key) = (unsafe { read_value(key_kind, key) }) else {
+                    return STATUS_INVALID_ARGUMENT;
+                };
+                let Some(map) = find_map_mut(runtime, map) else {
+                    return STATUS_INVALID_ARGUMENT;
+                };
+                if map.key_kind != key_kind || output.is_null() {
+                    return STATUS_INVALID_ARGUMENT;
+                }
+                let value = ($predicate)(map, key);
+                unsafe { output.write(u8::from(value)) };
+                STATUS_OK
+            })
+        }
+    };
+}
+
+map_query!(__faber_rt_v1_map_contains, |map: &mut RuntimeMap, key| map
+    .entries
+    .iter()
+    .any(|(candidate, _)| values_equal(map.key_kind, *candidate, key)));
+map_query!(__faber_rt_v1_map_delete, |map: &mut RuntimeMap, key| {
+    let before = map.entries.len();
+    map.entries
+        .retain(|(candidate, _)| !values_equal(map.key_kind, *candidate, key));
+    map.entries.len() != before
+});
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_map_length(
+    context: *mut FaberRtContextV1,
+    map: *mut c_void,
+    output: *mut i64,
+) -> FaberRtStatusV1 {
+    map_size_query(context, map, output, |map| {
+        i64::try_from(map.entries.len()).ok()
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_map_is_empty(
+    context: *mut FaberRtContextV1,
+    map: *mut c_void,
+    output: *mut u8,
+) -> FaberRtStatusV1 {
+    map_size_query(context, map, output, |map| {
+        Some(u8::from(map.entries.is_empty()))
+    })
+}
+
+fn map_size_query<T: Copy>(
+    context: *mut FaberRtContextV1,
+    map: *mut c_void,
+    output: *mut T,
+    operation: impl FnOnce(&RuntimeMap) -> Option<T>,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(map) = find_map(runtime, map) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(value) = operation(map) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if output.is_null() {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        unsafe { output.write(value) };
+        STATUS_OK
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_map_keys(
+    context: *mut FaberRtContextV1,
+    map: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    map_values(context, map, true)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_map_values(
+    context: *mut FaberRtContextV1,
+    map: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    map_values(context, map, false)
+}
+
+fn map_values(context: *mut FaberRtContextV1, map: *mut c_void, keys: bool) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let (kind, values) = {
+            let Some(map) = find_map(runtime, map) else {
+                return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+            };
+            if keys {
+                (
+                    map.key_kind,
+                    map.entries.iter().map(|(key, _)| *key).collect(),
+                )
+            } else {
+                (
+                    map.value_kind,
+                    map.entries.iter().map(|(_, value)| *value).collect(),
+                )
+            }
+        };
+        store_array(runtime, kind, values)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_set_new(
+    context: *mut FaberRtContextV1,
+    kind: FaberRtValueKindV1,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        if !valid_kind(kind) {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        }
+        store_set(runtime, kind, Vec::new())
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_set_add(
+    context: *mut FaberRtContextV1,
+    set: *mut c_void,
+    kind: FaberRtValueKindV1,
+    value: *const c_void,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(value) = (unsafe { read_value(kind, value) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(set) = find_set_mut(runtime, set) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if set.kind != kind {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        if !contains(set.kind, &set.values, value) {
+            set.values.push(value)
+        }
+        STATUS_OK
+    })
+}
+
+macro_rules! set_query {
+    ($name:ident, $remove:expr) => {
+        #[no_mangle]
+        pub unsafe extern "C" fn $name(
+            context: *mut FaberRtContextV1,
+            set: *mut c_void,
+            kind: FaberRtValueKindV1,
+            value: *const c_void,
+            output: *mut u8,
+        ) -> FaberRtStatusV1 {
+            ffi_status(|| {
+                let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+                    return STATUS_INVALID_ARGUMENT;
+                };
+                let Some(value) = (unsafe { read_value(kind, value) }) else {
+                    return STATUS_INVALID_ARGUMENT;
+                };
+                let Some(set) = find_set_mut(runtime, set) else {
+                    return STATUS_INVALID_ARGUMENT;
+                };
+                if set.kind != kind || output.is_null() {
+                    return STATUS_INVALID_ARGUMENT;
+                }
+                let present = contains(set.kind, &set.values, value);
+                if $remove {
+                    set.values
+                        .retain(|candidate| !values_equal(set.kind, *candidate, value))
+                }
+                unsafe { output.write(u8::from(present)) };
+                STATUS_OK
+            })
+        }
+    };
+}
+
+set_query!(__faber_rt_v1_set_contains, false);
+set_query!(__faber_rt_v1_set_delete, true);
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_set_length(
+    context: *mut FaberRtContextV1,
+    set: *mut c_void,
+    output: *mut i64,
+) -> FaberRtStatusV1 {
+    set_size_query(context, set, output, |set| {
+        i64::try_from(set.values.len()).ok()
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_set_is_empty(
+    context: *mut FaberRtContextV1,
+    set: *mut c_void,
+    output: *mut u8,
+) -> FaberRtStatusV1 {
+    set_size_query(context, set, output, |set| {
+        Some(u8::from(set.values.is_empty()))
+    })
+}
+
+fn set_size_query<T: Copy>(
+    context: *mut FaberRtContextV1,
+    set: *mut c_void,
+    output: *mut T,
+    operation: impl FnOnce(&RuntimeSet) -> Option<T>,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(set) = find_set(runtime, set) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(value) = operation(set) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if output.is_null() {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        unsafe { output.write(value) };
+        STATUS_OK
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_set_union(
+    context: *mut FaberRtContextV1,
+    left: *mut c_void,
+    right: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    set_algebra(context, left, right, |kind, left, right| {
+        left.iter()
+            .chain(right)
+            .copied()
+            .fold(Vec::new(), |values, value| push_unique(kind, values, value))
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_set_intersection(
+    context: *mut FaberRtContextV1,
+    left: *mut c_void,
+    right: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    set_algebra(context, left, right, |kind, left, right| {
+        left.iter()
+            .filter(|value| contains(kind, right, **value))
+            .copied()
+            .collect()
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_set_difference(
+    context: *mut FaberRtContextV1,
+    left: *mut c_void,
+    right: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    set_algebra(context, left, right, |kind, left, right| {
+        left.iter()
+            .filter(|value| !contains(kind, right, **value))
+            .copied()
+            .collect()
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_set_symmetric_difference(
+    context: *mut FaberRtContextV1,
+    left: *mut c_void,
+    right: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    set_algebra(context, left, right, |kind, left, right| {
+        left.iter()
+            .filter(|value| !contains(kind, right, **value))
+            .chain(right.iter().filter(|value| !contains(kind, left, **value)))
+            .copied()
+            .collect()
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_set_is_subset(
+    context: *mut FaberRtContextV1,
+    left: *mut c_void,
+    right: *mut c_void,
+    output: *mut u8,
+) -> FaberRtStatusV1 {
+    set_relation(context, left, right, output, |kind, left, right| {
+        left.iter().all(|value| contains(kind, right, *value))
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_set_is_superset(
+    context: *mut FaberRtContextV1,
+    left: *mut c_void,
+    right: *mut c_void,
+    output: *mut u8,
+) -> FaberRtStatusV1 {
+    set_relation(context, left, right, output, |kind, left, right| {
+        right.iter().all(|value| contains(kind, left, *value))
+    })
+}
+
+fn set_algebra(
+    context: *mut FaberRtContextV1,
+    left: *mut c_void,
+    right: *mut c_void,
+    operation: impl FnOnce(FaberRtValueKindV1, &[RuntimeValue], &[RuntimeValue]) -> Vec<RuntimeValue>,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let Some(left) = find_set(runtime, left) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let Some(right) = find_set(runtime, right) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        if left.kind != right.kind {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        }
+        let kind = left.kind;
+        let values = operation(kind, &left.values, &right.values);
+        store_set(runtime, kind, values)
+    })
+}
+
+fn set_relation(
+    context: *mut FaberRtContextV1,
+    left: *mut c_void,
+    right: *mut c_void,
+    output: *mut u8,
+    relation: impl FnOnce(FaberRtValueKindV1, &[RuntimeValue], &[RuntimeValue]) -> bool,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(left) = find_set(runtime, left) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(right) = find_set(runtime, right) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if left.kind != right.kind || output.is_null() {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        unsafe { output.write(u8::from(relation(left.kind, &left.values, &right.values))) };
+        STATUS_OK
+    })
+}
+
+fn push_unique(
+    kind: FaberRtValueKindV1,
+    mut values: Vec<RuntimeValue>,
+    value: RuntimeValue,
+) -> Vec<RuntimeValue> {
+    if !contains(kind, &values, value) {
+        values.push(value)
+    }
+    values
+}
+
+fn contains(kind: FaberRtValueKindV1, values: &[RuntimeValue], value: RuntimeValue) -> bool {
+    values
+        .iter()
+        .any(|candidate| values_equal(kind, *candidate, value))
+}
+
+fn values_equal(kind: FaberRtValueKindV1, left: RuntimeValue, right: RuntimeValue) -> bool {
+    if kind != VALUE_KIND_TEXT {
+        return left == right;
+    }
+    let (RuntimeValue::Ptr(left), RuntimeValue::Ptr(right)) = (left, right) else {
+        return false;
+    };
+    text_bytes(left)
+        .zip(text_bytes(right))
+        .is_some_and(|(left, right)| left == right)
+}
+
+fn text_bytes<'a>(text: *mut c_void) -> Option<&'a [u8]> {
+    let text = unsafe { text.cast::<FaberRtSliceV1>().as_ref() }?;
+    let len = usize::try_from(text.len).ok()?;
+    if len > 0 && text.data.is_null() {
+        return None;
+    }
+    Some(if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(text.data, len) }
+    })
+}
+
+fn store_map(
+    runtime: &mut RuntimeContext,
+    key_kind: FaberRtValueKindV1,
+    value_kind: FaberRtValueKindV1,
+    entries: Vec<(RuntimeValue, RuntimeValue)>,
+) -> FaberRtPtrResultV1 {
+    let mut map = Box::new(RuntimeMap {
+        key_kind,
+        value_kind,
+        entries,
+    });
+    let handle = std::ptr::from_mut(map.as_mut()).cast::<c_void>();
+    runtime.maps.push(map);
+    FaberRtPtrResultV1::success(handle)
+}
+
+fn store_set(
+    runtime: &mut RuntimeContext,
+    kind: FaberRtValueKindV1,
+    values: Vec<RuntimeValue>,
+) -> FaberRtPtrResultV1 {
+    let mut set = Box::new(RuntimeSet { kind, values });
+    let handle = std::ptr::from_mut(set.as_mut()).cast::<c_void>();
+    runtime.sets.push(set);
+    FaberRtPtrResultV1::success(handle)
+}
+
+fn find_map(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeMap> {
+    runtime
+        .maps
+        .iter()
+        .find(|map| std::ptr::eq(map.as_ref(), handle.cast_const().cast()))
+        .map(Box::as_ref)
+}
+fn find_map_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&mut RuntimeMap> {
+    runtime
+        .maps
+        .iter_mut()
+        .find(|map| std::ptr::eq(map.as_ref(), handle.cast_const().cast()))
+        .map(Box::as_mut)
+}
+fn find_set(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeSet> {
+    runtime
+        .sets
+        .iter()
+        .find(|set| std::ptr::eq(set.as_ref(), handle.cast_const().cast()))
+        .map(Box::as_ref)
+}
+fn find_set_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&mut RuntimeSet> {
+    runtime
+        .sets
+        .iter_mut()
+        .find(|set| std::ptr::eq(set.as_ref(), handle.cast_const().cast()))
+        .map(Box::as_mut)
+}
+unsafe fn runtime_mut<'a>(context: *mut FaberRtContextV1) -> Option<&'a mut RuntimeContext> {
+    (!context.is_null()).then(|| unsafe { &mut *context.cast::<RuntimeContext>() })
+}
+fn ffi_status(operation: impl FnOnce() -> FaberRtStatusV1) -> FaberRtStatusV1 {
+    panic::catch_unwind(AssertUnwindSafe(operation)).unwrap_or(STATUS_PANIC)
+}
+fn ffi_ptr_result(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrResultV1 {
+    panic::catch_unwind(AssertUnwindSafe(operation))
+        .unwrap_or(FaberRtPtrResultV1::failure(STATUS_PANIC))
+}
