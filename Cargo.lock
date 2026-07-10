@@ -3,5 +3,12 @@
 version = 4
 
 [[package]]
+name = "faber-host-native"
+version = "0.1.0"
+dependencies = [
+ "faber-runtime",
+]
+
+[[package]]
 name = "faber-runtime"
 version = "0.1.0"

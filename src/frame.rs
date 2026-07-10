@@ -6,7 +6,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::task::{Context, Poll, Waker};
 use std::thread;
 use std::time::Duration;
@@ -185,6 +185,17 @@ pub trait HostDispatch: Send + Sync {
         responses: ResponseSender,
         cancellation: Cancellation,
     ) -> Result<(), DispatchError>;
+}
+
+static HOST_DISPATCH: OnceLock<Arc<dyn HostDispatch>> = OnceLock::new();
+
+pub fn install_host_dispatch(dispatch: Arc<dyn HostDispatch>) -> Result<(), DispatchError> {
+    HOST_DISPATCH.set(dispatch).map_err(|_| {
+        DispatchError::new(
+            "frame_host_dispatch_already_installed",
+            "host dispatch is already installed",
+        )
+    })
 }
 
 impl ResponseSender {
@@ -408,8 +419,9 @@ pub fn sermo_open(route: &str) -> Sermo {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn test_response_sender(route: &str) -> (Sermo, ResponseSender, Cancellation) {
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub fn test_response_sender(route: &str) -> (Sermo, ResponseSender, Cancellation) {
     let sermo = sermo_open(route);
     {
         let mut inner = lock_sermo(&sermo.inner);
@@ -679,7 +691,7 @@ fn ensure_runtime_response_started(shared: &Arc<SermoShared>, inner: &mut SermoI
         cancelled: Arc::new(AtomicBool::new(false)),
     };
     let responses = ResponseSender::new(Arc::clone(shared), cancellation.clone());
-    if let Err(error) = BuiltinRuntimeDispatch.start(request, responses.clone(), cancellation) {
+    if let Err(error) = start_host_dispatch(request, responses.clone(), cancellation) {
         responses.reject_start_error(error);
     }
 }
@@ -702,9 +714,23 @@ fn ensure_runtime_response_started_for_target(sermo: &mut Sermo, target: &'stati
         cancelled: Arc::new(AtomicBool::new(false)),
     };
     let responses = ResponseSender::new(Arc::clone(&sermo.inner), cancellation.clone());
-    if let Err(error) = BuiltinRuntimeDispatch.start(request, responses.clone(), cancellation) {
+    if let Err(error) = start_host_dispatch(request, responses.clone(), cancellation) {
         responses.reject_start_error(error);
     }
+}
+
+fn start_host_dispatch(
+    request: SermoRequest,
+    responses: ResponseSender,
+    cancellation: Cancellation,
+) -> Result<(), DispatchError> {
+    if request.route.starts_with("runtime:") {
+        return BuiltinRuntimeDispatch.start(request, responses, cancellation);
+    }
+    if let Some(dispatch) = HOST_DISPATCH.get() {
+        return dispatch.start(request, responses, cancellation);
+    }
+    BuiltinRuntimeDispatch.start(request, responses, cancellation)
 }
 
 fn sermo_request(inner: &SermoInner, target: Option<&'static str>) -> SermoRequest {
@@ -731,72 +757,45 @@ impl HostDispatch for BuiltinRuntimeDispatch {
     }
 }
 
-fn runtime_dispatch_builtin(request: SermoRequest, responses: ResponseSender) {
+pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> {
     match request.route.as_str() {
-        "runtime:echo" => {
-            let _ = responses.item(request.opener);
-            let _ = responses.done();
-        }
+        "runtime:echo" => item_done_frames(request.opener),
         "tempus:nunc" => {
             let now = epoch_nanos();
             let instans = Instans::from_nanos(now, InstansPraecisio::Nanosecunda);
-            let _ = responses.item(Valor::Instans(instans.to_rfc3339()));
-            let _ = responses.done();
+            item_done_frames(Valor::Instans(instans.to_rfc3339()))
         }
-        "tempus:monotonicum" => {
-            let _ = responses.item(Valor::Numerus(monotonic_nanos()));
-            let _ = responses.done();
-        }
-        "tempus:activum" => {
-            let _ = responses.item(Valor::Numerus(process_active_millis()));
-            let _ = responses.done();
-        }
+        "tempus:monotonicum" => item_done_frames(Valor::Numerus(monotonic_nanos())),
+        "tempus:activum" => item_done_frames(Valor::Numerus(process_active_millis())),
         "tempus:dormiet" | "tempus:expectet" => {
             let ms = valor_numerus(&request.opener).unwrap_or(0).max(0);
             thread::sleep(Duration::from_millis(ms as u64));
-            let _ = responses.done();
+            done_frames()
         }
         "solum:scribe" | "solum:scribet" | "solum:appone" | "solum:apponet" => {
-            send_response_frames(
-                responses,
-                solum_write_text_frames(&request.route, request.opener),
-            );
+            solum_write_text_frames(&request.route, request.opener)
         }
-        "solum:dele" | "solum:delet" => {
-            send_response_frames(responses, solum_delete_frames(request.opener))
-        }
-        "solum:parens" => send_response_frames(responses, solum_parent_frames(request.opener)),
-        "solum:partem" => send_response_frames(
-            responses,
-            solum_partem_frames(request.opener, request.target),
-        ),
-        "processus:exsequi" | "processus:exsequetur" => {
-            send_response_frames(responses, processus_exsequi_frames(request.opener));
-        }
-        "processus:captura" => {
-            send_response_frames(responses, processus_captura_frames(request.opener))
-        }
-        "solum:lege" => {
-            send_response_frames(responses, solum_lege_frames(request.opener, request.target))
-        }
-        "solum:mensura" => send_response_frames(
-            responses,
-            solum_mensura_frames(request.opener, request.target),
-        ),
-        "solum:inveni" => send_response_frames(
-            responses,
-            solum_inveni_frames(request.opener, request.target),
-        ),
+        "solum:dele" | "solum:delet" => solum_delete_frames(request.opener),
+        "solum:parens" => solum_parent_frames(request.opener),
+        "solum:partem" => solum_partem_frames(request.opener, request.target),
+        "processus:exsequi" | "processus:exsequetur" => processus_exsequi_frames(request.opener),
+        "processus:captura" => processus_captura_frames(request.opener),
+        "solum:lege" => solum_lege_frames(request.opener, request.target),
+        "solum:mensura" => solum_mensura_frames(request.opener, request.target),
+        "solum:inveni" => solum_inveni_frames(request.opener, request.target),
         "solum:exstat" | "solum:directoriumne" | "solum:regularene" | "solum:legibilene" => {
-            send_response_frames(
-                responses,
-                solum_path_bool_frames(&request.route, request.opener, request.target),
-            );
+            solum_path_bool_frames(&request.route, request.opener, request.target)
         }
-        _ => {
-            let _ = responses.error(format!("unsupported ad route `{}`", request.route));
-        }
+        _ => error_frames(format!("unsupported ad route `{}`", request.route)),
     }
+}
+
+pub fn dispatch_builtin_route(request: SermoRequest, responses: ResponseSender) {
+    send_response_frames(responses, builtin_route_frames(request));
+}
+
+fn runtime_dispatch_builtin(request: SermoRequest, responses: ResponseSender) {
+    dispatch_builtin_route(request, responses);
 }
 
 fn send_response_frames(responses: ResponseSender, frames: Vec<(FrameStatus, Valor)>) {

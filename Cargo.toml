@@ -6,6 +6,12 @@ description = "Faber language runtime types for generated Rust (crate name: fabe
 license = "MIT"
 readme = "README.md"
 
+[workspace]
+members = ["hosts/native"]
+
+[features]
+test-support = []
+
 [lib]
 name = "faber"
 path = "src/lib.rs"
