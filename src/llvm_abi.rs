@@ -128,6 +128,7 @@ pub const SYMBOL_TENSOR_MUL: &str = "__faber_rt_v1_tensor_mul";
 pub const SYMBOL_TENSOR_MATMUL: &str = "__faber_rt_v1_tensor_matmul";
 pub const SYMBOL_TENSOR_SUM: &str = "__faber_rt_v1_tensor_sum";
 pub const SYMBOL_TENSOR_MEAN: &str = "__faber_rt_v1_tensor_mean";
+pub const SYMBOL_TENSOR_CONVERT: &str = "__faber_rt_v1_tensor_convert";
 pub const SYMBOL_PROGRAM_ENTRY: &str = "__faber_program_entry_v1";
 
 pub type FaberRtValueKindV1 = u32;

@@ -1881,3 +1881,60 @@ fn tensor_arithmetic_family_adds_matmuls_and_reduces() {
 
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn tensor_convert_widens_and_narrows_element_kinds() {
+    let mut context = std::ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let shape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    let dim = 2_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_push(
+                context,
+                shape.value,
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&dim).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    let flat = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for value in [1_i64, 2_i64] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    flat.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&value).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let ints = unsafe {
+        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_I64, flat.value, shape.value)
+    };
+    assert_eq!(ints.status, STATUS_OK);
+    let floats = unsafe {
+        __faber_rt_v1_tensor_convert(context, ints.value, VALUE_KIND_I64, VALUE_KIND_F64)
+    };
+    assert_eq!(floats.status, STATUS_OK);
+    let back = unsafe {
+        __faber_rt_v1_tensor_convert(context, floats.value, VALUE_KIND_F64, VALUE_KIND_I64)
+    };
+    assert_eq!(back.status, STATUS_OK);
+    let flat2 = unsafe { __faber_rt_v1_tensor_flatten(context, back.value) };
+    assert_eq!(flat2.status, STATUS_OK);
+    let mut length = 0_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_length(context, flat2.value, &mut length) },
+        STATUS_OK
+    );
+    assert_eq!(length, 2);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
