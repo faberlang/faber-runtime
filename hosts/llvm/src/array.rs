@@ -7,8 +7,9 @@ use faber::llvm_abi::{
     FaberRtStatusV1, FaberRtValueKindV1, ARRAY_OPTION_FIRST, ARRAY_OPTION_INDEX, ARRAY_OPTION_LAST,
     ARRAY_OPTION_REMOVE_FIRST, ARRAY_OPTION_REMOVE_LAST, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE,
     ARRAY_RANGE_TAKE, ARRAY_RANGE_TAKE_LAST, STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC,
-    VALUE_KIND_F16, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I16, VALUE_KIND_I32,
-    VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR, VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32,
+    VALUE_KIND_ASCII, VALUE_KIND_F16, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1,
+    VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_INSTANS,
+    VALUE_KIND_OPTION_I64, VALUE_KIND_PTR, VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32,
     VALUE_KIND_U64, VALUE_KIND_U8, VALUE_KIND_VALOR,
 };
 use std::ffi::c_void;
@@ -372,6 +373,9 @@ pub(super) fn valid_kind(kind: FaberRtValueKindV1) -> bool {
             | VALUE_KIND_PTR
             | VALUE_KIND_TEXT
             | VALUE_KIND_VALOR
+            | VALUE_KIND_OPTION_I64
+            | VALUE_KIND_INSTANS
+            | VALUE_KIND_ASCII
     )
 }
 
@@ -419,9 +423,12 @@ pub(super) unsafe fn read_value(
         VALUE_KIND_F16 => RuntimeValue::F16(unsafe { read_typed(value) }?),
         VALUE_KIND_F32 => RuntimeValue::F32(unsafe { read_typed(value) }?),
         VALUE_KIND_F64 => RuntimeValue::F64(unsafe { read_typed(value) }?),
-        VALUE_KIND_PTR | VALUE_KIND_TEXT | VALUE_KIND_VALOR => {
-            RuntimeValue::Ptr(unsafe { read_typed(value) }?)
-        }
+        VALUE_KIND_PTR
+        | VALUE_KIND_TEXT
+        | VALUE_KIND_VALOR
+        | VALUE_KIND_OPTION_I64
+        | VALUE_KIND_INSTANS
+        | VALUE_KIND_ASCII => RuntimeValue::Ptr(unsafe { read_typed(value) }?),
         _ => return None,
     })
 }

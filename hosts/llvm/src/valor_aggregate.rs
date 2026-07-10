@@ -215,7 +215,7 @@ pub unsafe extern "C" fn __faber_rt_v1_valor_get_map(
     })
 }
 
-fn runtime_value_to_valor(
+pub(super) fn runtime_value_to_valor(
     runtime: &RuntimeContext,
     kind: FaberRtValueKindV1,
     value: RuntimeValue,
@@ -242,7 +242,7 @@ fn runtime_value_to_valor(
     })
 }
 
-fn valor_to_runtime_value(
+pub(super) fn valor_to_runtime_value(
     runtime: &mut RuntimeContext,
     valor: &Valor,
     kind: FaberRtValueKindV1,

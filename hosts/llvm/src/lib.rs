@@ -6,6 +6,7 @@ mod format;
 mod option;
 mod text;
 mod valor_aggregate;
+mod valor_genus;
 
 use array::RuntimeArray;
 #[cfg(test)]
@@ -47,9 +48,9 @@ use faber::llvm_abi::{
 use faber::llvm_abi::{
     ARRAY_OPTION_FIRST, ARRAY_OPTION_INDEX, ARRAY_OPTION_LAST, ARRAY_OPTION_REMOVE_FIRST,
     ARRAY_OPTION_REMOVE_LAST, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE, ARRAY_RANGE_TAKE,
-    ARRAY_RANGE_TAKE_LAST, VALUE_KIND_F16, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1,
-    VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR, VALUE_KIND_TEXT,
-    VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,
+    ARRAY_RANGE_TAKE_LAST, VALUE_KIND_ASCII, VALUE_KIND_F16, VALUE_KIND_F32, VALUE_KIND_F64,
+    VALUE_KIND_I1, VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR,
+    VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,
 };
 use faber::Valor;
 use format::RuntimeText;
@@ -85,6 +86,8 @@ use valor_aggregate::{
     __faber_rt_v1_valor_get_map, __faber_rt_v1_valor_get_octeti, __faber_rt_v1_valor_map,
     __faber_rt_v1_valor_octeti,
 };
+#[cfg(test)]
+use valor_genus::{__faber_rt_v1_valor_genus, __faber_rt_v1_valor_get_genus};
 
 struct RuntimeContext {
     _arguments: Vec<Vec<u8>>,
@@ -92,6 +95,8 @@ struct RuntimeContext {
     valors: Vec<Box<Valor>>,
     ascii: Vec<Box<[u8]>>,
     octeti: Vec<Box<[u8]>>,
+    numeric_boxes: Vec<Box<i64>>,
+    instants: Vec<Box<faber::Instans>>,
     arrays: Vec<Box<RuntimeArray>>,
     options: Vec<Box<RuntimeOption>>,
     maps: Vec<Box<RuntimeMap>>,
@@ -129,6 +134,8 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             valors: Vec::new(),
             ascii: Vec::new(),
             octeti: Vec::new(),
+            numeric_boxes: Vec::new(),
+            instants: Vec::new(),
             arrays: Vec::new(),
             options: Vec::new(),
             maps: Vec::new(),

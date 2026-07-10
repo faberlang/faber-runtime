@@ -791,6 +791,101 @@ fn aggregate_valor_conversion_round_trips_octeti_array_and_map() {
 }
 
 #[test]
+fn genus_valor_field_table_boxes_and_extracts_atomically() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let name_text = FaberRtSliceV1::from_static(b"name");
+    let age_text = FaberRtSliceV1::from_static(b"age");
+    let code_text = FaberRtSliceV1::from_static(b"code");
+    let names = [
+        ptr::from_ref(&name_text),
+        ptr::from_ref(&age_text),
+        ptr::from_ref(&code_text),
+    ];
+    let kinds = [VALUE_KIND_TEXT, VALUE_KIND_I64, VALUE_KIND_ASCII];
+    let name_value = FaberRtSliceV1::from_static(b"Marcus");
+    let name_handle = ptr::from_ref(&name_value).cast_mut().cast::<c_void>();
+    let age = 42_i64;
+    let code = c"SPQR".as_ptr().cast_mut().cast::<c_void>();
+    let values = [
+        ptr::from_ref(&name_handle).cast(),
+        ptr::from_ref(&age).cast(),
+        ptr::from_ref(&code).cast(),
+    ];
+    let boxed = unsafe {
+        __faber_rt_v1_valor_genus(context, 3, names.as_ptr(), kinds.as_ptr(), values.as_ptr())
+    };
+    let mut expected = std::collections::BTreeMap::new();
+    expected.insert("age".to_owned(), Valor::Numerus(42));
+    expected.insert("name".to_owned(), Valor::Textus("Marcus".to_owned()));
+    expected.insert("code".to_owned(), Valor::Textus("SPQR".to_owned()));
+    assert_eq!(
+        unsafe { &*boxed.value.cast::<Valor>() },
+        &Valor::Tabula(expected)
+    );
+
+    let mut extracted_name: *mut c_void = ptr::null_mut();
+    let mut extracted_age = 0_i64;
+    let mut extracted_code: *mut c_void = ptr::null_mut();
+    let outputs = [
+        ptr::from_mut(&mut extracted_name).cast(),
+        ptr::from_mut(&mut extracted_age).cast(),
+        ptr::from_mut(&mut extracted_code).cast(),
+    ];
+    let defaultable = [0_u8, 0, 0];
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_valor_get_genus(
+                context,
+                boxed.value.cast(),
+                3,
+                names.as_ptr(),
+                kinds.as_ptr(),
+                defaultable.as_ptr(),
+                outputs.as_ptr(),
+            )
+        },
+        STATUS_OK
+    );
+    let extracted_name = unsafe { &*extracted_name.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(extracted_name.data, extracted_name.len as usize) },
+        b"Marcus"
+    );
+    assert_eq!(extracted_age, 42);
+    assert_eq!(
+        unsafe { CStr::from_ptr(extracted_code.cast()) }.to_bytes(),
+        b"SPQR"
+    );
+
+    let missing_name = FaberRtSliceV1::from_static(b"missing");
+    let missing_names = [ptr::from_ref(&missing_name)];
+    let missing_kinds = [VALUE_KIND_I64];
+    let missing_defaultable = [1_u8];
+    let mut retained = 7_i64;
+    let missing_outputs = [ptr::from_mut(&mut retained).cast()];
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_valor_get_genus(
+                context,
+                boxed.value.cast(),
+                1,
+                missing_names.as_ptr(),
+                missing_kinds.as_ptr(),
+                missing_defaultable.as_ptr(),
+                missing_outputs.as_ptr(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(retained, 7);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
 fn array_family_round_trips_every_value_kind_and_spreads() {
     let mut context = ptr::null_mut();
     assert_eq!(
