@@ -33,20 +33,48 @@ fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
     assert_eq!(status, STATUS_OK);
 
     assert_eq!(
-        unsafe { __faber_runtime_diagnostic_nota_1_i64(context, 42) },
+        unsafe { __faber_rt_v1_diagnostic_nota_i64(context, 42) },
         STATUS_OK
     );
     assert_eq!(
-        unsafe { __faber_runtime_diagnostic_nota_1_i1(context, 1) },
+        unsafe { __faber_rt_v1_diagnostic_nota_i1(context, 1) },
         STATUS_OK
     );
     assert_eq!(
-        unsafe { __faber_runtime_diagnostic_nota_1_ptr(context, ptr::null()) },
+        unsafe { __faber_rt_v1_diagnostic_nota_f32(context, 1.25) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_f64(context, 2.5) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_i8(context, -8) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_i32(context, -32) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_ptr(context, ptr::null()) },
         STATUS_UNSUPPORTED
     );
     assert_eq!(
-        unsafe { __faber_runtime_diagnostic_mone_1_ptr(context, ptr::null()) },
+        unsafe { __faber_rt_v1_diagnostic_mone_ptr(context, ptr::null()) },
         STATUS_UNSUPPORTED
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_mone_i64(context, -64) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_vide_ptr(context, ptr::null()) },
+        STATUS_UNSUPPORTED
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_vide_i64(context, 64) },
+        STATUS_OK
     );
     unsafe { __faber_rt_v1_shutdown(context) };
 }

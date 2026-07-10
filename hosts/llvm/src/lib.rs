@@ -211,7 +211,7 @@ fn unsupported_opaque_diagnostic(context: *mut FaberRtContextV1) -> FaberRtStatu
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_ptr(
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_ptr(
     context: *mut FaberRtContextV1,
     _value: *const u8,
 ) -> FaberRtStatusV1 {
@@ -219,7 +219,7 @@ pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_ptr(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_i64(
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i64(
     context: *mut FaberRtContextV1,
     value: i64,
 ) -> FaberRtStatusV1 {
@@ -227,7 +227,7 @@ pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_i64(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_i1(
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i1(
     context: *mut FaberRtContextV1,
     value: u8,
 ) -> FaberRtStatusV1 {
@@ -235,7 +235,7 @@ pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_i1(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_f32(
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_f32(
     context: *mut FaberRtContextV1,
     value: f32,
 ) -> FaberRtStatusV1 {
@@ -243,7 +243,7 @@ pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_f32(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_f64(
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_f64(
     context: *mut FaberRtContextV1,
     value: f64,
 ) -> FaberRtStatusV1 {
@@ -251,7 +251,7 @@ pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_f64(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_i8(
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i8(
     context: *mut FaberRtContextV1,
     value: i8,
 ) -> FaberRtStatusV1 {
@@ -259,7 +259,7 @@ pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_i8(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_i32(
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i32(
     context: *mut FaberRtContextV1,
     value: i32,
 ) -> FaberRtStatusV1 {
@@ -267,7 +267,7 @@ pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_i32(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn __faber_runtime_diagnostic_mone_1_ptr(
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_ptr(
     context: *mut FaberRtContextV1,
     _value: *const u8,
 ) -> FaberRtStatusV1 {
@@ -275,7 +275,7 @@ pub unsafe extern "C" fn __faber_runtime_diagnostic_mone_1_ptr(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn __faber_runtime_diagnostic_mone_1_i64(
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_i64(
     context: *mut FaberRtContextV1,
     value: i64,
 ) -> FaberRtStatusV1 {
@@ -283,7 +283,7 @@ pub unsafe extern "C" fn __faber_runtime_diagnostic_mone_1_i64(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn __faber_runtime_diagnostic_vide_1_ptr(
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_ptr(
     context: *mut FaberRtContextV1,
     _value: *const u8,
 ) -> FaberRtStatusV1 {
@@ -291,7 +291,7 @@ pub unsafe extern "C" fn __faber_runtime_diagnostic_vide_1_ptr(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn __faber_runtime_diagnostic_vide_1_i64(
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_i64(
     context: *mut FaberRtContextV1,
     value: i64,
 ) -> FaberRtStatusV1 {

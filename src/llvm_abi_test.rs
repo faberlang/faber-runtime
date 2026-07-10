@@ -26,7 +26,16 @@ fn llvm_abi_v1_diagnostic_family_is_complete_and_unique() {
     assert_eq!(symbols.len(), DIAGNOSTIC_SYMBOLS_V1.len());
     for (kind, carrier, symbol) in DIAGNOSTIC_SYMBOLS_V1 {
         assert_eq!(diagnostic_symbol_v1(kind, carrier), Some(*symbol));
+        assert!(symbol.starts_with("__faber_rt_v1_"), "{symbol}");
     }
+    assert_eq!(
+        diagnostic_symbol_v1("nota", "float"),
+        Some("__faber_rt_v1_diagnostic_nota_f32")
+    );
+    assert_eq!(
+        diagnostic_symbol_v1("nota", "double"),
+        Some("__faber_rt_v1_diagnostic_nota_f64")
+    );
     assert_ne!(STATUS_UNSUPPORTED, STATUS_OK);
 }
 
