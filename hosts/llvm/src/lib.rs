@@ -37,8 +37,9 @@ use format::RuntimeText;
 #[cfg(test)]
 use format::{
     __faber_rt_v1_format_f64, __faber_rt_v1_format_i64, __faber_rt_v1_format_i64_i64,
-    __faber_rt_v1_format_i64_i64_i64, __faber_rt_v1_text_f64, __faber_rt_v1_text_i1,
-    __faber_rt_v1_text_i64,
+    __faber_rt_v1_format_i64_i64_i64, __faber_rt_v1_format_text, __faber_rt_v1_format_text_i64,
+    __faber_rt_v1_format_text_text, __faber_rt_v1_text_f64, __faber_rt_v1_text_i1,
+    __faber_rt_v1_text_i64, __faber_rt_v1_text_length,
 };
 use option::RuntimeOption;
 #[cfg(test)]

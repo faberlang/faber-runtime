@@ -2,7 +2,8 @@
 
 use super::RuntimeContext;
 use faber::llvm_abi::{
-    FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, STATUS_INVALID_ARGUMENT, STATUS_PANIC,
+    FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT,
+    STATUS_OK, STATUS_PANIC,
 };
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
@@ -55,6 +56,99 @@ pub unsafe extern "C" fn __faber_rt_v1_format_f64(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_format_text(
+    context: *mut FaberRtContextV1,
+    template: FaberRtSliceV1,
+    text: *const FaberRtSliceV1,
+) -> FaberRtPtrResultV1 {
+    format_text_values(context, template, &[text])
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_format_text_text(
+    context: *mut FaberRtContextV1,
+    template: FaberRtSliceV1,
+    first: *const FaberRtSliceV1,
+    second: *const FaberRtSliceV1,
+) -> FaberRtPtrResultV1 {
+    format_text_values(context, template, &[first, second])
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_format_text_i64(
+    context: *mut FaberRtContextV1,
+    template: FaberRtSliceV1,
+    text: *const FaberRtSliceV1,
+    value: i64,
+) -> FaberRtPtrResultV1 {
+    let Some(text) = text_value(text) else {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    };
+    format_scalar_values(context, template, &[text, value.to_string()])
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_format_i64_text(
+    context: *mut FaberRtContextV1,
+    template: FaberRtSliceV1,
+    value: i64,
+    text: *const FaberRtSliceV1,
+) -> FaberRtPtrResultV1 {
+    let Some(text) = text_value(text) else {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    };
+    format_scalar_values(context, template, &[value.to_string(), text])
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_format_text_text_text(
+    context: *mut FaberRtContextV1,
+    template: FaberRtSliceV1,
+    first: *const FaberRtSliceV1,
+    second: *const FaberRtSliceV1,
+    third: *const FaberRtSliceV1,
+) -> FaberRtPtrResultV1 {
+    format_text_values(context, template, &[first, second, third])
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_format_text_i64_i1(
+    context: *mut FaberRtContextV1,
+    template: FaberRtSliceV1,
+    text: *const FaberRtSliceV1,
+    integer: i64,
+    boolean: u8,
+) -> FaberRtPtrResultV1 {
+    let Some(text) = text_value(text) else {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    };
+    format_scalar_values(
+        context,
+        template,
+        &[text, integer.to_string(), (boolean != 0).to_string()],
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_text_length(
+    context: *mut FaberRtContextV1,
+    text: *const FaberRtSliceV1,
+    out_length: *mut i64,
+) -> FaberRtStatusV1 {
+    if context.is_null() || out_length.is_null() {
+        return STATUS_INVALID_ARGUMENT;
+    }
+    let Some(value) = text_value(text) else {
+        return STATUS_INVALID_ARGUMENT;
+    };
+    let Ok(length) = i64::try_from(value.chars().count()) else {
+        return STATUS_INVALID_ARGUMENT;
+    };
+    *out_length = length;
+    STATUS_OK
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_text_i64(
     context: *mut FaberRtContextV1,
     value: i64,
@@ -102,12 +196,51 @@ fn format_scalar_values(
     })
 }
 
+fn format_text_values(
+    context: *mut FaberRtContextV1,
+    template: FaberRtSliceV1,
+    values: &[*const FaberRtSliceV1],
+) -> FaberRtPtrResultV1 {
+    let Some(values) = values
+        .iter()
+        .map(|value| text_value(*value))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    };
+    format_scalar_values(context, template, &values)
+}
+
+fn text_value(text: *const FaberRtSliceV1) -> Option<String> {
+    if text.is_null() {
+        return None;
+    }
+    let text = unsafe { &*text };
+    let len = usize::try_from(text.len).ok()?;
+    if len > 0 && text.data.is_null() {
+        return None;
+    }
+    let bytes = if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(text.data, len) }
+    };
+    std::str::from_utf8(bytes).ok().map(str::to_owned)
+}
+
 fn store_text(context: *mut FaberRtContextV1, value: String) -> FaberRtPtrResultV1 {
     if context.is_null() {
         return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
     }
     let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
-    let mut text = Box::new(RuntimeText { _value: value });
+    let slice = FaberRtSliceV1 {
+        data: value.as_ptr(),
+        len: value.len() as u64,
+    };
+    let mut text = Box::new(RuntimeText {
+        slice,
+        _value: value,
+    });
     let handle = std::ptr::from_mut(text.as_mut()).cast::<c_void>();
     runtime.texts.push(text);
     FaberRtPtrResultV1::success(handle)
@@ -147,6 +280,8 @@ fn render_template(template: &str, args: &[String]) -> String {
     }
     output
 }
+#[repr(C)]
 pub(super) struct RuntimeText {
+    pub(super) slice: FaberRtSliceV1,
     pub(super) _value: String,
 }

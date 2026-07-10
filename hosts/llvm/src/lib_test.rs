@@ -136,11 +136,42 @@ fn scalar_format_family_renders_and_owns_text() {
     };
     let invalid =
         unsafe { __faber_rt_v1_format_i64(context, FaberRtSliceV1::from_static(&[0xff]), 42) };
+    let paired = unsafe {
+        __faber_rt_v1_format_text_text(
+            context,
+            FaberRtSliceV1::from_static("§ + §".as_bytes()),
+            one.value.cast(),
+            float.value.cast(),
+        )
+    };
+    let single = unsafe {
+        __faber_rt_v1_format_text(
+            context,
+            FaberRtSliceV1::from_static("[§]".as_bytes()),
+            one.value.cast(),
+        )
+    };
+    let mixed = unsafe {
+        __faber_rt_v1_format_text_i64(
+            context,
+            FaberRtSliceV1::from_static("§:§".as_bytes()),
+            one.value.cast(),
+            9,
+        )
+    };
+    let mut length = -1;
+    let length_status =
+        unsafe { __faber_rt_v1_text_length(context, paired.value.cast(), &mut length) };
 
     assert_eq!(one.status, STATUS_OK);
     assert_eq!(reordered.status, STATUS_OK);
     assert_eq!(float.status, STATUS_OK);
     assert_eq!(three.status, STATUS_OK);
+    assert_eq!(paired.status, STATUS_OK);
+    assert_eq!(single.status, STATUS_OK);
+    assert_eq!(mixed.status, STATUS_OK);
+    assert_eq!(length_status, STATUS_OK);
+    assert_eq!(length, 12);
     assert_eq!(
         invalid,
         FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT)
@@ -153,6 +184,18 @@ fn scalar_format_family_renders_and_owns_text() {
     assert_eq!(
         unsafe { &*float.value.cast::<RuntimeText>() }._value,
         "x=1.5"
+    );
+    assert_eq!(
+        unsafe { &*paired.value.cast::<RuntimeText>() }._value,
+        "n=42 + x=1.5"
+    );
+    assert_eq!(
+        unsafe { &*single.value.cast::<RuntimeText>() }._value,
+        "[n=42]"
+    );
+    assert_eq!(
+        unsafe { &*mixed.value.cast::<RuntimeText>() }._value,
+        "n=42:9"
     );
     assert_eq!(
         unsafe { &*three.value.cast::<RuntimeText>() }._value,
