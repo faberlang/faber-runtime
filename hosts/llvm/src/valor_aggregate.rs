@@ -48,18 +48,18 @@ pub unsafe extern "C" fn __faber_rt_v1_octeti_new(
     })
 }
 
-fn store_octeti(runtime: &mut RuntimeContext, bytes: Vec<u8>) -> FaberRtPtrResultV1 {
-    let bytes = bytes.into_boxed_slice();
-    let handle = bytes.as_ptr().cast_mut().cast::<c_void>();
+pub(super) fn store_octeti(runtime: &mut RuntimeContext, bytes: Vec<u8>) -> FaberRtPtrResultV1 {
+    let mut bytes = Box::new(bytes);
+    let handle = std::ptr::from_mut(bytes.as_mut()).cast::<c_void>();
     runtime.octeti.push(bytes);
     FaberRtPtrResultV1::success(handle)
 }
 
-fn find_octeti(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&[u8]> {
+pub(super) fn find_octeti(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&Vec<u8>> {
     runtime
         .octeti
         .iter()
-        .find(|bytes| bytes.as_ptr().cast::<c_void>() == handle.cast_const())
+        .find(|bytes| std::ptr::eq(bytes.as_ref(), handle.cast()))
         .map(AsRef::as_ref)
 }
 
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn __faber_rt_v1_valor_octeti(
         let Some(runtime) = context_mut(context) else {
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
-        let Some(bytes) = find_octeti(runtime, octeti).map(<[u8]>::to_vec) else {
+        let Some(bytes) = find_octeti(runtime, octeti).cloned() else {
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
         store_valor(context, Valor::Octeti(bytes))

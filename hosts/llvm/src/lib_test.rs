@@ -710,7 +710,7 @@ fn aggregate_valor_conversion_round_trips_octeti_array_and_map() {
     let octeti_again =
         unsafe { __faber_rt_v1_valor_get_octeti(context, octeti_valor.value.cast()) };
     assert_eq!(
-        unsafe { std::slice::from_raw_parts(octeti_again.value.cast::<u8>(), 2) },
+        unsafe { &*octeti_again.value.cast::<Vec<u8>>() },
         &[0xde, 0xad]
     );
 
@@ -787,6 +787,55 @@ fn aggregate_valor_conversion_round_trips_octeti_array_and_map() {
     let map_again = unsafe { &*map_again.value.cast::<RuntimeMap>() };
     assert_eq!(map_again.entries.len(), 1);
 
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn octeti_family_mutates_indexes_and_converts_text() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let text = FaberRtSliceV1::from_static(b"hi");
+    let bytes = unsafe { __faber_rt_v1_octeti_from_text(context, &text) };
+    assert_eq!(
+        unsafe { __faber_rt_v1_octeti_append(context, bytes.value, b'!') },
+        STATUS_OK
+    );
+    let mut length = 0_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_octeti_length(context, bytes.value, &mut length) },
+        STATUS_OK
+    );
+    assert_eq!(length, 3);
+    let last = unsafe { __faber_rt_v1_octeti_get(context, bytes.value, 2) };
+    let mut value = 0_u8;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get(
+                context,
+                last.value,
+                VALUE_KIND_U8,
+                ptr::from_mut(&mut value).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(value, b'!');
+    let decoded = unsafe { __faber_rt_v1_octeti_get_text(context, bytes.value) };
+    let decoded = unsafe { &*decoded.value.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(decoded.data, decoded.len as usize) },
+        b"hi!"
+    );
+
+    let ascii = unsafe { __faber_rt_v1_octeti_from_ascii(context, c"SPQR".as_ptr()) };
+    let decoded = unsafe { __faber_rt_v1_octeti_get_ascii(context, ascii.value) };
+    assert_eq!(
+        unsafe { CStr::from_ptr(decoded.value.cast()) }.to_bytes(),
+        b"SPQR"
+    );
     unsafe { __faber_rt_v1_shutdown(context) };
 }
 

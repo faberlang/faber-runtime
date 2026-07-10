@@ -3,6 +3,7 @@ mod array_numeric;
 mod collection_map;
 mod convert;
 mod format;
+mod octeti;
 mod option;
 mod text;
 mod valor_aggregate;
@@ -61,6 +62,12 @@ use format::{
     __faber_rt_v1_format_text_text, __faber_rt_v1_text_f64, __faber_rt_v1_text_i1,
     __faber_rt_v1_text_i64, __faber_rt_v1_text_length,
 };
+#[cfg(test)]
+use octeti::{
+    __faber_rt_v1_octeti_append, __faber_rt_v1_octeti_from_ascii, __faber_rt_v1_octeti_from_text,
+    __faber_rt_v1_octeti_get, __faber_rt_v1_octeti_get_ascii, __faber_rt_v1_octeti_get_text,
+    __faber_rt_v1_octeti_length,
+};
 use option::RuntimeOption;
 #[cfg(test)]
 use option::{
@@ -94,7 +101,7 @@ struct RuntimeContext {
     texts: Vec<Box<RuntimeText>>,
     valors: Vec<Box<Valor>>,
     ascii: Vec<Box<[u8]>>,
-    octeti: Vec<Box<[u8]>>,
+    octeti: Vec<Box<Vec<u8>>>,
     numeric_boxes: Vec<Box<i64>>,
     instants: Vec<Box<faber::Instans>>,
     arrays: Vec<Box<RuntimeArray>>,
