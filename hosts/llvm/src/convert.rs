@@ -70,7 +70,7 @@ pub unsafe extern "C" fn __faber_rt_v1_valor_nihil(
     store_valor(context, Valor::Nihil)
 }
 
-fn with_valor<T>(
+pub(super) fn with_valor<T>(
     context: *mut FaberRtContextV1,
     value: *const Valor,
     operation: impl FnOnce(&Valor) -> Option<T>,
@@ -190,7 +190,7 @@ pub unsafe extern "C" fn __faber_rt_v1_valor_get_nihil(
     .unwrap_or(STATUS_PANIC)
 }
 
-fn store_valor(context: *mut FaberRtContextV1, value: Valor) -> FaberRtPtrResultV1 {
+pub(super) fn store_valor(context: *mut FaberRtContextV1, value: Valor) -> FaberRtPtrResultV1 {
     panic::catch_unwind(AssertUnwindSafe(|| {
         if context.is_null() {
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);

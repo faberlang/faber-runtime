@@ -5,6 +5,7 @@ mod convert;
 mod format;
 mod option;
 mod text;
+mod valor_aggregate;
 
 use array::RuntimeArray;
 #[cfg(test)]
@@ -78,12 +79,19 @@ use text::{
     __faber_rt_v1_text_starts_with, __faber_rt_v1_text_trim, __faber_rt_v1_text_truthy,
     __faber_rt_v1_text_uppercase,
 };
+#[cfg(test)]
+use valor_aggregate::{
+    __faber_rt_v1_octeti_new, __faber_rt_v1_valor_array, __faber_rt_v1_valor_get_array,
+    __faber_rt_v1_valor_get_map, __faber_rt_v1_valor_get_octeti, __faber_rt_v1_valor_map,
+    __faber_rt_v1_valor_octeti,
+};
 
 struct RuntimeContext {
     _arguments: Vec<Vec<u8>>,
     texts: Vec<Box<RuntimeText>>,
     valors: Vec<Box<Valor>>,
     ascii: Vec<Box<[u8]>>,
+    octeti: Vec<Box<[u8]>>,
     arrays: Vec<Box<RuntimeArray>>,
     options: Vec<Box<RuntimeOption>>,
     maps: Vec<Box<RuntimeMap>>,
@@ -120,6 +128,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             texts: Vec::new(),
             valors: Vec::new(),
             ascii: Vec::new(),
+            octeti: Vec::new(),
             arrays: Vec::new(),
             options: Vec::new(),
             maps: Vec::new(),

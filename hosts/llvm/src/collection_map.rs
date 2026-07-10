@@ -536,7 +536,7 @@ fn text_bytes<'a>(text: *mut c_void) -> Option<&'a [u8]> {
     })
 }
 
-fn store_map(
+pub(super) fn store_map(
     runtime: &mut RuntimeContext,
     key_kind: FaberRtValueKindV1,
     value_kind: FaberRtValueKindV1,
@@ -563,7 +563,7 @@ fn store_set(
     FaberRtPtrResultV1::success(handle)
 }
 
-fn find_map(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeMap> {
+pub(super) fn find_map(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeMap> {
     runtime
         .maps
         .iter()

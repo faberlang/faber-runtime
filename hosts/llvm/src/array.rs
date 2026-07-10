@@ -9,7 +9,7 @@ use faber::llvm_abi::{
     ARRAY_RANGE_TAKE, ARRAY_RANGE_TAKE_LAST, STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC,
     VALUE_KIND_F16, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I16, VALUE_KIND_I32,
     VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR, VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32,
-    VALUE_KIND_U64, VALUE_KIND_U8,
+    VALUE_KIND_U64, VALUE_KIND_U8, VALUE_KIND_VALOR,
 };
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
@@ -371,6 +371,7 @@ pub(super) fn valid_kind(kind: FaberRtValueKindV1) -> bool {
             | VALUE_KIND_F64
             | VALUE_KIND_PTR
             | VALUE_KIND_TEXT
+            | VALUE_KIND_VALOR
     )
 }
 
@@ -378,7 +379,7 @@ unsafe fn runtime_mut<'a>(context: *mut FaberRtContextV1) -> Option<&'a mut Runt
     (!context.is_null()).then(|| unsafe { &mut *context.cast::<RuntimeContext>() })
 }
 
-fn find_array(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeArray> {
+pub(super) fn find_array(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeArray> {
     runtime
         .arrays
         .iter()
@@ -418,7 +419,9 @@ pub(super) unsafe fn read_value(
         VALUE_KIND_F16 => RuntimeValue::F16(unsafe { read_typed(value) }?),
         VALUE_KIND_F32 => RuntimeValue::F32(unsafe { read_typed(value) }?),
         VALUE_KIND_F64 => RuntimeValue::F64(unsafe { read_typed(value) }?),
-        VALUE_KIND_PTR | VALUE_KIND_TEXT => RuntimeValue::Ptr(unsafe { read_typed(value) }?),
+        VALUE_KIND_PTR | VALUE_KIND_TEXT | VALUE_KIND_VALOR => {
+            RuntimeValue::Ptr(unsafe { read_typed(value) }?)
+        }
         _ => return None,
     })
 }

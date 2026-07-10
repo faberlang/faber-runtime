@@ -693,6 +693,104 @@ fn scalar_valor_conversion_family_owns_typed_values() {
 }
 
 #[test]
+fn aggregate_valor_conversion_round_trips_octeti_array_and_map() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+
+    let bytes = FaberRtSliceV1::from_static(&[0xde, 0xad]);
+    let octeti = unsafe { __faber_rt_v1_octeti_new(context, &bytes) };
+    let octeti_valor = unsafe { __faber_rt_v1_valor_octeti(context, octeti.value) };
+    assert_eq!(
+        unsafe { &*octeti_valor.value.cast::<Valor>() },
+        &Valor::Octeti(vec![0xde, 0xad])
+    );
+    let octeti_again =
+        unsafe { __faber_rt_v1_valor_get_octeti(context, octeti_valor.value.cast()) };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(octeti_again.value.cast::<u8>(), 2) },
+        &[0xde, 0xad]
+    );
+
+    let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for value in [1_i64, 2] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    array.value,
+                    VALUE_KIND_I64,
+                    ptr::from_ref(&value).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let array_valor = unsafe { __faber_rt_v1_valor_array(context, array.value) };
+    assert_eq!(
+        unsafe { &*array_valor.value.cast::<Valor>() },
+        &Valor::Lista(vec![Valor::Numerus(1), Valor::Numerus(2)])
+    );
+    let array_again =
+        unsafe { __faber_rt_v1_valor_get_array(context, array_valor.value.cast(), VALUE_KIND_I64) };
+    for (index, expected) in [1_i64, 2].into_iter().enumerate() {
+        let mut actual = 0_i64;
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_get(
+                    context,
+                    array_again.value,
+                    index as i64,
+                    VALUE_KIND_I64,
+                    ptr::from_mut(&mut actual).cast(),
+                )
+            },
+            STATUS_OK
+        );
+        assert_eq!(actual, expected);
+    }
+
+    let map = unsafe { __faber_rt_v1_map_new(context, VALUE_KIND_TEXT, VALUE_KIND_I64) };
+    let key = FaberRtSliceV1::from_static(b"alpha");
+    let key_handle = ptr::from_ref(&key).cast_mut().cast::<c_void>();
+    let value = 10_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_map_put(
+                context,
+                map.value,
+                VALUE_KIND_TEXT,
+                ptr::from_ref(&key_handle).cast(),
+                VALUE_KIND_I64,
+                ptr::from_ref(&value).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    let map_valor = unsafe { __faber_rt_v1_valor_map(context, map.value) };
+    let mut expected = std::collections::BTreeMap::new();
+    expected.insert("alpha".to_owned(), Valor::Numerus(10));
+    assert_eq!(
+        unsafe { &*map_valor.value.cast::<Valor>() },
+        &Valor::Tabula(expected)
+    );
+    let map_again = unsafe {
+        __faber_rt_v1_valor_get_map(
+            context,
+            map_valor.value.cast(),
+            VALUE_KIND_TEXT,
+            VALUE_KIND_I64,
+        )
+    };
+    let map_again = unsafe { &*map_again.value.cast::<RuntimeMap>() };
+    assert_eq!(map_again.entries.len(), 1);
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
 fn array_family_round_trips_every_value_kind_and_spreads() {
     let mut context = ptr::null_mut();
     assert_eq!(
