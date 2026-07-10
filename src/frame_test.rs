@@ -1,4 +1,7 @@
-use crate::frame::{self, FrameStatus, Scrinium};
+use crate::frame::{
+    self, Cancellation, DispatchError, FrameStatus, HostDispatch, ResponseSender, Scrinium,
+    SermoRequest,
+};
 use crate::Valor;
 use std::future::Future;
 use std::pin::Pin;
@@ -57,6 +60,37 @@ fn runtime_echo_returns_opener_then_done() {
     assert_eq!(done.status, FrameStatus::Done);
     assert!(sermo.incoming_drained());
     assert!(frame::sermo_recv(&mut sermo).is_none());
+}
+
+struct InlineDispatch;
+
+impl HostDispatch for InlineDispatch {
+    fn start(
+        &self,
+        request: SermoRequest,
+        responses: ResponseSender,
+        _cancellation: Cancellation,
+    ) -> Result<(), DispatchError> {
+        std::thread::spawn(move || {
+            responses.item(request.opener).expect("inline item");
+            responses.done().expect("inline done");
+        });
+        Ok(())
+    }
+}
+
+#[test]
+fn explicit_dispatcher_does_not_use_global_installation() {
+    let mut sermo = frame::sermo_open_with_dispatch("custom:echo", Arc::new(InlineDispatch));
+    frame::sermo_set_opener(&mut sermo, Valor::Textus("isolated".into()));
+
+    let item = frame::sermo_recv(&mut sermo).expect("explicit item");
+    assert_eq!(item.status, FrameStatus::Item);
+    assert_eq!(item.data, Valor::Textus("isolated".into()));
+    assert_eq!(
+        frame::sermo_recv(&mut sermo).expect("explicit done").status,
+        FrameStatus::Done
+    );
 }
 
 #[test]

@@ -60,8 +60,18 @@ struct SermoInner {
     incoming_wake_epoch: u64,
     incoming_waiters: Vec<Waker>,
     runtime_cancellation: Option<Cancellation>,
+    host_dispatch: Option<DispatchOverride>,
     detached: bool,
     meus_closed: bool,
+}
+
+#[derive(Clone)]
+struct DispatchOverride(Arc<dyn HostDispatch>);
+
+impl std::fmt::Debug for DispatchOverride {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("DispatchOverride").finish()
+    }
 }
 
 #[derive(Debug)]
@@ -438,10 +448,22 @@ pub fn sermo_open(route: &str) -> Sermo {
             incoming_wake_epoch: 0,
             incoming_waiters: Vec::new(),
             runtime_cancellation: None,
+            host_dispatch: None,
             detached: false,
             meus_closed: false,
         })),
     }
+}
+
+/// Open a conversation with an explicit host dispatcher.
+///
+/// This constructor is intended for embedders and tests that need independent
+/// hosts in one process. It does not mutate the process-global installation and
+/// therefore avoids test races and cross-embedder coupling.
+pub fn sermo_open_with_dispatch(route: &str, dispatch: Arc<dyn HostDispatch>) -> Sermo {
+    let sermo = sermo_open(route);
+    lock_sermo(&sermo.inner).host_dispatch = Some(DispatchOverride(dispatch));
+    sermo
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -733,7 +755,11 @@ fn ensure_runtime_response_started(shared: &Arc<SermoShared>, inner: &mut SermoI
     };
     inner.runtime_cancellation = Some(cancellation.clone());
     let responses = ResponseSender::new(Arc::clone(shared), cancellation.clone());
-    if let Err(error) = start_host_dispatch(request, responses.clone(), cancellation) {
+    let dispatch = inner
+        .host_dispatch
+        .as_ref()
+        .map(|override_dispatch| Arc::clone(&override_dispatch.0));
+    if let Err(error) = start_host_dispatch(request, responses.clone(), cancellation, dispatch) {
         responses.reject_start_error(error);
     }
 }
@@ -757,7 +783,11 @@ fn ensure_runtime_response_started_for_target(sermo: &mut Sermo, target: &'stati
     };
     inner.runtime_cancellation = Some(cancellation.clone());
     let responses = ResponseSender::new(Arc::clone(&sermo.inner), cancellation.clone());
-    if let Err(error) = start_host_dispatch(request, responses.clone(), cancellation) {
+    let dispatch = inner
+        .host_dispatch
+        .as_ref()
+        .map(|override_dispatch| Arc::clone(&override_dispatch.0));
+    if let Err(error) = start_host_dispatch(request, responses.clone(), cancellation, dispatch) {
         responses.reject_start_error(error);
     }
 }
@@ -766,9 +796,13 @@ fn start_host_dispatch(
     request: SermoRequest,
     responses: ResponseSender,
     cancellation: Cancellation,
+    override_dispatch: Option<Arc<dyn HostDispatch>>,
 ) -> Result<(), DispatchError> {
     if request.route.starts_with("runtime:") {
         return BuiltinRuntimeDispatch.start(request, responses, cancellation);
+    }
+    if let Some(dispatch) = override_dispatch {
+        return dispatch.start(request, responses, cancellation);
     }
     if let Some(dispatch) = HOST_DISPATCH.get() {
         return dispatch.start(request, responses, cancellation);

@@ -24,9 +24,9 @@ pub use display::{
     FractusDisplay,
 };
 pub use frame::{
-    builtin_route_frames, dispatch_builtin_route, install_host_dispatch, Cancellation,
-    DispatchError, FrameStatus, HostDispatch, IntoFrameStatus, IntoScrinium, Meus, ResponseSender,
-    Scrinium, Sermo, SermoRequest, Tuus,
+    builtin_route_frames, dispatch_builtin_route, install_host_dispatch, sermo_open_with_dispatch,
+    Cancellation, DispatchError, FrameStatus, HostDispatch, IntoFrameStatus, IntoScrinium, Meus,
+    ResponseSender, Scrinium, Sermo, SermoRequest, Tuus,
 };
 pub use instans::{Instans, InstansPraecisio};
 pub use intervallum::{Intervallum, IntervallumKind};
