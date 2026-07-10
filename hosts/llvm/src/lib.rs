@@ -28,7 +28,12 @@ use collection_map::{
 };
 use collection_map::{RuntimeMap, RuntimeSet};
 #[cfg(test)]
-use convert::{__faber_rt_v1_valor_f64, __faber_rt_v1_valor_i1, __faber_rt_v1_valor_i64};
+use convert::{
+    __faber_rt_v1_valor_ascii, __faber_rt_v1_valor_f64, __faber_rt_v1_valor_get_ascii,
+    __faber_rt_v1_valor_get_f64, __faber_rt_v1_valor_get_i1, __faber_rt_v1_valor_get_i64,
+    __faber_rt_v1_valor_get_nihil, __faber_rt_v1_valor_get_text, __faber_rt_v1_valor_i1,
+    __faber_rt_v1_valor_i64, __faber_rt_v1_valor_nihil, __faber_rt_v1_valor_text,
+};
 #[cfg(not(test))]
 use faber::llvm_abi::FaberRtExitV1;
 #[cfg(test)]
@@ -78,6 +83,7 @@ struct RuntimeContext {
     _arguments: Vec<Vec<u8>>,
     texts: Vec<Box<RuntimeText>>,
     valors: Vec<Box<Valor>>,
+    ascii: Vec<Box<[u8]>>,
     arrays: Vec<Box<RuntimeArray>>,
     options: Vec<Box<RuntimeOption>>,
     maps: Vec<Box<RuntimeMap>>,
@@ -113,6 +119,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             _arguments: arguments,
             texts: Vec::new(),
             valors: Vec::new(),
+            ascii: Vec::new(),
             arrays: Vec::new(),
             options: Vec::new(),
             maps: Vec::new(),

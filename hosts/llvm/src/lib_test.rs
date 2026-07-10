@@ -1,5 +1,5 @@
 use super::*;
-use std::ffi::c_void;
+use std::ffi::{c_void, CStr};
 
 #[test]
 fn init_write_and_shutdown_round_trip() {
@@ -630,6 +630,64 @@ fn scalar_valor_conversion_family_owns_typed_values() {
         unsafe { &*boolean.value.cast::<Valor>() },
         &Valor::Bivalens(true)
     );
+
+    let text = FaberRtSliceV1::from_static(b"salve");
+    let boxed_text = unsafe { __faber_rt_v1_valor_text(context, &text) };
+    let boxed_ascii = unsafe { __faber_rt_v1_valor_ascii(context, c"roma".as_ptr()) };
+    let boxed_nihil = unsafe { __faber_rt_v1_valor_nihil(context) };
+    assert_eq!(
+        unsafe { &*boxed_text.value.cast::<Valor>() },
+        &Valor::Textus("salve".into())
+    );
+    assert_eq!(
+        unsafe { &*boxed_ascii.value.cast::<Valor>() },
+        &Valor::Textus("roma".into())
+    );
+    assert_eq!(
+        unsafe { &*boxed_nihil.value.cast::<Valor>() },
+        &Valor::Nihil
+    );
+
+    let mut integer_out = 0;
+    let mut float_out = 0.0;
+    let mut boolean_out = 0;
+    assert_eq!(
+        unsafe { __faber_rt_v1_valor_get_i64(context, integer.value.cast(), &mut integer_out) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_valor_get_f64(context, integer.value.cast(), &mut float_out) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_valor_get_i1(context, boolean.value.cast(), &mut boolean_out) },
+        STATUS_OK
+    );
+    assert_eq!((integer_out, float_out, boolean_out), (-42, -42.0, 1));
+
+    let extracted_text = unsafe { __faber_rt_v1_valor_get_text(context, boxed_text.value.cast()) };
+    let descriptor = unsafe { &*extracted_text.value.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(descriptor.data, descriptor.len as usize) },
+        b"salve"
+    );
+    let extracted_ascii =
+        unsafe { __faber_rt_v1_valor_get_ascii(context, boxed_ascii.value.cast()) };
+    assert_eq!(
+        unsafe { CStr::from_ptr(extracted_ascii.value.cast()) }.to_bytes(),
+        b"roma"
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_valor_get_nihil(context, boxed_nihil.value.cast()) },
+        STATUS_OK
+    );
+
+    let mismatch =
+        unsafe { __faber_rt_v1_valor_get_i64(context, boxed_text.value.cast(), &mut integer_out) };
+    assert_eq!(mismatch, STATUS_INVALID_ARGUMENT);
+    let foreign =
+        unsafe { __faber_rt_v1_valor_get_i64(context, ptr::dangling::<Valor>(), &mut integer_out) };
+    assert_eq!(foreign, STATUS_INVALID_ARGUMENT);
 
     unsafe { __faber_rt_v1_shutdown(context) };
 }
