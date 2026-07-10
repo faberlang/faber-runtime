@@ -6,6 +6,7 @@ mod format;
 mod instans;
 mod octeti;
 mod option;
+mod tensor;
 mod text;
 mod valor_aggregate;
 mod valor_genus;
@@ -81,6 +82,14 @@ use option::{
     __faber_rt_v1_option_get, __faber_rt_v1_option_get_or, __faber_rt_v1_option_is_present,
     __faber_rt_v1_option_none, __faber_rt_v1_option_some,
 };
+use tensor::RuntimeTensor;
+#[cfg(test)]
+use tensor::{
+    __faber_rt_v1_tensor_create, __faber_rt_v1_tensor_fill, __faber_rt_v1_tensor_flatten,
+    __faber_rt_v1_tensor_from_flat, __faber_rt_v1_tensor_get, __faber_rt_v1_tensor_materialize,
+    __faber_rt_v1_tensor_new, __faber_rt_v1_tensor_rank, __faber_rt_v1_tensor_reshape,
+    __faber_rt_v1_tensor_set, __faber_rt_v1_tensor_shape, __faber_rt_v1_tensor_slice,
+};
 use std::ffi::{c_char, c_int};
 use std::fmt::Display;
 use std::io::{self, Write};
@@ -115,6 +124,7 @@ struct RuntimeContext {
     options: Vec<Box<RuntimeOption>>,
     maps: Vec<Box<RuntimeMap>>,
     sets: Vec<Box<RuntimeSet>>,
+    tensors: Vec<Box<RuntimeTensor>>,
 }
 
 /// Initialize one process-lifetime LLVM host context.
@@ -154,6 +164,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             options: Vec::new(),
             maps: Vec::new(),
             sets: Vec::new(),
+            tensors: Vec::new(),
         });
         *out_context = Box::into_raw(context).cast();
         STATUS_OK

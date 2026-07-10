@@ -1553,3 +1553,176 @@ fn array_numeric_family_preserves_signedness_orders_and_sums() {
     );
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn tensor_core_carrier_creates_shapes_indexes_and_slices() {
+    let mut context = std::ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        STATUS_OK
+    );
+
+    let shape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for dim in [2_i64, 3_i64] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    shape.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&dim).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+
+    let flat = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_F32) };
+    for value in [1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    flat.value,
+                    VALUE_KIND_F32,
+                    std::ptr::from_ref(&value).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+
+    let tensor = unsafe {
+        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_F32, flat.value, shape.value)
+    };
+    assert_eq!(tensor.status, STATUS_OK);
+
+    let mut rank = -1_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_tensor_rank(context, tensor.value, &mut rank) },
+        STATUS_OK
+    );
+    assert_eq!(rank, 2);
+
+    let dims = unsafe { __faber_rt_v1_tensor_shape(context, tensor.value) };
+    assert_eq!(dims.status, STATUS_OK);
+    let mut length = 0_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_length(context, dims.value, &mut length) },
+        STATUS_OK
+    );
+    assert_eq!(length, 2);
+
+    let origin = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for dim in [0_i64, 0_i64] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    origin.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&dim).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let nine = 9.0_f32;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_tensor_set(
+                context,
+                tensor.value,
+                origin.value,
+                VALUE_KIND_F32,
+                std::ptr::from_ref(&nine).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    let got = unsafe { __faber_rt_v1_tensor_get(context, tensor.value, origin.value) };
+    assert_eq!(got.status, STATUS_OK);
+    let mut present = 0_u8;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_is_present(
+                context,
+                got.value,
+                VALUE_KIND_F32,
+                std::ptr::from_mut(&mut present).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(present, 1);
+
+    let slice = unsafe { __faber_rt_v1_tensor_slice(context, tensor.value, 0, 1) };
+    assert_eq!(slice.status, STATUS_OK);
+    let owned = unsafe { __faber_rt_v1_tensor_materialize(context, slice.value) };
+    assert_eq!(owned.status, STATUS_OK);
+    let flat2 = unsafe { __faber_rt_v1_tensor_flatten(context, owned.value) };
+    assert_eq!(flat2.status, STATUS_OK);
+    let mut flat_len = 0_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_length(context, flat2.value, &mut flat_len) },
+        STATUS_OK
+    );
+    assert_eq!(flat_len, 3);
+
+    let empty = unsafe { __faber_rt_v1_tensor_new(context, VALUE_KIND_F32) };
+    assert_eq!(empty.status, STATUS_OK);
+    let mut empty_rank = -1_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_tensor_rank(context, empty.value, &mut empty_rank) },
+        STATUS_OK
+    );
+    assert_eq!(empty_rank, 0);
+
+    let zero = 0.0_f32;
+    let filled = unsafe {
+        __faber_rt_v1_tensor_create(
+            context,
+            VALUE_KIND_F32,
+            std::ptr::from_ref(&zero).cast(),
+            shape.value,
+        )
+    };
+    assert_eq!(filled.status, STATUS_OK);
+    let four = 4.0_f32;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_tensor_fill(
+                context,
+                filled.value,
+                VALUE_KIND_F32,
+                std::ptr::from_ref(&four).cast(),
+            )
+        },
+        STATUS_OK
+    );
+
+    let newshape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for dim in [3_i64, 2_i64] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    newshape.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&dim).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let reshaped = unsafe { __faber_rt_v1_tensor_reshape(context, tensor.value, newshape.value) };
+    assert_eq!(reshaped.status, STATUS_OK);
+    let mut reshaped_rank = 0_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_tensor_rank(context, reshaped.value, &mut reshaped_rank) },
+        STATUS_OK
+    );
+    assert_eq!(reshaped_rank, 2);
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
