@@ -2029,3 +2029,26 @@ fn sparse_core_carrier_sets_gets_and_densifies() {
     assert_eq!(count2, 1);
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn regex_conversion_preserves_pattern_text() {
+    let mut context = std::ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let digits = b"\\d+\0";
+    let slice = FaberRtSliceV1 {
+        data: digits.as_ptr().cast_mut().cast(),
+        len: 3,
+    };
+    let regex = unsafe { __faber_rt_v1_regex_from_text(context, &slice) };
+    assert_eq!(regex.status, STATUS_OK);
+    let text = unsafe { __faber_rt_v1_regex_get_text(context, regex.value) };
+    assert_eq!(text.status, STATUS_OK);
+    let ascii = unsafe { __faber_rt_v1_regex_from_ascii(context, c"(?i)[a-z]+".as_ptr()) };
+    assert_eq!(ascii.status, STATUS_OK);
+    let rendered = unsafe { __faber_rt_v1_regex_get_text(context, ascii.value) };
+    assert_eq!(rendered.status, STATUS_OK);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}

@@ -136,6 +136,9 @@ pub const SYMBOL_SPARSE_NONZERO: &str = "__faber_rt_v1_sparse_nonzero";
 pub const SYMBOL_SPARSE_RANK: &str = "__faber_rt_v1_sparse_rank";
 pub const SYMBOL_SPARSE_DENSIFY: &str = "__faber_rt_v1_sparse_densify";
 pub const SYMBOL_SPARSE_FROM_TENSOR: &str = "__faber_rt_v1_sparse_from_tensor";
+pub const SYMBOL_REGEX_FROM_TEXT: &str = "__faber_rt_v1_regex_from_text";
+pub const SYMBOL_REGEX_FROM_ASCII: &str = "__faber_rt_v1_regex_from_ascii";
+pub const SYMBOL_REGEX_GET_TEXT: &str = "__faber_rt_v1_regex_get_text";
 pub const SYMBOL_PROGRAM_ENTRY: &str = "__faber_program_entry_v1";
 
 pub type FaberRtValueKindV1 = u32;

@@ -5,6 +5,7 @@ mod convert;
 mod format;
 mod instans;
 mod octeti;
+mod regex_rt;
 mod option;
 mod sparsa;
 mod tensor;
@@ -86,6 +87,10 @@ use option::{
 use sparsa::RuntimeSparse;
 use tensor::RuntimeTensor;
 #[cfg(test)]
+#[cfg(test)]
+use regex_rt::{
+    __faber_rt_v1_regex_from_ascii, __faber_rt_v1_regex_from_text, __faber_rt_v1_regex_get_text,
+};
 use sparsa::{
     __faber_rt_v1_sparse_densify, __faber_rt_v1_sparse_from_tensor, __faber_rt_v1_sparse_get,
     __faber_rt_v1_sparse_new, __faber_rt_v1_sparse_nonzero, __faber_rt_v1_sparse_rank,
@@ -136,6 +141,7 @@ struct RuntimeContext {
     sets: Vec<Box<RuntimeSet>>,
     tensors: Vec<Box<RuntimeTensor>>,
     sparses: Vec<Box<RuntimeSparse>>,
+    regexes: Vec<Box<faber::Regex>>,
 }
 
 /// Initialize one process-lifetime LLVM host context.
@@ -177,6 +183,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             sets: Vec::new(),
             tensors: Vec::new(),
             sparses: Vec::new(),
+            regexes: Vec::new(),
         });
         *out_context = Box::into_raw(context).cast();
         STATUS_OK
