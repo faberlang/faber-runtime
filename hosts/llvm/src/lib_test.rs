@@ -227,16 +227,28 @@ fn array_family_round_trips_every_value_kind_and_spreads() {
 
     let i1 = 1_u8;
     let i8_value = -8_i8;
+    let i16_value = -16_i16;
     let i32_value = -32_i32;
     let i64_value = -64_i64;
+    let u8_value = 8_u8;
+    let u16_value = 16_u16;
+    let u32_value = 32_u32;
+    let u64_value = 64_u64;
+    let f16_value = 0x3c00_u16;
     let f32_value = 3.25_f32;
     let f64_value = 6.5_f64;
     let pointer_value = context.cast::<std::ffi::c_void>();
     let cases = [
         (VALUE_KIND_I1, std::ptr::from_ref(&i1).cast()),
         (VALUE_KIND_I8, std::ptr::from_ref(&i8_value).cast()),
+        (VALUE_KIND_I16, std::ptr::from_ref(&i16_value).cast()),
         (VALUE_KIND_I32, std::ptr::from_ref(&i32_value).cast()),
         (VALUE_KIND_I64, std::ptr::from_ref(&i64_value).cast()),
+        (VALUE_KIND_U8, std::ptr::from_ref(&u8_value).cast()),
+        (VALUE_KIND_U16, std::ptr::from_ref(&u16_value).cast()),
+        (VALUE_KIND_U32, std::ptr::from_ref(&u32_value).cast()),
+        (VALUE_KIND_U64, std::ptr::from_ref(&u64_value).cast()),
+        (VALUE_KIND_F16, std::ptr::from_ref(&f16_value).cast()),
         (VALUE_KIND_F32, std::ptr::from_ref(&f32_value).cast()),
         (VALUE_KIND_F64, std::ptr::from_ref(&f64_value).cast()),
         (VALUE_KIND_PTR, std::ptr::from_ref(&pointer_value).cast()),
@@ -271,9 +283,10 @@ fn array_family_round_trips_every_value_kind_and_spreads() {
             STATUS_OK
         );
         let width = match kind {
-            VALUE_KIND_I1 | VALUE_KIND_I8 => 1,
-            VALUE_KIND_I32 | VALUE_KIND_F32 => 4,
-            VALUE_KIND_I64 | VALUE_KIND_F64 | VALUE_KIND_PTR => 8,
+            VALUE_KIND_I1 | VALUE_KIND_I8 | VALUE_KIND_U8 => 1,
+            VALUE_KIND_I16 | VALUE_KIND_U16 | VALUE_KIND_F16 => 2,
+            VALUE_KIND_I32 | VALUE_KIND_U32 | VALUE_KIND_F32 => 4,
+            VALUE_KIND_I64 | VALUE_KIND_U64 | VALUE_KIND_F64 | VALUE_KIND_PTR => 8,
             _ => unreachable!(),
         };
         assert_eq!(&output.to_ne_bytes()[..width], unsafe {
@@ -681,5 +694,114 @@ fn option_family_produces_queries_unwraps_and_coalesces_shared_handles() {
         STATUS_OK
     );
     assert_eq!(output, value);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn array_numeric_family_preserves_signedness_orders_and_sums() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+
+    let unsigned = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_U32) };
+    for value in [u32::MAX, 1] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    unsigned.value,
+                    VALUE_KIND_U32,
+                    std::ptr::from_ref(&value).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_sort(context, unsigned.value) },
+        STATUS_OK
+    );
+    let mut first = 0_u32;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_get(
+                context,
+                unsigned.value,
+                0,
+                VALUE_KIND_U32,
+                std::ptr::from_mut(&mut first).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(first, 1);
+    let mut unsigned_sum = 0_u32;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_sum(
+                context,
+                unsigned.value,
+                VALUE_KIND_U32,
+                std::ptr::from_mut(&mut unsigned_sum).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(unsigned_sum, 0);
+
+    let floats = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_F64) };
+    for value in [3.5_f64, -1.0, 2.0] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    floats.value,
+                    VALUE_KIND_F64,
+                    std::ptr::from_ref(&value).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_sort(context, floats.value) },
+        STATUS_OK
+    );
+    let mut float_sum = 0.0_f64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_sum(
+                context,
+                floats.value,
+                VALUE_KIND_F64,
+                std::ptr::from_mut(&mut float_sum).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(float_sum, 4.5);
+
+    let empty = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    let mut empty_sum = -1_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_sum(
+                context,
+                empty.value,
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut empty_sum).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(empty_sum, 0);
+
+    let unsupported = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_PTR) };
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_sort(context, unsupported.value) },
+        STATUS_INVALID_ARGUMENT
+    );
     unsafe { __faber_rt_v1_shutdown(context) };
 }

@@ -1,4 +1,5 @@
 mod array;
+mod array_numeric;
 mod convert;
 mod format;
 mod option;
@@ -11,6 +12,8 @@ use array::{
     __faber_rt_v1_array_new, __faber_rt_v1_array_option, __faber_rt_v1_array_push,
     __faber_rt_v1_array_range, __faber_rt_v1_array_reverse, __faber_rt_v1_array_set,
 };
+#[cfg(test)]
+use array_numeric::{__faber_rt_v1_array_sort, __faber_rt_v1_array_sum};
 #[cfg(test)]
 use convert::{__faber_rt_v1_valor_f64, __faber_rt_v1_valor_i1, __faber_rt_v1_valor_i64};
 #[cfg(not(test))]
@@ -25,8 +28,9 @@ use faber::llvm_abi::{
 use faber::llvm_abi::{
     ARRAY_OPTION_FIRST, ARRAY_OPTION_INDEX, ARRAY_OPTION_LAST, ARRAY_OPTION_REMOVE_FIRST,
     ARRAY_OPTION_REMOVE_LAST, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE, ARRAY_RANGE_TAKE,
-    ARRAY_RANGE_TAKE_LAST, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I32,
-    VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR,
+    ARRAY_RANGE_TAKE_LAST, VALUE_KIND_F16, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1,
+    VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR, VALUE_KIND_U16,
+    VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,
 };
 use faber::Valor;
 use format::RuntimeText;

@@ -7,8 +7,9 @@ use faber::llvm_abi::{
     FaberRtStatusV1, FaberRtValueKindV1, ARRAY_OPTION_FIRST, ARRAY_OPTION_INDEX, ARRAY_OPTION_LAST,
     ARRAY_OPTION_REMOVE_FIRST, ARRAY_OPTION_REMOVE_LAST, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE,
     ARRAY_RANGE_TAKE, ARRAY_RANGE_TAKE_LAST, STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC,
-    VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8,
-    VALUE_KIND_PTR,
+    VALUE_KIND_F16, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I16, VALUE_KIND_I32,
+    VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR, VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64,
+    VALUE_KIND_U8,
 };
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
@@ -17,16 +18,22 @@ use std::panic::{self, AssertUnwindSafe};
 pub(super) enum RuntimeValue {
     I1(u8),
     I8(i8),
+    I16(i16),
     I32(i32),
     I64(i64),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    F16(u16),
     F32(f32),
     F64(f64),
     Ptr(*mut c_void),
 }
 
 pub(super) struct RuntimeArray {
-    kind: FaberRtValueKindV1,
-    values: Vec<RuntimeValue>,
+    pub(super) kind: FaberRtValueKindV1,
+    pub(super) values: Vec<RuntimeValue>,
 }
 
 #[no_mangle]
@@ -358,8 +365,14 @@ pub(super) fn valid_kind(kind: FaberRtValueKindV1) -> bool {
         kind,
         VALUE_KIND_I1
             | VALUE_KIND_I8
+            | VALUE_KIND_I16
             | VALUE_KIND_I32
             | VALUE_KIND_I64
+            | VALUE_KIND_U8
+            | VALUE_KIND_U16
+            | VALUE_KIND_U32
+            | VALUE_KIND_U64
+            | VALUE_KIND_F16
             | VALUE_KIND_F32
             | VALUE_KIND_F64
             | VALUE_KIND_PTR
@@ -400,8 +413,14 @@ pub(super) unsafe fn read_value(
     Some(match kind {
         VALUE_KIND_I1 => RuntimeValue::I1(unsafe { read_typed(value) }?),
         VALUE_KIND_I8 => RuntimeValue::I8(unsafe { read_typed(value) }?),
+        VALUE_KIND_I16 => RuntimeValue::I16(unsafe { read_typed(value) }?),
         VALUE_KIND_I32 => RuntimeValue::I32(unsafe { read_typed(value) }?),
         VALUE_KIND_I64 => RuntimeValue::I64(unsafe { read_typed(value) }?),
+        VALUE_KIND_U8 => RuntimeValue::U8(unsafe { read_typed(value) }?),
+        VALUE_KIND_U16 => RuntimeValue::U16(unsafe { read_typed(value) }?),
+        VALUE_KIND_U32 => RuntimeValue::U32(unsafe { read_typed(value) }?),
+        VALUE_KIND_U64 => RuntimeValue::U64(unsafe { read_typed(value) }?),
+        VALUE_KIND_F16 => RuntimeValue::F16(unsafe { read_typed(value) }?),
         VALUE_KIND_F32 => RuntimeValue::F32(unsafe { read_typed(value) }?),
         VALUE_KIND_F64 => RuntimeValue::F64(unsafe { read_typed(value) }?),
         VALUE_KIND_PTR => RuntimeValue::Ptr(unsafe { read_typed(value) }?),
@@ -413,8 +432,14 @@ pub(super) unsafe fn write_value(value: RuntimeValue, output: *mut c_void) -> bo
     match value {
         RuntimeValue::I1(value) => unsafe { write_typed(output, value) },
         RuntimeValue::I8(value) => unsafe { write_typed(output, value) },
+        RuntimeValue::I16(value) => unsafe { write_typed(output, value) },
         RuntimeValue::I32(value) => unsafe { write_typed(output, value) },
         RuntimeValue::I64(value) => unsafe { write_typed(output, value) },
+        RuntimeValue::U8(value) => unsafe { write_typed(output, value) },
+        RuntimeValue::U16(value) => unsafe { write_typed(output, value) },
+        RuntimeValue::U32(value) => unsafe { write_typed(output, value) },
+        RuntimeValue::U64(value) => unsafe { write_typed(output, value) },
+        RuntimeValue::F16(value) => unsafe { write_typed(output, value) },
         RuntimeValue::F32(value) => unsafe { write_typed(output, value) },
         RuntimeValue::F64(value) => unsafe { write_typed(output, value) },
         RuntimeValue::Ptr(value) => unsafe { write_typed(output, value) },

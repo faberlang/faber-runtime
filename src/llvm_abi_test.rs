@@ -71,6 +71,8 @@ fn llvm_abi_v1_symbol_namespace_is_versioned() {
         SYMBOL_ARRAY_REVERSE,
         SYMBOL_ARRAY_RANGE,
         SYMBOL_ARRAY_OPTION,
+        SYMBOL_ARRAY_SORT,
+        SYMBOL_ARRAY_SUM,
         SYMBOL_OPTION_NONE,
         SYMBOL_OPTION_SOME,
         SYMBOL_OPTION_IS_PRESENT,
@@ -102,11 +104,17 @@ fn llvm_abi_v1_symbol_namespace_is_versioned() {
             VALUE_KIND_F32,
             VALUE_KIND_F64,
             VALUE_KIND_PTR,
+            VALUE_KIND_I16,
+            VALUE_KIND_U8,
+            VALUE_KIND_U16,
+            VALUE_KIND_U32,
+            VALUE_KIND_U64,
+            VALUE_KIND_F16,
         ]
         .into_iter()
         .collect::<BTreeSet<_>>()
         .len(),
-        7
+        13
     );
     assert_eq!(
         [
