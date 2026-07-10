@@ -3,7 +3,6 @@ use faber::{
     HostDispatch, ResponseSender, SermoRequest,
 };
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -21,8 +20,7 @@ struct NativeJob {
 
 #[derive(Clone)]
 pub struct NativeHost {
-    queue: SyncSender<NativeJob>,
-    closed: Arc<AtomicBool>,
+    queue: Arc<Mutex<Option<SyncSender<NativeJob>>>>,
 }
 
 impl NativeHost {
@@ -38,13 +36,15 @@ impl NativeHost {
             spawn_worker(index, Arc::clone(&receiver));
         }
         Self {
-            queue,
-            closed: Arc::new(AtomicBool::new(false)),
+            queue: Arc::new(Mutex::new(Some(queue))),
         }
     }
 
     pub fn shutdown(&self) {
-        self.closed.store(true, Ordering::SeqCst);
+        self.queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
     }
 }
 
@@ -61,12 +61,6 @@ impl HostDispatch for NativeHost {
         responses: ResponseSender,
         cancellation: Cancellation,
     ) -> Result<(), DispatchError> {
-        if self.closed.load(Ordering::SeqCst) {
-            return Err(DispatchError::new(
-                "native_host_shutdown",
-                "native host worker queue is shut down",
-            ));
-        }
         if !supports_native_route(&request.route) {
             return Err(DispatchError::new(
                 "native_host_unsupported_route",
@@ -78,7 +72,17 @@ impl HostDispatch for NativeHost {
             responses,
             cancellation,
         };
-        match self.queue.try_send(job) {
+        let queue = self
+            .queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(queue) = queue.as_ref() else {
+            return Err(DispatchError::new(
+                "native_host_shutdown",
+                "native host worker queue is shut down",
+            ));
+        };
+        match queue.try_send(job) {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => Err(DispatchError::new(
                 "native_host_queue_saturated",
@@ -355,6 +359,7 @@ mod tests {
     #[test]
     fn shutdown_rejects_new_work() {
         let host = NativeHost::with_limits(1, 2);
+        let clone = host.clone();
         host.shutdown();
         let (_sermo, responses, cancellation) = frame::test_response_sender("tempus:dormiet");
         let error = host
@@ -370,6 +375,21 @@ mod tests {
             )
             .expect_err("shutdown host must reject");
 
+        assert_eq!(error.issue, "native_host_shutdown");
+
+        let (_sermo, responses, cancellation) = frame::test_response_sender("tempus:dormiet");
+        let error = clone
+            .start(
+                SermoRequest {
+                    conversation_id: "test-clone".to_owned(),
+                    route: "tempus:dormiet".to_owned(),
+                    opener: Valor::Numerus(1),
+                    target: None,
+                },
+                responses,
+                cancellation,
+            )
+            .expect_err("shutdown must cover every host clone");
         assert_eq!(error.issue, "native_host_shutdown");
     }
 

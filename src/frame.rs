@@ -152,7 +152,7 @@ pub struct ResponseSender {
 struct ResponseLease {
     shared: Arc<SermoShared>,
     live_senders: AtomicUsize,
-    terminal_sent: AtomicBool,
+    terminal_sent: Mutex<bool>,
     cancellation: Cancellation,
 }
 
@@ -205,7 +205,7 @@ impl ResponseSender {
             lease: Arc::new(ResponseLease {
                 shared,
                 live_senders: AtomicUsize::new(1),
-                terminal_sent: AtomicBool::new(false),
+                terminal_sent: Mutex::new(false),
                 cancellation,
             }),
         }
@@ -246,14 +246,20 @@ impl ResponseSender {
             status = FrameStatus::Cancel;
             data = Valor::Nihil;
         }
+        let mut terminal_sent = self
+            .lease
+            .terminal_sent
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if status.is_terminal() {
-            if self.lease.terminal_sent.swap(true, Ordering::SeqCst) {
+            if *terminal_sent {
                 return Err(FrameError::new(
                     "frame_response_terminal_already_sent",
                     "response sender already sent a terminal frame",
                 ));
             }
-        } else if self.lease.terminal_sent.load(Ordering::SeqCst) {
+            *terminal_sent = true;
+        } else if *terminal_sent {
             return Err(FrameError::new(
                 "frame_response_after_terminal",
                 "response sender cannot enqueue content after a terminal frame",
@@ -264,9 +270,15 @@ impl ResponseSender {
     }
 
     fn reject_start_error(&self, error: DispatchError) {
-        if self.lease.terminal_sent.swap(true, Ordering::SeqCst) {
+        let mut terminal_sent = self
+            .lease
+            .terminal_sent
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if *terminal_sent {
             return;
         }
+        *terminal_sent = true;
         push_response_frame(
             &self.lease.shared,
             FrameStatus::Error,
@@ -289,12 +301,15 @@ impl Drop for ResponseSender {
         if self.lease.live_senders.fetch_sub(1, Ordering::SeqCst) != 1 {
             return;
         }
-        if self.lease.terminal_sent.load(Ordering::SeqCst) {
+        let mut terminal_sent = self
+            .lease
+            .terminal_sent
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if *terminal_sent {
             return;
         }
-        if self.lease.terminal_sent.swap(true, Ordering::SeqCst) {
-            return;
-        }
+        *terminal_sent = true;
         if self.lease.cancellation.is_cancelled() {
             push_response_frame(&self.lease.shared, FrameStatus::Cancel, Valor::Nihil);
         } else {

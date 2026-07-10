@@ -3,7 +3,7 @@ use crate::Valor;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 use std::task::{Context, Poll, Wake, Waker};
 
 #[derive(Default)]
@@ -137,6 +137,39 @@ fn response_sender_enforces_one_terminal_frame() {
         .item(Valor::Textus("late".into()))
         .expect_err("content after terminal must fail");
     assert_eq!(err.issue, "frame_response_after_terminal");
+}
+
+#[test]
+fn response_sender_keeps_terminal_last_across_concurrent_clones() {
+    for _ in 0..200 {
+        let (mut sermo, sender, _cancellation) =
+            frame::test_response_sender("test:sender-concurrent-terminal");
+        let content_sender = sender.clone();
+        let barrier = Arc::new(Barrier::new(3));
+        let content_barrier = Arc::clone(&barrier);
+        let content = std::thread::spawn(move || {
+            content_barrier.wait();
+            content_sender.item(Valor::Textus("item".into()))
+        });
+        let terminal_barrier = Arc::clone(&barrier);
+        let terminal = std::thread::spawn(move || {
+            terminal_barrier.wait();
+            sender.done()
+        });
+
+        barrier.wait();
+        let _ = content.join().expect("content producer");
+        let _ = terminal.join().expect("terminal producer");
+
+        let mut statuses = Vec::new();
+        while let Some(frame) = frame::sermo_recv(&mut sermo) {
+            statuses.push(frame.status);
+            if frame.status.is_terminal() {
+                break;
+            }
+        }
+        assert!(statuses.last().is_some_and(|status| status.is_terminal()));
+    }
 }
 
 #[test]
