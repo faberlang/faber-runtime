@@ -129,6 +129,13 @@ fn rejects_invalid_number_forms_and_ranges() {
 }
 
 #[test]
+fn invalid_number_reports_nested_parse_path() {
+    let err = Json::parse(r#"{"a":{"n":01}}"#).expect_err("nested bad number");
+    assert_eq!(err.path(), "$.a.n");
+    assert!(matches!(err.kind(), JsonErrorKind::InvalidNumber(_)));
+}
+
+#[test]
 fn renders_compact_deterministic_json() {
     let mut fields = BTreeMap::new();
     fields.insert("b".to_owned(), Valor::Textus("line\nbreak".into()));

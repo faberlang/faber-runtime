@@ -380,18 +380,18 @@ impl<'a> Parser<'a> {
             Some(b'0') => {
                 self.pos += 1;
                 if matches!(self.peek(), Some(b'0'..=b'9')) {
-                    return Err(self.invalid_number(start));
+                    return Err(self.invalid_number(path, start));
                 }
             }
             Some(b'1'..=b'9') => self.take_digits(),
-            _ => return Err(self.invalid_number(start)),
+            _ => return Err(self.invalid_number(path, start)),
         }
 
         let mut fractional = false;
         if self.consume(b'.') {
             fractional = true;
             if !matches!(self.peek(), Some(b'0'..=b'9')) {
-                return Err(self.invalid_number(start));
+                return Err(self.invalid_number(path, start));
             }
             self.take_digits();
         }
@@ -400,7 +400,7 @@ impl<'a> Parser<'a> {
             fractional = true;
             let _ = self.consume(b'+') || self.consume(b'-');
             if !matches!(self.peek(), Some(b'0'..=b'9')) {
-                return Err(self.invalid_number(start));
+                return Err(self.invalid_number(path, start));
             }
             self.take_digits();
         }
@@ -473,10 +473,10 @@ impl<'a> Parser<'a> {
         JsonError::new(path, JsonErrorKind::InvalidSyntax(message.into()))
     }
 
-    fn invalid_number(&self, start: usize) -> JsonError {
+    fn invalid_number(&self, path: &str, start: usize) -> JsonError {
         let end = self.pos.min(self.wire.len());
         JsonError::new(
-            "$",
+            path,
             JsonErrorKind::InvalidNumber(self.wire[start..end].to_owned()),
         )
     }
