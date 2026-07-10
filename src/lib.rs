@@ -8,6 +8,7 @@ pub mod display;
 pub mod frame;
 pub mod instans;
 pub mod intervallum;
+pub mod json;
 pub mod packed_numeric;
 pub mod regex;
 pub mod sparsa;
@@ -24,6 +25,7 @@ pub use display::{
 pub use frame::{FrameStatus, IntoFrameStatus, IntoScrinium, Meus, Scrinium, Sermo, Tuus};
 pub use instans::{Instans, InstansPraecisio};
 pub use intervallum::{Intervallum, IntervallumKind};
+pub use json::{Json, JsonError, JsonErrorKind};
 pub use packed_numeric::{
     packed_u4_tensor_integration_rows, PackedBitOrder, PackedTensorIntegrationOperation,
     PackedTensorIntegrationRow, PackedTensorIntegrationStatus, PackedU4Block, PackedU4Layout,
@@ -62,6 +64,10 @@ mod valor_from_valor_test;
 #[cfg(test)]
 #[path = "valor_aggregate_test.rs"]
 mod valor_aggregate_test;
+
+#[cfg(test)]
+#[path = "json_test.rs"]
+mod json_test;
 
 #[cfg(test)]
 #[path = "frame_test.rs"]
