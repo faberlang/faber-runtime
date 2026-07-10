@@ -58,6 +58,10 @@ pub const SYMBOL_OCTETI_FROM_TEXT: &str = "__faber_rt_v1_octeti_from_text";
 pub const SYMBOL_OCTETI_FROM_ASCII: &str = "__faber_rt_v1_octeti_from_ascii";
 pub const SYMBOL_OCTETI_GET_TEXT: &str = "__faber_rt_v1_octeti_get_text";
 pub const SYMBOL_OCTETI_GET_ASCII: &str = "__faber_rt_v1_octeti_get_ascii";
+pub const SYMBOL_INSTANS_FROM_TEXT: &str = "__faber_rt_v1_instans_from_text";
+pub const SYMBOL_INSTANS_FROM_VALOR: &str = "__faber_rt_v1_instans_from_valor";
+pub const SYMBOL_INSTANS_RETAG: &str = "__faber_rt_v1_instans_retag";
+pub const SYMBOL_INSTANS_GET_TEXT: &str = "__faber_rt_v1_instans_get_text";
 pub const SYMBOL_VALOR_OCTETI: &str = "__faber_rt_v1_valor_octeti";
 pub const SYMBOL_VALOR_ARRAY: &str = "__faber_rt_v1_valor_array";
 pub const SYMBOL_VALOR_MAP: &str = "__faber_rt_v1_valor_map";
@@ -127,6 +131,12 @@ pub const VALUE_KIND_VALOR: FaberRtValueKindV1 = 15;
 pub const VALUE_KIND_OPTION_I64: FaberRtValueKindV1 = 16;
 pub const VALUE_KIND_INSTANS: FaberRtValueKindV1 = 17;
 pub const VALUE_KIND_ASCII: FaberRtValueKindV1 = 18;
+
+pub type FaberRtInstansPrecisionV1 = u32;
+pub const INSTANS_PRECISION_SECONDS: FaberRtInstansPrecisionV1 = 0;
+pub const INSTANS_PRECISION_MILLIS: FaberRtInstansPrecisionV1 = 1;
+pub const INSTANS_PRECISION_MICROS: FaberRtInstansPrecisionV1 = 2;
+pub const INSTANS_PRECISION_NANOS: FaberRtInstansPrecisionV1 = 3;
 
 pub type FaberRtArrayRangeModeV1 = u32;
 pub const ARRAY_RANGE_SLICE: FaberRtArrayRangeModeV1 = 1;

@@ -840,6 +840,37 @@ fn octeti_family_mutates_indexes_and_converts_text() {
 }
 
 #[test]
+fn instans_family_preserves_precision_and_valor_provenance() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let wire = FaberRtSliceV1::from_static(b"1979-05-27T07:32:00.123456Z");
+    let micros =
+        unsafe { __faber_rt_v1_instans_from_text(context, &wire, INSTANS_PRECISION_MICROS) };
+    let millis =
+        unsafe { __faber_rt_v1_instans_retag(context, micros.value, INSTANS_PRECISION_MILLIS) };
+    let rendered = unsafe { __faber_rt_v1_instans_get_text(context, millis.value) };
+    let rendered = unsafe { &*rendered.value.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(rendered.data, rendered.len as usize) },
+        b"1979-05-27T07:32:00.123Z"
+    );
+    let valor = unsafe { __faber_rt_v1_valor_text(context, &wire) };
+    let seconds = unsafe {
+        __faber_rt_v1_instans_from_valor(context, valor.value.cast(), INSTANS_PRECISION_SECONDS)
+    };
+    let rendered = unsafe { __faber_rt_v1_instans_get_text(context, seconds.value) };
+    let rendered = unsafe { &*rendered.value.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(rendered.data, rendered.len as usize) },
+        b"1979-05-27T07:32:00Z"
+    );
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
 fn genus_valor_field_table_boxes_and_extracts_atomically() {
     let mut context = ptr::null_mut();
     assert_eq!(
