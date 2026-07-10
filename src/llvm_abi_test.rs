@@ -34,7 +34,10 @@ fn llvm_abi_v1_symbol_namespace_is_versioned() {
         SYMBOL_INIT,
         SYMBOL_SHUTDOWN,
         SYMBOL_WRITE_NOTA_TEXT,
+        SYMBOL_ASSERT,
+        SYMBOL_ASSERT_MESSAGE,
         SYMBOL_FATAL,
+        SYMBOL_FATAL_OPAQUE,
     ] {
         assert!(symbol.starts_with("__faber_rt_v1_"), "{symbol}");
     }

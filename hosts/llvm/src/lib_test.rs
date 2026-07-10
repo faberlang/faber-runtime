@@ -50,3 +50,29 @@ fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
     );
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn assertion_family_returns_handled_statuses() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    assert_eq!(unsafe { __faber_rt_v1_assert(context, 1) }, STATUS_OK);
+    assert_eq!(unsafe { __faber_rt_v1_assert(context, 0) }, STATUS_PANIC);
+    assert_eq!(
+        unsafe { __faber_rt_v1_assert_message(context, 1, FaberRtSliceV1::from_static(b"unused")) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_assert_message(
+                context,
+                0,
+                FaberRtSliceV1::from_static(b"assertion failed"),
+            )
+        },
+        STATUS_PANIC
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}

@@ -7,7 +7,10 @@ pub const ABI_VERSION: u32 = 1;
 pub const SYMBOL_INIT: &str = "__faber_rt_v1_init";
 pub const SYMBOL_SHUTDOWN: &str = "__faber_rt_v1_shutdown";
 pub const SYMBOL_WRITE_NOTA_TEXT: &str = "__faber_rt_v1_write_nota_text";
+pub const SYMBOL_ASSERT: &str = "__faber_rt_v1_assert";
+pub const SYMBOL_ASSERT_MESSAGE: &str = "__faber_rt_v1_assert_message";
 pub const SYMBOL_FATAL: &str = "__faber_rt_v1_fatal";
+pub const SYMBOL_FATAL_OPAQUE: &str = "__faber_rt_v1_fatal_opaque";
 pub const SYMBOL_PROGRAM_ENTRY: &str = "__faber_program_entry_v1";
 
 pub const LLVM_SLICE_TYPE: &str = "%FaberRtSliceV1";

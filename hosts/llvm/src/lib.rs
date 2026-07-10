@@ -100,6 +100,66 @@ pub unsafe extern "C" fn __faber_rt_v1_write_nota_text(
     })
 }
 
+/// Evaluate one assertion without allowing a panic to cross the C ABI.
+///
+/// # Safety
+///
+/// `context` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_assert(
+    context: *mut FaberRtContextV1,
+    condition: u8,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        if context.is_null() {
+            STATUS_INVALID_ARGUMENT
+        } else if condition == 0 {
+            STATUS_PANIC
+        } else {
+            STATUS_OK
+        }
+    })
+}
+
+/// Evaluate one assertion and report its literal message on failure.
+///
+/// # Safety
+///
+/// `context` must be live. `message` follows the slice validity contract of
+/// [`__faber_rt_v1_write_nota_text`].
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_assert_message(
+    context: *mut FaberRtContextV1,
+    condition: u8,
+    message: FaberRtSliceV1,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        if context.is_null() || (message.len > 0 && message.data.is_null()) {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        if condition != 0 {
+            return STATUS_OK;
+        }
+        let Ok(len) = usize::try_from(message.len) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let bytes = if len == 0 {
+            &[]
+        } else {
+            std::slice::from_raw_parts(message.data, len)
+        };
+        let mut stderr = io::stderr().lock();
+        match stderr
+            .write_all(bytes)
+            .and_then(|()| stderr.write_all(b"\n"))
+            .and_then(|()| stderr.flush())
+        {
+            Ok(()) => STATUS_PANIC,
+            Err(_) => STATUS_IO_ERROR,
+        }
+    })
+}
+
 fn write_diagnostic(
     context: *mut FaberRtContextV1,
     stderr: bool,
@@ -241,6 +301,24 @@ pub unsafe extern "C" fn __faber_rt_v1_fatal(
             drop(io::stderr().write_all(b"\n"));
             drop(io::stderr().flush());
         }
+    }
+    std::process::abort()
+}
+
+/// Abort for a message whose opaque runtime representation has no byte-length
+/// contract at this ABI boundary.
+///
+/// # Safety
+///
+/// `context` must be live. `message` is intentionally never dereferenced.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_fatal_opaque(
+    context: *mut FaberRtContextV1,
+    _message: *const u8,
+) -> ! {
+    if !context.is_null() {
+        drop(io::stderr().write_all(b"fatal error\n"));
+        drop(io::stderr().flush());
     }
     std::process::abort()
 }
