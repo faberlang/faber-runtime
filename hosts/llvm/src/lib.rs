@@ -1,7 +1,9 @@
 mod array;
 mod convert;
 mod format;
+mod option;
 
+use array::RuntimeArray;
 #[cfg(test)]
 use array::{
     __faber_rt_v1_array_clone, __faber_rt_v1_array_contains, __faber_rt_v1_array_extend,
@@ -9,7 +11,6 @@ use array::{
     __faber_rt_v1_array_new, __faber_rt_v1_array_option, __faber_rt_v1_array_push,
     __faber_rt_v1_array_range, __faber_rt_v1_array_reverse, __faber_rt_v1_array_set,
 };
-use array::{RuntimeArray, RuntimeOption};
 #[cfg(test)]
 use convert::{__faber_rt_v1_valor_f64, __faber_rt_v1_valor_i1, __faber_rt_v1_valor_i64};
 #[cfg(not(test))]
@@ -34,6 +35,12 @@ use format::{
     __faber_rt_v1_format_f64, __faber_rt_v1_format_i64, __faber_rt_v1_format_i64_i64,
     __faber_rt_v1_format_i64_i64_i64, __faber_rt_v1_text_f64, __faber_rt_v1_text_i1,
     __faber_rt_v1_text_i64,
+};
+use option::RuntimeOption;
+#[cfg(test)]
+use option::{
+    __faber_rt_v1_option_get, __faber_rt_v1_option_get_or, __faber_rt_v1_option_is_present,
+    __faber_rt_v1_option_none, __faber_rt_v1_option_some,
 };
 use std::ffi::{c_char, c_int};
 use std::fmt::Display;

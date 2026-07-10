@@ -1,5 +1,6 @@
 //! Arena-owned typed arrays for the LLVM host ABI.
 
+use super::option::store_option;
 use super::RuntimeContext;
 use faber::llvm_abi::{
     FaberRtArrayOptionModeV1, FaberRtArrayRangeModeV1, FaberRtContextV1, FaberRtPtrResultV1,
@@ -26,11 +27,6 @@ pub(super) enum RuntimeValue {
 pub(super) struct RuntimeArray {
     kind: FaberRtValueKindV1,
     values: Vec<RuntimeValue>,
-}
-
-pub(super) struct RuntimeOption {
-    pub(super) _kind: FaberRtValueKindV1,
-    pub(super) _value: Option<RuntimeValue>,
 }
 
 #[no_mangle]
@@ -322,13 +318,7 @@ pub unsafe extern "C" fn __faber_rt_v1_array_option(
             ARRAY_OPTION_REMOVE_LAST => array.values.pop(),
             _ => return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT),
         };
-        let mut option = Box::new(RuntimeOption {
-            _kind: kind,
-            _value: value,
-        });
-        let handle = std::ptr::from_mut(option.as_mut()).cast::<c_void>();
-        runtime.options.push(option);
-        FaberRtPtrResultV1::success(handle)
+        store_option(runtime, kind, value)
     })
 }
 
@@ -363,7 +353,7 @@ fn range_bounds(
     })
 }
 
-fn valid_kind(kind: FaberRtValueKindV1) -> bool {
+pub(super) fn valid_kind(kind: FaberRtValueKindV1) -> bool {
     matches!(
         kind,
         VALUE_KIND_I1
@@ -403,7 +393,10 @@ fn find_array_index(runtime: &RuntimeContext, handle: *mut c_void) -> Option<usi
         .position(|array| std::ptr::eq(array.as_ref(), handle.cast_const().cast::<RuntimeArray>()))
 }
 
-unsafe fn read_value(kind: FaberRtValueKindV1, value: *const c_void) -> Option<RuntimeValue> {
+pub(super) unsafe fn read_value(
+    kind: FaberRtValueKindV1,
+    value: *const c_void,
+) -> Option<RuntimeValue> {
     Some(match kind {
         VALUE_KIND_I1 => RuntimeValue::I1(unsafe { read_typed(value) }?),
         VALUE_KIND_I8 => RuntimeValue::I8(unsafe { read_typed(value) }?),
@@ -416,7 +409,7 @@ unsafe fn read_value(kind: FaberRtValueKindV1, value: *const c_void) -> Option<R
     })
 }
 
-unsafe fn write_value(value: RuntimeValue, output: *mut c_void) -> bool {
+pub(super) unsafe fn write_value(value: RuntimeValue, output: *mut c_void) -> bool {
     match value {
         RuntimeValue::I1(value) => unsafe { write_typed(output, value) },
         RuntimeValue::I8(value) => unsafe { write_typed(output, value) },

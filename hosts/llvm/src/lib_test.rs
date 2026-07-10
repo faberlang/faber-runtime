@@ -566,7 +566,7 @@ fn array_option_methods_cover_access_empty_and_removal() {
         let result = unsafe { __faber_rt_v1_array_option(context, array.value, mode, index) };
         assert_eq!(result.status, STATUS_OK);
         let option = unsafe { &*result.value.cast::<RuntimeOption>() };
-        assert_eq!(option._kind, VALUE_KIND_I64);
+        assert_eq!(option.kind, VALUE_KIND_I64);
         assert_eq!(option_i64(option), expected);
     }
     assert_array_i64(context, array.value, &[20]);
@@ -578,9 +578,108 @@ fn array_option_methods_cover_access_empty_and_removal() {
 }
 
 fn option_i64(option: &RuntimeOption) -> Option<i64> {
-    match option._value {
+    match option.value {
         Some(array::RuntimeValue::I64(value)) => Some(value),
         None => None,
         _ => panic!("unexpected runtime option kind"),
     }
+}
+
+#[test]
+fn option_family_produces_queries_unwraps_and_coalesces_shared_handles() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let value = 42_i64;
+    let fallback = 9_i64;
+    let none = unsafe { __faber_rt_v1_option_none(context, VALUE_KIND_I64) };
+    let some = unsafe {
+        __faber_rt_v1_option_some(context, VALUE_KIND_I64, std::ptr::from_ref(&value).cast())
+    };
+    assert_eq!(none.status, STATUS_OK);
+    assert_eq!(some.status, STATUS_OK);
+
+    for (option, expected) in [(none.value, 0_u8), (some.value, 1_u8)] {
+        let mut present = 99_u8;
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_option_is_present(
+                    context,
+                    option,
+                    VALUE_KIND_I64,
+                    std::ptr::from_mut(&mut present).cast(),
+                )
+            },
+            STATUS_OK
+        );
+        assert_eq!(present, expected);
+    }
+
+    let mut output = 0_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get(
+                context,
+                some.value,
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(output, value);
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get_or(
+                context,
+                none.value,
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&fallback).cast(),
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(output, fallback);
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get(
+                context,
+                none.value,
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_INVALID_ARGUMENT
+    );
+
+    let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_push(
+                context,
+                array.value,
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&value).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    let endpoint =
+        unsafe { __faber_rt_v1_array_option(context, array.value, ARRAY_OPTION_FIRST, 0) };
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get(
+                context,
+                endpoint.value,
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(output, value);
+    unsafe { __faber_rt_v1_shutdown(context) };
 }

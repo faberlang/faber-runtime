@@ -71,6 +71,11 @@ fn llvm_abi_v1_symbol_namespace_is_versioned() {
         SYMBOL_ARRAY_REVERSE,
         SYMBOL_ARRAY_RANGE,
         SYMBOL_ARRAY_OPTION,
+        SYMBOL_OPTION_NONE,
+        SYMBOL_OPTION_SOME,
+        SYMBOL_OPTION_IS_PRESENT,
+        SYMBOL_OPTION_GET,
+        SYMBOL_OPTION_GET_OR,
     ] {
         assert!(symbol.starts_with("__faber_rt_v1_"), "{symbol}");
     }

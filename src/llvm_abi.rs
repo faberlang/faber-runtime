@@ -33,6 +33,11 @@ pub const SYMBOL_ARRAY_IS_EMPTY: &str = "__faber_rt_v1_array_is_empty";
 pub const SYMBOL_ARRAY_REVERSE: &str = "__faber_rt_v1_array_reverse";
 pub const SYMBOL_ARRAY_RANGE: &str = "__faber_rt_v1_array_range";
 pub const SYMBOL_ARRAY_OPTION: &str = "__faber_rt_v1_array_option";
+pub const SYMBOL_OPTION_NONE: &str = "__faber_rt_v1_option_none";
+pub const SYMBOL_OPTION_SOME: &str = "__faber_rt_v1_option_some";
+pub const SYMBOL_OPTION_IS_PRESENT: &str = "__faber_rt_v1_option_is_present";
+pub const SYMBOL_OPTION_GET: &str = "__faber_rt_v1_option_get";
+pub const SYMBOL_OPTION_GET_OR: &str = "__faber_rt_v1_option_get_or";
 pub const SYMBOL_PROGRAM_ENTRY: &str = "__faber_program_entry_v1";
 
 pub type FaberRtValueKindV1 = u32;
