@@ -1,12 +1,11 @@
 //! In-process frame conversation types for expression `ad` and directional views.
 
 use crate::{Instans, InstansPraecisio, Valor};
-use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{Read, Seek, SeekFrom};
 use std::marker::PhantomData;
 use std::pin::Pin;
-use std::rc::Rc;
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::task::{Context, Poll, Waker};
 use std::thread;
 use std::time::Duration;
@@ -63,21 +62,36 @@ struct SermoInner {
     meus_closed: bool,
 }
 
+#[derive(Debug)]
+struct SermoShared {
+    state: Mutex<SermoInner>,
+    incoming_changed: Condvar,
+}
+
+impl SermoShared {
+    fn new(state: SermoInner) -> Self {
+        Self {
+            state: Mutex::new(state),
+            incoming_changed: Condvar::new(),
+        }
+    }
+}
+
 /// In-flight `ad` conversation handle.
 #[derive(Clone, Debug)]
 pub struct Sermo {
-    inner: Rc<RefCell<SermoInner>>,
+    inner: Arc<SermoShared>,
 }
 
 /// Caller-to-gateway live outbound half-stream view.
 pub struct Meus<T> {
-    inner: Rc<RefCell<SermoInner>>,
+    inner: Arc<SermoShared>,
     _marker: PhantomData<T>,
 }
 
 /// Gateway-to-caller live inbound half-stream view.
 pub struct Tuus<T> {
-    inner: Rc<RefCell<SermoInner>>,
+    inner: Arc<SermoShared>,
     _marker: PhantomData<T>,
 }
 
@@ -107,7 +121,7 @@ impl std::error::Error for FrameError {}
 impl<T> std::fmt::Debug for Meus<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Meus")
-            .field("conversation_id", &self.inner.borrow().conversation_id)
+            .field("conversation_id", &lock_sermo(&self.inner).conversation_id)
             .finish_non_exhaustive()
     }
 }
@@ -115,7 +129,7 @@ impl<T> std::fmt::Debug for Meus<T> {
 impl<T> std::fmt::Debug for Tuus<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tuus")
-            .field("conversation_id", &self.inner.borrow().conversation_id)
+            .field("conversation_id", &lock_sermo(&self.inner).conversation_id)
             .finish_non_exhaustive()
     }
 }
@@ -156,33 +170,41 @@ pub fn next_frame_id() -> String {
     format!("frame-{}", NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
+fn lock_sermo(shared: &SermoShared) -> MutexGuard<'_, SermoInner> {
+    shared
+        .state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 impl Sermo {
     pub fn conversation_id(&self) -> String {
-        self.inner.borrow().conversation_id.clone()
+        lock_sermo(&self.inner).conversation_id.clone()
     }
 
     pub fn route(&self) -> String {
-        self.inner.borrow().route.clone()
+        lock_sermo(&self.inner).route.clone()
     }
 
     pub fn incoming_drained(&self) -> bool {
-        self.inner.borrow().incoming_drained
+        lock_sermo(&self.inner).incoming_drained
     }
 
     pub fn push_incoming(&mut self, frame: Scrinium) {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = lock_sermo(&self.inner);
         inner.runtime_response_generated = true;
         inner.incoming.push_back(frame);
         wake_incoming(&mut inner);
+        self.inner.incoming_changed.notify_all();
     }
 
     pub fn first_outgoing(&self) -> Option<Scrinium> {
-        self.inner.borrow().outgoing.first().cloned()
+        lock_sermo(&self.inner).outgoing.first().cloned()
     }
 }
 
 pub fn sermo_set_opener(sermo: &mut Sermo, data: Valor) {
-    if let Some(request) = sermo.inner.borrow_mut().outgoing.first_mut() {
+    if let Some(request) = lock_sermo(&sermo.inner).outgoing.first_mut() {
         if request.status == FrameStatus::Request {
             request.data = data;
         }
@@ -192,7 +214,7 @@ pub fn sermo_set_opener(sermo: &mut Sermo, data: Valor) {
 pub fn sermo_open(route: &str) -> Sermo {
     let conversation_id = next_frame_id();
     Sermo {
-        inner: Rc::new(RefCell::new(SermoInner {
+        inner: Arc::new(SermoShared::new(SermoInner {
             conversation_id: conversation_id.clone(),
             route: route.to_owned(),
             outgoing: vec![Scrinium {
@@ -232,7 +254,7 @@ pub fn sermo_tuus<T>(sermo: &Sermo) -> Tuus<T> {
 }
 
 pub fn meus_da<T>(meus: &Meus<T>, data: Valor) -> Result<(), FrameError> {
-    let mut inner = meus.inner.borrow_mut();
+    let mut inner = lock_sermo(&meus.inner);
     if inner.meus_closed {
         return Err(FrameError::new(
             "frame_meus_half_stream_closed",
@@ -255,7 +277,7 @@ pub fn meus_da<T>(meus: &Meus<T>, data: Valor) -> Result<(), FrameError> {
 }
 
 pub fn meus_fini<T>(meus: &Meus<T>) -> FrameStatus {
-    let mut inner = meus.inner.borrow_mut();
+    let mut inner = lock_sermo(&meus.inner);
     if !inner.meus_closed {
         let conversation_id = inner.conversation_id.clone();
         let route = inner.route.clone();
@@ -275,13 +297,13 @@ pub fn meus_fini<T>(meus: &Meus<T>) -> FrameStatus {
 }
 
 pub fn tuus_accipe<T>(tuus: &Tuus<T>) -> Option<Scrinium> {
-    let mut inner = tuus.inner.borrow_mut();
+    let mut inner = lock_sermo(&tuus.inner);
     recv_content_frame(&mut inner)
 }
 
 /// Lazy inbound content-frame iterator; shares the queue with `tuus_accipe`.
 pub struct TuusCursor<T> {
-    inner: Rc<RefCell<SermoInner>>,
+    inner: Arc<SermoShared>,
     _marker: PhantomData<T>,
 }
 
@@ -289,7 +311,7 @@ impl<T> Iterator for TuusCursor<T> {
     type Item = Scrinium;
 
     fn next(&mut self) -> Option<Scrinium> {
-        recv_content_frame(&mut self.inner.borrow_mut())
+        recv_content_frame(&mut lock_sermo(&self.inner))
     }
 }
 
@@ -301,11 +323,11 @@ pub fn tuus_cursor<T>(tuus: &Tuus<T>) -> TuusCursor<T> {
 }
 
 pub fn tuus_fini<T>(tuus: &Tuus<T>) -> FrameStatus {
-    let mut inner = tuus.inner.borrow_mut();
+    let mut inner = lock_sermo(&tuus.inner);
     if inner.incoming_drained {
         return inner.incoming_terminal.unwrap_or(FrameStatus::Done);
     }
-    ensure_runtime_response_inner(&mut inner);
+    ensure_runtime_response_started(&tuus.inner, &mut inner);
     while let Some(frame) = inner.incoming.pop_front() {
         if frame.status.is_terminal() {
             record_incoming_terminal(&mut inner, frame.status);
@@ -338,7 +360,8 @@ fn recv_content_frame(inner: &mut SermoInner) -> Option<Scrinium> {
     if inner.detached || inner.incoming_drained {
         return None;
     }
-    ensure_runtime_response_inner(inner);
+    // Content cursors are nonblocking views. Route dispatch is started by the
+    // owning `Sermo` receive/materializer path.
     let frame = inner.incoming.pop_front()?;
     if frame.status.is_terminal() {
         record_incoming_terminal(inner, frame.status);
@@ -353,7 +376,7 @@ fn drain_incoming_to_terminal(sermo: &mut Sermo) {
             break;
         }
     }
-    let mut inner = sermo.inner.borrow_mut();
+    let mut inner = lock_sermo(&sermo.inner);
     if !inner.incoming_drained {
         record_incoming_terminal(&mut inner, FrameStatus::Done);
     }
@@ -368,7 +391,7 @@ pub fn sermo_tuus_frames(mut sermo: Sermo) -> Vec<Scrinium> {
         }
         frames.push(frame);
     }
-    let mut inner = sermo.inner.borrow_mut();
+    let mut inner = lock_sermo(&sermo.inner);
     if inner.incoming_terminal.is_none() {
         record_incoming_terminal(&mut inner, FrameStatus::Done);
     }
@@ -376,11 +399,18 @@ pub fn sermo_tuus_frames(mut sermo: Sermo) -> Vec<Scrinium> {
 }
 
 pub fn sermo_recv(sermo: &mut Sermo) -> Option<Scrinium> {
-    let mut inner = sermo.inner.borrow_mut();
+    let mut inner = lock_sermo(&sermo.inner);
     if inner.detached {
         return None;
     }
-    ensure_runtime_response_inner(&mut inner);
+    ensure_runtime_response_started(&sermo.inner, &mut inner);
+    while inner.incoming.is_empty() && !inner.detached && !inner.incoming_drained {
+        inner = sermo
+            .inner
+            .incoming_changed
+            .wait(inner)
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+    }
     let frame = inner.incoming.pop_front()?;
     if frame.status.is_terminal() {
         record_incoming_terminal(&mut inner, frame.status);
@@ -394,7 +424,7 @@ pub async fn sermo_recv_async(sermo: &mut Sermo) -> Option<Scrinium> {
             return Some(frame);
         }
         let wait = {
-            let inner = sermo.inner.borrow();
+            let inner = lock_sermo(&sermo.inner);
             if inner.detached || inner.incoming_drained {
                 return None;
             }
@@ -408,12 +438,12 @@ pub async fn sermo_recv_async(sermo: &mut Sermo) -> Option<Scrinium> {
 }
 
 fn sermo_recv_ready(sermo: &mut Sermo) -> Option<Scrinium> {
-    let mut inner = sermo.inner.borrow_mut();
+    let mut inner = lock_sermo(&sermo.inner);
     if inner.detached {
         return None;
     }
     if inner.incoming.is_empty() {
-        ensure_runtime_response_inner(&mut inner);
+        ensure_runtime_response_started(&sermo.inner, &mut inner);
     }
     let frame = inner.incoming.pop_front()?;
     if frame.status.is_terminal() {
@@ -423,7 +453,7 @@ fn sermo_recv_ready(sermo: &mut Sermo) -> Option<Scrinium> {
 }
 
 struct IncomingWake {
-    inner: Rc<RefCell<SermoInner>>,
+    inner: Arc<SermoShared>,
     seen_epoch: u64,
 }
 
@@ -431,7 +461,7 @@ impl std::future::Future for IncomingWake {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = lock_sermo(&self.inner);
         if inner.detached
             || inner.incoming_drained
             || !inner.incoming.is_empty()
@@ -450,78 +480,101 @@ impl std::future::Future for IncomingWake {
     }
 }
 
-fn ensure_runtime_response_inner(inner: &mut SermoInner) {
+fn ensure_runtime_response_started(shared: &Arc<SermoShared>, inner: &mut SermoInner) {
     if inner.runtime_response_generated {
         return;
     }
-
-    match inner.route.as_str() {
-        "runtime:echo" => {
-            let data = inner
-                .outgoing
-                .first()
-                .map(|request| request.data.clone())
-                .unwrap_or(Valor::Nihil);
-            push_runtime_item_done(inner, data);
+    inner.runtime_response_generated = true;
+    let route = inner.route.clone();
+    let data = request_data(inner);
+    let shared = Arc::clone(shared);
+    thread::spawn(move || {
+        let frames = runtime_response_frames(&route, data, None);
+        let mut inner = lock_sermo(&shared);
+        for (status, data) in frames {
+            push_runtime_frame(&mut inner, status, data);
         }
+        shared.incoming_changed.notify_all();
+    });
+}
+
+fn ensure_runtime_response_started_for_type<T>(sermo: &mut Sermo)
+where
+    T: crate::FromValor,
+{
+    let mut inner = lock_sermo(&sermo.inner);
+    if inner.runtime_response_generated {
+        return;
+    }
+    inner.runtime_response_generated = true;
+    let route = inner.route.clone();
+    let data = request_data(&inner);
+    let target = std::any::type_name::<T>();
+    let shared = Arc::clone(&sermo.inner);
+    thread::spawn(move || {
+        let frames = runtime_response_frames(&route, data, Some(target));
+        let mut inner = lock_sermo(&shared);
+        for (status, data) in frames {
+            push_runtime_frame(&mut inner, status, data);
+        }
+        shared.incoming_changed.notify_all();
+    });
+}
+
+fn runtime_response_frames(
+    route: &str,
+    data: Valor,
+    target: Option<&'static str>,
+) -> Vec<(FrameStatus, Valor)> {
+    match route {
+        "runtime:echo" => item_done_frames(data),
         "tempus:nunc" => {
             let now = epoch_nanos();
             let instans = Instans::from_nanos(now, InstansPraecisio::Nanosecunda);
-            push_runtime_item_done(inner, Valor::Instans(instans.to_rfc3339()));
+            item_done_frames(Valor::Instans(instans.to_rfc3339()))
         }
-        "tempus:monotonicum" => {
-            push_runtime_item_done(inner, Valor::Numerus(monotonic_nanos()));
-        }
-        "tempus:activum" => {
-            push_runtime_item_done(inner, Valor::Numerus(process_active_millis()));
-        }
+        "tempus:monotonicum" => item_done_frames(Valor::Numerus(monotonic_nanos())),
+        "tempus:activum" => item_done_frames(Valor::Numerus(process_active_millis())),
         "tempus:dormiet" | "tempus:expectet" => {
-            let ms = request_numerus(inner).unwrap_or(0).max(0);
+            let ms = valor_numerus(&data).unwrap_or(0).max(0);
             thread::sleep(Duration::from_millis(ms as u64));
-            push_runtime_done(inner);
+            done_frames()
         }
         "solum:scribe" | "solum:scribet" | "solum:appone" | "solum:apponet" => {
-            dispatch_solum_write_text(inner);
+            solum_write_text_frames(route, data)
         }
-        "solum:dele" | "solum:delet" => {
-            dispatch_solum_delete(inner);
+        "solum:dele" | "solum:delet" => solum_delete_frames(data),
+        "solum:parens" => solum_parent_frames(data),
+        "solum:partem" => solum_partem_frames(data, target),
+        "processus:exsequi" | "processus:exsequetur" => processus_exsequi_frames(data),
+        "processus:captura" => processus_captura_frames(data),
+        "solum:lege" => solum_lege_frames(data, target),
+        "solum:mensura" => solum_mensura_frames(data, target),
+        "solum:inveni" => solum_inveni_frames(data, target),
+        "solum:exstat" | "solum:directoriumne" | "solum:regularene" | "solum:legibilene" => {
+            solum_path_bool_frames(route, data, target)
         }
-        "solum:parens" => {
-            dispatch_solum_parens(inner);
-        }
-        "solum:partem" => {
-            try_generate_solum_partem_response::<Vec<u8>>(inner);
-        }
-        "processus:exsequi" | "processus:exsequetur" => {
-            dispatch_processus_exsequi(inner);
-        }
-        "processus:captura" => {
-            dispatch_processus_captura(inner);
-        }
-        _ => {}
+        _ => error_frames(format!("unsupported ad route `{route}`")),
     }
 }
 
-fn push_runtime_item_done(inner: &mut SermoInner, data: Valor) {
-    inner.runtime_response_generated = true;
-    push_runtime_frame(inner, FrameStatus::Item, data);
-    push_runtime_frame(inner, FrameStatus::Done, Valor::Nihil);
+fn item_done_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    vec![(FrameStatus::Item, data), (FrameStatus::Done, Valor::Nihil)]
 }
 
-fn push_runtime_bytes_done(inner: &mut SermoInner, bytes: Vec<u8>) {
-    inner.runtime_response_generated = true;
-    push_runtime_frame(inner, FrameStatus::Byte, Valor::Octeti(bytes));
-    push_runtime_frame(inner, FrameStatus::Done, Valor::Nihil);
+fn bytes_done_frames(bytes: Vec<u8>) -> Vec<(FrameStatus, Valor)> {
+    vec![
+        (FrameStatus::Byte, Valor::Octeti(bytes)),
+        (FrameStatus::Done, Valor::Nihil),
+    ]
 }
 
-fn push_runtime_done(inner: &mut SermoInner) {
-    inner.runtime_response_generated = true;
-    push_runtime_frame(inner, FrameStatus::Done, Valor::Nihil);
+fn done_frames() -> Vec<(FrameStatus, Valor)> {
+    vec![(FrameStatus::Done, Valor::Nihil)]
 }
 
-fn push_runtime_error(inner: &mut SermoInner, message: impl Into<String>) {
-    inner.runtime_response_generated = true;
-    push_runtime_frame(inner, FrameStatus::Error, Valor::Textus(message.into()));
+fn error_frames(message: impl Into<String>) -> Vec<(FrameStatus, Valor)> {
+    vec![(FrameStatus::Error, Valor::Textus(message.into()))]
 }
 
 fn push_runtime_frame(inner: &mut SermoInner, status: FrameStatus, data: Valor) {
@@ -546,48 +599,48 @@ fn request_data(inner: &SermoInner) -> Valor {
         .unwrap_or(Valor::Nihil)
 }
 
-fn request_text(inner: &SermoInner) -> Option<String> {
-    match request_data(inner) {
-        Valor::Textus(text) => Some(text),
+fn valor_text(data: &Valor) -> Option<String> {
+    match data {
+        Valor::Textus(text) => Some(text.clone()),
         _ => None,
     }
 }
 
-fn request_text_list(inner: &SermoInner) -> Option<Vec<String>> {
-    let Valor::Lista(items) = request_data(inner) else {
+fn valor_text_list(data: &Valor) -> Option<Vec<String>> {
+    let Valor::Lista(items) = data else {
         return None;
     };
     items
-        .into_iter()
+        .iter()
         .map(|item| match item {
-            Valor::Textus(value) => Some(value),
+            Valor::Textus(value) => Some(value.clone()),
             _ => None,
         })
         .collect()
 }
 
-fn request_numerus(inner: &SermoInner) -> Option<i64> {
-    match request_data(inner) {
-        Valor::Numerus(n) => Some(n),
+fn valor_numerus(data: &Valor) -> Option<i64> {
+    match data {
+        Valor::Numerus(n) => Some(*n),
         _ => None,
     }
 }
 
-fn request_text_pair(inner: &SermoInner) -> Result<(String, String), String> {
-    let Valor::Lista(items) = request_data(inner) else {
+fn valor_text_pair(data: Valor) -> Result<(String, String), String> {
+    let Valor::Lista(items) = data else {
         return Err("route opener must be [textus, textus]".to_owned());
     };
     let mut iter = items.into_iter();
-    let (Some(Valor::Textus(path)), Some(Valor::Textus(data)), None) =
+    let (Some(Valor::Textus(path)), Some(Valor::Textus(value)), None) =
         (iter.next(), iter.next(), iter.next())
     else {
         return Err("route opener must be [textus, textus]".to_owned());
     };
-    Ok((path, data))
+    Ok((path, value))
 }
 
-fn request_text_range(inner: &SermoInner) -> Result<(String, i64, i64), String> {
-    let Valor::Lista(items) = request_data(inner) else {
+fn valor_text_range(data: Valor) -> Result<(String, i64, i64), String> {
+    let Valor::Lista(items) = data else {
         return Err("route opener must be [textus, numerus, numerus]".to_owned());
     };
     let mut iter = items.into_iter();
@@ -603,8 +656,8 @@ fn request_text_range(inner: &SermoInner) -> Result<(String, i64, i64), String> 
     Ok((path, start, length))
 }
 
-fn request_text_pattern_range(inner: &SermoInner) -> Result<(String, String, i64, i64), String> {
-    let Valor::Lista(items) = request_data(inner) else {
+fn valor_text_pattern_range(data: Valor) -> Result<(String, String, i64, i64), String> {
+    let Valor::Lista(items) = data else {
         return Err("route opener must be [textus, textus, numerus, numerus]".to_owned());
     };
     let mut iter = items.into_iter();
@@ -627,86 +680,77 @@ fn request_text_pattern_range(inner: &SermoInner) -> Result<(String, String, i64
     Ok((path, pattern, start, length))
 }
 
-fn dispatch_solum_write_text(inner: &mut SermoInner) {
-    let route = inner.route.clone();
-    let result = request_text_pair(inner).and_then(|(path, data)| {
-        if matches!(route.as_str(), "solum:appone" | "solum:apponet") {
+fn solum_write_text_frames(route: &str, data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let result = valor_text_pair(data).and_then(|(path, value)| {
+        if matches!(route, "solum:appone" | "solum:apponet") {
             use std::io::Write;
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(&path)
                 .map_err(|err| format!("failed to open file for append: {err}"))?;
-            file.write_all(data.as_bytes())
+            file.write_all(value.as_bytes())
                 .map_err(|err| format!("failed to append to file: {err}"))
         } else {
-            std::fs::write(&path, data).map_err(|err| format!("failed to write file: {err}"))
+            std::fs::write(&path, value).map_err(|err| format!("failed to write file: {err}"))
         }
     });
 
     match result {
-        Ok(()) => push_runtime_done(inner),
-        Err(message) => push_runtime_error(inner, message),
+        Ok(()) => done_frames(),
+        Err(message) => error_frames(message),
     }
 }
 
-fn dispatch_solum_parens(inner: &mut SermoInner) {
-    let Some(path) = request_text(inner) else {
-        push_runtime_error(inner, "solum:parens opener must be textus");
-        return;
+fn solum_parent_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:parens opener must be textus");
     };
     let parent = std::path::Path::new(&path)
         .parent()
         .map(|parent| parent.to_string_lossy().into_owned())
         .unwrap_or_default();
-    push_runtime_item_done(inner, Valor::Textus(parent));
+    item_done_frames(Valor::Textus(parent))
 }
 
-fn dispatch_solum_delete(inner: &mut SermoInner) {
-    let Some(path) = request_text(inner) else {
-        push_runtime_error(inner, "solum:dele opener must be textus");
-        return;
+fn solum_delete_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:dele opener must be textus");
     };
     match std::fs::remove_file(&path) {
-        Ok(()) => push_runtime_done(inner),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => push_runtime_done(inner),
-        Err(err) => push_runtime_error(inner, format!("solum.dele failed for {path}: {err}")),
+        Ok(()) => done_frames(),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => done_frames(),
+        Err(err) => error_frames(format!("solum.dele failed for {path}: {err}")),
     }
 }
 
-fn dispatch_processus_exsequi(inner: &mut SermoInner) {
-    let Some(command) = request_text(inner) else {
-        push_runtime_error(inner, "processus:exsequi opener must be textus");
-        return;
+fn processus_exsequi_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(command) = valor_text(&data) else {
+        return error_frames("processus:exsequi opener must be textus");
     };
-    let result = std::process::Command::new("sh")
+    match std::process::Command::new("sh")
         .arg("-c")
         .arg(&command)
         .output()
-        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
-        .map_err(|err| format!("processus.exsequi failed: {err}"));
-
-    match result {
-        Ok(stdout) => push_runtime_item_done(inner, Valor::Textus(stdout)),
-        Err(message) => push_runtime_error(inner, message),
+    {
+        Ok(output) => item_done_frames(Valor::Textus(
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+        )),
+        Err(err) => error_frames(format!("processus.exsequi failed: {err}")),
     }
 }
 
-fn dispatch_processus_captura(inner: &mut SermoInner) {
-    let Some(args) = request_text_list(inner) else {
-        push_runtime_error(inner, "processus:captura opener must be lista<textus>");
-        return;
+fn processus_captura_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(args) = valor_text_list(&data) else {
+        return error_frames("processus:captura opener must be lista<textus>");
     };
     let Some((program, program_args)) = args.split_first() else {
-        push_runtime_error(inner, "processus:captura requires a non-empty args list");
-        return;
+        return error_frames("processus:captura requires a non-empty args list");
     };
-    let result = std::process::Command::new(program)
+    match std::process::Command::new(program)
         .args(program_args)
         .output()
-        .map_err(|err| format!("processus.captura failed: {err}"));
-
-    match result {
+    {
         Ok(output) => {
             let mut fields = BTreeMap::new();
             fields.insert(
@@ -721,224 +765,126 @@ fn dispatch_processus_captura(inner: &mut SermoInner) {
                 "stderr".to_owned(),
                 Valor::Textus(String::from_utf8_lossy(&output.stderr).into_owned()),
             );
-            push_runtime_item_done(inner, Valor::Tabula(fields));
+            item_done_frames(Valor::Tabula(fields))
         }
-        Err(message) => push_runtime_error(inner, message),
+        Err(err) => error_frames(format!("processus.captura failed: {err}")),
     }
 }
 
-fn ensure_scalar_runtime_response<T>(sermo: &mut Sermo)
-where
-    T: crate::FromValor,
-{
-    let mut inner = sermo.inner.borrow_mut();
-    if inner.runtime_response_generated {
-        return;
-    }
-    if try_generate_solum_lege_response::<T>(&mut inner) {
-        return;
-    }
-    if try_generate_solum_partem_response::<T>(&mut inner) {
-        return;
-    }
-    if try_generate_solum_mensura_response::<T>(&mut inner) {
-        return;
-    }
-    if try_generate_solum_inveni_response::<T>(&mut inner) {
-        return;
-    }
-    if try_generate_solum_path_bool_response::<T>(&mut inner) {
-        return;
-    }
-    ensure_runtime_response_inner(&mut inner);
-}
-
-fn try_generate_solum_lege_response<T>(inner: &mut SermoInner) -> bool
-where
-    T: crate::FromValor,
-{
-    if inner.route != "solum:lege" {
-        return false;
-    }
-
-    let Some(path) = request_text(inner) else {
-        push_runtime_error(inner, "solum:lege opener must be textus");
-        return true;
+fn solum_lege_frames(data: Valor, target: Option<&'static str>) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:lege opener must be textus");
     };
-
-    let target = std::any::type_name::<T>();
+    let Some(target) = target else {
+        return error_frames("solum:lege requires a materialization target");
+    };
     if target == std::any::type_name::<String>() {
-        match std::fs::read_to_string(&path) {
-            Ok(text) => push_runtime_item_done(inner, Valor::Textus(text)),
-            Err(err) => push_runtime_error(inner, format!("failed to read file: {err}")),
-        }
-        return true;
+        return match std::fs::read_to_string(&path) {
+            Ok(text) => item_done_frames(Valor::Textus(text)),
+            Err(err) => error_frames(format!("failed to read file: {err}")),
+        };
     }
-
     if target == std::any::type_name::<Vec<String>>() {
-        match std::fs::read_to_string(&path) {
-            Ok(text) => {
-                let lines = text
-                    .lines()
+        return match std::fs::read_to_string(&path) {
+            Ok(text) => item_done_frames(Valor::Lista(
+                text.lines()
                     .map(|line| Valor::Textus(line.to_owned()))
-                    .collect();
-                push_runtime_item_done(inner, Valor::Lista(lines));
-            }
-            Err(err) => push_runtime_error(inner, format!("failed to read file: {err}")),
-        }
-        return true;
+                    .collect(),
+            )),
+            Err(err) => error_frames(format!("failed to read file: {err}")),
+        };
     }
-
     if target == std::any::type_name::<Vec<u8>>() {
-        match std::fs::read(&path) {
-            Ok(bytes) => {
-                let values = bytes
+        return match std::fs::read(&path) {
+            Ok(bytes) => item_done_frames(Valor::Lista(
+                bytes
                     .into_iter()
                     .map(|byte| Valor::Numerus(i64::from(byte)))
-                    .collect();
-                push_runtime_item_done(inner, Valor::Lista(values));
-            }
-            Err(err) => push_runtime_error(inner, format!("failed to read file: {err}")),
-        }
-        return true;
+                    .collect(),
+            )),
+            Err(err) => error_frames(format!("failed to read file: {err}")),
+        };
     }
-
-    push_runtime_error(
-        inner,
-        format!("solum:lege target `{target}` is not supported"),
-    );
-    true
+    error_frames(format!("solum:lege target `{target}` is not supported"))
 }
 
-fn try_generate_solum_partem_response<T>(inner: &mut SermoInner) -> bool
-where
-    T: crate::FromValor,
-{
-    if inner.route != "solum:partem" {
-        return false;
-    }
-
-    let Ok((path, start, length)) = request_text_range(inner) else {
-        push_runtime_error(
-            inner,
-            "solum:partem opener must be [textus, numerus, numerus]",
-        );
-        return true;
+fn solum_partem_frames(data: Valor, target: Option<&'static str>) -> Vec<(FrameStatus, Valor)> {
+    let Ok((path, start, length)) = valor_text_range(data) else {
+        return error_frames("solum:partem opener must be [textus, numerus, numerus]");
     };
-
-    let target = std::any::type_name::<T>();
-    if target != std::any::type_name::<Vec<u8>>() {
-        push_runtime_error(
-            inner,
-            format!("solum:partem target `{target}` is not supported"),
-        );
-        return true;
+    if target.is_some_and(|name| name != std::any::type_name::<Vec<u8>>()) {
+        return error_frames(format!(
+            "solum:partem target `{}` is not supported",
+            target.unwrap_or("<unknown>")
+        ));
     }
-
     let Ok(start) = u64::try_from(start) else {
-        push_runtime_error(inner, "solum:partem start must be non-negative");
-        return true;
+        return error_frames("solum:partem start must be non-negative");
     };
     let Ok(length) = usize::try_from(length) else {
-        push_runtime_error(inner, "solum:partem length must be non-negative");
-        return true;
+        return error_frames("solum:partem length must be non-negative");
     };
-
     match std::fs::File::open(&path) {
         Ok(mut file) => {
             if let Err(err) = file.seek(SeekFrom::Start(start)) {
-                push_runtime_error(inner, format!("failed to seek file: {err}"));
-                return true;
+                return error_frames(format!("failed to seek file: {err}"));
             }
             let mut bytes = vec![0_u8; length];
             match file.read(&mut bytes) {
                 Ok(count) => {
                     bytes.truncate(count);
-                    push_runtime_bytes_done(inner, bytes);
+                    bytes_done_frames(bytes)
                 }
-                Err(err) => push_runtime_error(inner, format!("failed to read file: {err}")),
+                Err(err) => error_frames(format!("failed to read file: {err}")),
             }
         }
-        Err(err) => push_runtime_error(inner, format!("failed to open file: {err}")),
+        Err(err) => error_frames(format!("failed to open file: {err}")),
     }
-    true
 }
 
-fn try_generate_solum_mensura_response<T>(inner: &mut SermoInner) -> bool
-where
-    T: crate::FromValor,
-{
-    if inner.route != "solum:mensura" {
-        return false;
-    }
-
-    let Some(path) = request_text(inner) else {
-        push_runtime_error(inner, "solum:mensura opener must be textus");
-        return true;
+fn solum_mensura_frames(data: Valor, target: Option<&'static str>) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:mensura opener must be textus");
     };
-
-    let target = std::any::type_name::<T>();
-    if target != std::any::type_name::<i64>() {
-        push_runtime_error(
-            inner,
-            format!("solum:mensura target `{target}` is not supported"),
-        );
-        return true;
+    if target != Some(std::any::type_name::<i64>()) {
+        return error_frames(format!(
+            "solum:mensura target `{}` is not supported",
+            target.unwrap_or("<unknown>")
+        ));
     }
-
     match std::fs::metadata(path) {
         Ok(metadata) => match i64::try_from(metadata.len()) {
-            Ok(size) => push_runtime_item_done(inner, Valor::Numerus(size)),
-            Err(_) => push_runtime_error(inner, "file size exceeds numerus range"),
+            Ok(size) => item_done_frames(Valor::Numerus(size)),
+            Err(_) => error_frames("file size exceeds numerus range"),
         },
-        Err(err) => push_runtime_error(inner, format!("failed to read file metadata: {err}")),
+        Err(err) => error_frames(format!("failed to read file metadata: {err}")),
     }
-    true
 }
 
-fn try_generate_solum_inveni_response<T>(inner: &mut SermoInner) -> bool
-where
-    T: crate::FromValor,
-{
-    if inner.route != "solum:inveni" {
-        return false;
-    }
-
-    let Ok((path, pattern, start, length)) = request_text_pattern_range(inner) else {
-        push_runtime_error(
-            inner,
-            "solum:inveni opener must be [textus, textus, numerus, numerus]",
-        );
-        return true;
+fn solum_inveni_frames(data: Valor, target: Option<&'static str>) -> Vec<(FrameStatus, Valor)> {
+    let Ok((path, pattern, start, length)) = valor_text_pattern_range(data) else {
+        return error_frames("solum:inveni opener must be [textus, textus, numerus, numerus]");
     };
-
-    let target = std::any::type_name::<T>();
-    if target != std::any::type_name::<i64>() {
-        push_runtime_error(
-            inner,
-            format!("solum:inveni target `{target}` is not supported"),
-        );
-        return true;
+    if target != Some(std::any::type_name::<i64>()) {
+        return error_frames(format!(
+            "solum:inveni target `{}` is not supported",
+            target.unwrap_or("<unknown>")
+        ));
     }
     let Ok(start) = u64::try_from(start) else {
-        push_runtime_error(inner, "solum:inveni start must be non-negative");
-        return true;
+        return error_frames("solum:inveni start must be non-negative");
     };
     let Ok(length) = usize::try_from(length) else {
-        push_runtime_error(inner, "solum:inveni length must be non-negative");
-        return true;
+        return error_frames("solum:inveni length must be non-negative");
     };
     let pattern = pattern.into_bytes();
     if pattern.is_empty() {
-        push_runtime_item_done(inner, Valor::Numerus(-1));
-        return true;
+        return item_done_frames(Valor::Numerus(-1));
     }
-
     match std::fs::File::open(&path) {
         Ok(mut file) => {
             if let Err(err) = file.seek(SeekFrom::Start(start)) {
-                push_runtime_error(inner, format!("failed to seek file: {err}"));
-                return true;
+                return error_frames(format!("failed to seek file: {err}"));
             }
             let mut bytes = vec![0_u8; length];
             match file.read(&mut bytes) {
@@ -949,51 +895,45 @@ where
                         .position(|window| window == pattern.as_slice())
                         .and_then(|offset| i64::try_from(start.saturating_add(offset as u64)).ok())
                         .unwrap_or(-1);
-                    push_runtime_item_done(inner, Valor::Numerus(found));
+                    item_done_frames(Valor::Numerus(found))
                 }
-                Err(err) => push_runtime_error(inner, format!("failed to read file: {err}")),
+                Err(err) => error_frames(format!("failed to read file: {err}")),
             }
         }
-        Err(err) => push_runtime_error(inner, format!("failed to open file: {err}")),
+        Err(err) => error_frames(format!("failed to open file: {err}")),
     }
-    true
 }
 
-fn try_generate_solum_path_bool_response<T>(inner: &mut SermoInner) -> bool
+fn solum_path_bool_frames(
+    route: &str,
+    data: Valor,
+    target: Option<&'static str>,
+) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames(format!("{route} opener must be textus"));
+    };
+    if target != Some(std::any::type_name::<bool>()) {
+        return error_frames(format!(
+            "{route} target `{}` is not supported",
+            target.unwrap_or("<unknown>")
+        ));
+    }
+    let path = std::path::Path::new(&path);
+    let result = match route {
+        "solum:exstat" => path.exists(),
+        "solum:directoriumne" => path.is_dir(),
+        "solum:regularene" => path.is_file(),
+        "solum:legibilene" => path.is_file() && std::fs::File::open(path).is_ok(),
+        _ => false,
+    };
+    item_done_frames(Valor::Bivalens(result))
+}
+
+fn ensure_scalar_runtime_response<T>(sermo: &mut Sermo)
 where
     T: crate::FromValor,
 {
-    if !matches!(
-        inner.route.as_str(),
-        "solum:exstat" | "solum:directoriumne" | "solum:regularene" | "solum:legibilene"
-    ) {
-        return false;
-    }
-
-    let Some(path) = request_text(inner) else {
-        push_runtime_error(inner, format!("{} opener must be textus", inner.route));
-        return true;
-    };
-
-    let target = std::any::type_name::<T>();
-    if target == std::any::type_name::<bool>() {
-        let path = std::path::Path::new(&path);
-        let result = match inner.route.as_str() {
-            "solum:exstat" => path.exists(),
-            "solum:directoriumne" => path.is_dir(),
-            "solum:regularene" => path.is_file(),
-            "solum:legibilene" => path.is_file() && std::fs::File::open(path).is_ok(),
-            _ => false,
-        };
-        push_runtime_item_done(inner, Valor::Bivalens(result));
-        return true;
-    }
-
-    push_runtime_error(
-        inner,
-        format!("{} target `{target}` is not supported", inner.route),
-    );
-    true
+    ensure_runtime_response_started_for_type::<T>(sermo);
 }
 
 fn epoch_nanos() -> i64 {
@@ -1141,14 +1081,7 @@ pub fn sermo_materialize_octeti(sermo: &mut Sermo) -> Vec<u8> {
 }
 
 pub fn try_sermo_materialize_octeti(sermo: &mut Sermo) -> Result<Vec<u8>, FrameError> {
-    {
-        let mut inner = sermo.inner.borrow_mut();
-        if !inner.runtime_response_generated
-            && !try_generate_solum_lege_response::<Vec<u8>>(&mut inner)
-        {
-            try_generate_solum_partem_response::<Vec<u8>>(&mut inner);
-        }
-    }
+    ensure_runtime_response_started_for_type::<Vec<u8>>(sermo);
     let mut out = Vec::new();
     while let Some(frame) = sermo_recv(sermo) {
         if let Some(message) = terminal_error(&frame) {
@@ -1203,14 +1136,7 @@ pub async fn sermo_materialize_octeti_async(sermo: &mut Sermo) -> Vec<u8> {
 }
 
 pub async fn try_sermo_materialize_octeti_async(sermo: &mut Sermo) -> Result<Vec<u8>, FrameError> {
-    {
-        let mut inner = sermo.inner.borrow_mut();
-        if !inner.runtime_response_generated
-            && !try_generate_solum_lege_response::<Vec<u8>>(&mut inner)
-        {
-            try_generate_solum_partem_response::<Vec<u8>>(&mut inner);
-        }
-    }
+    ensure_runtime_response_started_for_type::<Vec<u8>>(sermo);
     let mut out = Vec::new();
     while let Some(frame) = sermo_recv_async(sermo).await {
         if let Some(message) = terminal_error(&frame) {
@@ -1397,8 +1323,8 @@ pub fn try_sermo_materialize_instans(
     precision: InstansPraecisio,
 ) -> Result<Instans, FrameError> {
     {
-        let mut inner = sermo.inner.borrow_mut();
-        ensure_runtime_response_inner(&mut inner);
+        let mut inner = lock_sermo(&sermo.inner);
+        ensure_runtime_response_started(&sermo.inner, &mut inner);
     }
     let mut extracted: Option<Instans> = None;
     let mut content_count = 0u32;
@@ -1451,8 +1377,8 @@ pub async fn try_sermo_materialize_instans_async(
     precision: InstansPraecisio,
 ) -> Result<Instans, FrameError> {
     {
-        let mut inner = sermo.inner.borrow_mut();
-        ensure_runtime_response_inner(&mut inner);
+        let mut inner = lock_sermo(&sermo.inner);
+        ensure_runtime_response_started(&sermo.inner, &mut inner);
     }
     let mut extracted: Option<Instans> = None;
     let mut content_count = 0u32;
@@ -1584,7 +1510,7 @@ async fn drain_remaining_then_err_async<T>(
             break;
         }
     }
-    let mut inner = sermo.inner.borrow_mut();
+    let mut inner = lock_sermo(&sermo.inner);
     if !inner.incoming_drained {
         record_incoming_terminal(&mut inner, FrameStatus::Done);
     }

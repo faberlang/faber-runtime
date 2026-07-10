@@ -89,6 +89,39 @@ fn sermo_recv_async_registers_runtime_neutral_wake() {
     assert_eq!(frame.data, Valor::Textus("awakened".into()));
 }
 
+#[test]
+fn unsupported_route_resolves_to_error_terminal() {
+    let mut sermo = frame::sermo_open("missing:route");
+    frame::sermo_set_opener(&mut sermo, Valor::Nihil);
+
+    let frame = frame::sermo_recv(&mut sermo).expect("unsupported route terminal");
+
+    assert_eq!(frame.status, FrameStatus::Error);
+    assert_eq!(frame.call, "missing:route");
+    assert!(
+        matches!(frame.data, Valor::Textus(message) if message.contains("unsupported ad route"))
+    );
+}
+
+#[test]
+fn async_receive_poll_does_not_sleep_for_timer_route() {
+    let mut sermo = frame::sermo_open("tempus:dormiet");
+    frame::sermo_set_opener(&mut sermo, Valor::Numerus(75));
+    let wake = Arc::new(CountingWake::default());
+    let waker = test_waker(&wake);
+    let mut cx = Context::from_waker(&waker);
+    let started = std::time::Instant::now();
+
+    let mut future = Box::pin(frame::sermo_recv_async(&mut sermo));
+    let polled = Future::poll(Pin::as_mut(&mut future), &mut cx);
+
+    assert!(matches!(polled, Poll::Pending));
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(25),
+        "pending async receive poll must not run the timer route synchronously"
+    );
+}
+
 // ---- `sermo ↦ T` materializers ----
 
 #[test]
