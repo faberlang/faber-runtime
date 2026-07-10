@@ -139,6 +139,15 @@ pub const SYMBOL_SPARSE_FROM_TENSOR: &str = "__faber_rt_v1_sparse_from_tensor";
 pub const SYMBOL_REGEX_FROM_TEXT: &str = "__faber_rt_v1_regex_from_text";
 pub const SYMBOL_REGEX_FROM_ASCII: &str = "__faber_rt_v1_regex_from_ascii";
 pub const SYMBOL_REGEX_GET_TEXT: &str = "__faber_rt_v1_regex_get_text";
+pub const SYMBOL_INTERVAL_NEW: &str = "__faber_rt_v1_interval_new";
+pub const SYMBOL_INTERVAL_INTERSECT: &str = "__faber_rt_v1_interval_intersect";
+pub const SYMBOL_INTERVAL_UNION: &str = "__faber_rt_v1_interval_union";
+pub const SYMBOL_INTERVAL_LENGTH: &str = "__faber_rt_v1_interval_length";
+pub const SYMBOL_INTERVAL_CONTAINS: &str = "__faber_rt_v1_interval_contains";
+pub const SYMBOL_INTERVAL_CLAMP_I64: &str = "__faber_rt_v1_interval_clamp_i64";
+pub const SYMBOL_INTERVAL_CLAMP: &str = "__faber_rt_v1_interval_clamp";
+pub const SYMBOL_INTERVAL_MATERIALIZE_ARRAY: &str = "__faber_rt_v1_interval_materialize_array";
+pub const SYMBOL_INTERVAL_MATERIALIZE_TENSOR: &str = "__faber_rt_v1_interval_materialize_tensor";
 pub const SYMBOL_PROGRAM_ENTRY: &str = "__faber_program_entry_v1";
 
 pub type FaberRtValueKindV1 = u32;

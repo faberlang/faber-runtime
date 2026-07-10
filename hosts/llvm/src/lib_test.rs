@@ -1592,9 +1592,8 @@ fn tensor_core_carrier_creates_shapes_indexes_and_slices() {
         );
     }
 
-    let tensor = unsafe {
-        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_F32, flat.value, shape.value)
-    };
+    let tensor =
+        unsafe { __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_F32, flat.value, shape.value) };
     assert_eq!(tensor.status, STATUS_OK);
 
     let mut rank = -1_i64;
@@ -1916,9 +1915,8 @@ fn tensor_convert_widens_and_narrows_element_kinds() {
             STATUS_OK
         );
     }
-    let ints = unsafe {
-        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_I64, flat.value, shape.value)
-    };
+    let ints =
+        unsafe { __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_I64, flat.value, shape.value) };
     assert_eq!(ints.status, STATUS_OK);
     let floats = unsafe {
         __faber_rt_v1_tensor_convert(context, ints.value, VALUE_KIND_I64, VALUE_KIND_F64)
@@ -2017,9 +2015,7 @@ fn sparse_core_carrier_sets_gets_and_densifies() {
         STATUS_OK
     );
     assert_eq!(rank, 2);
-    let back = unsafe {
-        __faber_rt_v1_sparse_from_tensor(context, dense.value, VALUE_KIND_F32)
-    };
+    let back = unsafe { __faber_rt_v1_sparse_from_tensor(context, dense.value, VALUE_KIND_F32) };
     assert_eq!(back.status, STATUS_OK);
     let mut count2 = 0_i64;
     assert_eq!(
@@ -2050,5 +2046,109 @@ fn regex_conversion_preserves_pattern_text() {
     assert_eq!(ascii.status, STATUS_OK);
     let rendered = unsafe { __faber_rt_v1_regex_get_text(context, ascii.value) };
     assert_eq!(rendered.status, STATUS_OK);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn interval_carrier_algebra_and_materialize() {
+    let mut context = std::ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let morning = unsafe { __faber_rt_v1_interval_new(context, 0, 6, 0) };
+    let afternoon = unsafe { __faber_rt_v1_interval_new(context, 4, 10, 0) };
+    assert_eq!(morning.status, STATUS_OK);
+    assert_eq!(afternoon.status, STATUS_OK);
+    let overlap =
+        unsafe { __faber_rt_v1_interval_intersect(context, morning.value, afternoon.value) };
+    assert_eq!(overlap.status, STATUS_OK);
+    let mut present = 0_u8;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_is_present(
+                context,
+                overlap.value,
+                VALUE_KIND_PTR,
+                &mut present as *mut u8 as *mut _,
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(present, 1);
+    let mut interval_ptr = std::ptr::null_mut();
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get(
+                context,
+                overlap.value,
+                VALUE_KIND_PTR,
+                &mut interval_ptr as *mut _ as *mut _,
+            )
+        },
+        STATUS_OK
+    );
+    let mut length = 0_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_interval_length(context, interval_ptr, &mut length) },
+        STATUS_OK
+    );
+    assert_eq!(length, 2);
+
+    let gap_left = unsafe { __faber_rt_v1_interval_new(context, 0, 3, 0) };
+    let gap_right = unsafe { __faber_rt_v1_interval_new(context, 6, 9, 0) };
+    let no_union =
+        unsafe { __faber_rt_v1_interval_union(context, gap_left.value, gap_right.value) };
+    assert_eq!(no_union.status, STATUS_OK);
+    present = 1;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_is_present(
+                context,
+                no_union.value,
+                VALUE_KIND_PTR,
+                &mut present as *mut u8 as *mut _,
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(present, 0);
+
+    let half = unsafe { __faber_rt_v1_interval_new(context, 0, 10, 0) };
+    let mut clamped = 0_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_interval_clamp_i64(context, 15, half.value, &mut clamped) },
+        STATUS_OK
+    );
+    assert_eq!(clamped, 9);
+    let mut contains = 0_u8;
+    assert_eq!(
+        unsafe { __faber_rt_v1_interval_contains(context, half.value, 5, &mut contains) },
+        STATUS_OK
+    );
+    assert_eq!(contains, 1);
+
+    let list = unsafe { __faber_rt_v1_interval_materialize_array(context, half.value) };
+    assert_eq!(list.status, STATUS_OK);
+    let mut list_len = 0_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_length(context, list.value, &mut list_len) },
+        STATUS_OK
+    );
+    assert_eq!(list_len, 10);
+
+    let closed = unsafe { __faber_rt_v1_interval_new(context, 0, 3, 1) };
+    let tensor = unsafe { __faber_rt_v1_interval_materialize_tensor(context, closed.value) };
+    assert_eq!(tensor.status, STATUS_OK);
+    let wide = unsafe { __faber_rt_v1_interval_new(context, 0, 100, 0) };
+    let narrow_target = unsafe { __faber_rt_v1_interval_new(context, 10, 50, 1) };
+    let narrow = unsafe { __faber_rt_v1_interval_clamp(context, wide.value, narrow_target.value) };
+    assert_eq!(narrow.status, STATUS_OK);
+    length = 0;
+    assert_eq!(
+        unsafe { __faber_rt_v1_interval_length(context, narrow.value, &mut length) },
+        STATUS_OK
+    );
+    assert_eq!(length, 41);
     unsafe { __faber_rt_v1_shutdown(context) };
 }

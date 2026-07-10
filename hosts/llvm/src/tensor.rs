@@ -10,12 +10,13 @@ use super::array::{
 use super::option::store_option;
 use super::RuntimeContext;
 use faber::llvm_abi::{
-    FaberRtContextV1, FaberRtPtrResultV1, FaberRtStatusV1, FaberRtValueKindV1, STATUS_INVALID_ARGUMENT,
-    STATUS_OK, STATUS_PANIC, VALUE_KIND_I64,
+    FaberRtContextV1, FaberRtPtrResultV1, FaberRtStatusV1, FaberRtValueKindV1,
+    STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_I64,
 };
 use faber::tensor::{
-    tensor_flat_offset, tensor_shape_element_count, tensor_shape_has_element_count, ERR_INDEX_OUT_OF_BOUNDS,
-    ERR_INVALID_SLICE_RANGE, ERR_NEGATIVE_DIM, ERR_NEGATIVE_INDEX, ERR_NEGATIVE_SLICE,
+    tensor_flat_offset, tensor_shape_element_count, tensor_shape_has_element_count,
+    ERR_INDEX_OUT_OF_BOUNDS, ERR_INVALID_SLICE_RANGE, ERR_NEGATIVE_DIM, ERR_NEGATIVE_INDEX,
+    ERR_NEGATIVE_SLICE,
 };
 use faber::Tensor;
 use std::ffi::c_void;
@@ -91,7 +92,10 @@ pub(super) fn find_tensor(runtime: &RuntimeContext, handle: *mut c_void) -> Opti
         .map(Box::as_ref)
 }
 
-fn find_tensor_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&mut RuntimeTensor> {
+fn find_tensor_mut(
+    runtime: &mut RuntimeContext,
+    handle: *mut c_void,
+) -> Option<&mut RuntimeTensor> {
     runtime
         .tensors
         .iter_mut()
@@ -400,7 +404,12 @@ pub unsafe extern "C" fn __faber_rt_v1_tensor_materialize(
         let Some(tensor) = find_tensor(runtime, handle) else {
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
-        store_tensor(runtime, tensor.kind, tensor.shape.clone(), tensor.data.clone())
+        store_tensor(
+            runtime,
+            tensor.kind,
+            tensor.shape.clone(),
+            tensor.data.clone(),
+        )
     })
 }
 
@@ -476,7 +485,11 @@ enum BinaryOp {
     MatMul,
 }
 
-fn apply_binary(left: &RuntimeTensor, right: &RuntimeTensor, op: BinaryOp) -> Option<(Vec<i64>, Vec<RuntimeValue>)> {
+fn apply_binary(
+    left: &RuntimeTensor,
+    right: &RuntimeTensor,
+    op: BinaryOp,
+) -> Option<(Vec<i64>, Vec<RuntimeValue>)> {
     match left.kind {
         faber::llvm_abi::VALUE_KIND_F32 => {
             let lhs = to_tensor_f32(left)?;
@@ -541,7 +554,11 @@ fn to_tensor_f32(tensor: &RuntimeTensor) -> Option<Tensor<f32>> {
 fn from_tensor_f32(tensor: &Tensor<f32>) -> (Vec<i64>, Vec<RuntimeValue>) {
     (
         tensor.magnitudines(),
-        tensor.planata().into_iter().map(RuntimeValue::F32).collect(),
+        tensor
+            .planata()
+            .into_iter()
+            .map(RuntimeValue::F32)
+            .collect(),
     )
 }
 
@@ -560,7 +577,11 @@ fn to_tensor_f64(tensor: &RuntimeTensor) -> Option<Tensor<f64>> {
 fn from_tensor_f64(tensor: &Tensor<f64>) -> (Vec<i64>, Vec<RuntimeValue>) {
     (
         tensor.magnitudines(),
-        tensor.planata().into_iter().map(RuntimeValue::F64).collect(),
+        tensor
+            .planata()
+            .into_iter()
+            .map(RuntimeValue::F64)
+            .collect(),
     )
 }
 
@@ -579,7 +600,11 @@ fn to_tensor_i64(tensor: &RuntimeTensor) -> Option<Tensor<i64>> {
 fn from_tensor_i64(tensor: &Tensor<i64>) -> (Vec<i64>, Vec<RuntimeValue>) {
     (
         tensor.magnitudines(),
-        tensor.planata().into_iter().map(RuntimeValue::I64).collect(),
+        tensor
+            .planata()
+            .into_iter()
+            .map(RuntimeValue::I64)
+            .collect(),
     )
 }
 
@@ -598,7 +623,11 @@ fn to_tensor_i32(tensor: &RuntimeTensor) -> Option<Tensor<i32>> {
 fn from_tensor_i32(tensor: &Tensor<i32>) -> (Vec<i64>, Vec<RuntimeValue>) {
     (
         tensor.magnitudines(),
-        tensor.planata().into_iter().map(RuntimeValue::I32).collect(),
+        tensor
+            .planata()
+            .into_iter()
+            .map(RuntimeValue::I32)
+            .collect(),
     )
 }
 
@@ -747,12 +776,7 @@ pub unsafe extern "C" fn __faber_rt_v1_tensor_convert(
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         }
         if from_kind == to_kind {
-            return store_tensor(
-                runtime,
-                to_kind,
-                tensor.shape.clone(),
-                tensor.data.clone(),
-            );
+            return store_tensor(runtime, to_kind, tensor.shape.clone(), tensor.data.clone());
         }
         let mut data = Vec::with_capacity(tensor.data.len());
         for value in &tensor.data {
@@ -773,7 +797,9 @@ fn cast_runtime_value(
     // Mirror Rust `as` for numeric lattice cells used by tensor conversio.
     if matches!(
         to_kind,
-        faber::llvm_abi::VALUE_KIND_F32 | faber::llvm_abi::VALUE_KIND_F64 | faber::llvm_abi::VALUE_KIND_F16
+        faber::llvm_abi::VALUE_KIND_F32
+            | faber::llvm_abi::VALUE_KIND_F64
+            | faber::llvm_abi::VALUE_KIND_F16
     ) {
         let float = value_as_f64(value, from_kind)?;
         return match to_kind {
@@ -833,7 +859,6 @@ fn value_as_i128(value: RuntimeValue, kind: FaberRtValueKindV1) -> Option<i128> 
         _ => return None,
     })
 }
-
 
 pub(super) fn store_tensor_from_parts(
     runtime: &mut RuntimeContext,

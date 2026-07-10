@@ -7,8 +7,9 @@ use super::array::{find_array, read_value, write_value, RuntimeValue};
 use super::tensor::{find_tensor, store_tensor_from_parts, tensor_to_runtime_values};
 use super::RuntimeContext;
 use faber::llvm_abi::{
-    FaberRtContextV1, FaberRtPtrResultV1, FaberRtStatusV1, FaberRtValueKindV1, STATUS_INVALID_ARGUMENT,
-    STATUS_OK, STATUS_PANIC, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I32, VALUE_KIND_I64,
+    FaberRtContextV1, FaberRtPtrResultV1, FaberRtStatusV1, FaberRtValueKindV1,
+    STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_F32, VALUE_KIND_F64,
+    VALUE_KIND_I32, VALUE_KIND_I64,
 };
 use faber::{Sparsa, Tensor};
 use std::ffi::c_void;
@@ -78,7 +79,10 @@ fn find_sparse(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&Runtime
         .map(Box::as_ref)
 }
 
-fn find_sparse_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&mut RuntimeSparse> {
+fn find_sparse_mut(
+    runtime: &mut RuntimeContext,
+    handle: *mut c_void,
+) -> Option<&mut RuntimeSparse> {
     runtime
         .sparses
         .iter_mut()
@@ -157,22 +161,10 @@ pub unsafe extern "C" fn __faber_rt_v1_sparse_get(
             return STATUS_INVALID_ARGUMENT;
         }
         let value = match sparse {
-            RuntimeSparse::F32(value) => value
-                .accipe(&indices)
-                .ok()
-                .map(RuntimeValue::F32),
-            RuntimeSparse::F64(value) => value
-                .accipe(&indices)
-                .ok()
-                .map(RuntimeValue::F64),
-            RuntimeSparse::I32(value) => value
-                .accipe(&indices)
-                .ok()
-                .map(RuntimeValue::I32),
-            RuntimeSparse::I64(value) => value
-                .accipe(&indices)
-                .ok()
-                .map(RuntimeValue::I64),
+            RuntimeSparse::F32(value) => value.accipe(&indices).ok().map(RuntimeValue::F32),
+            RuntimeSparse::F64(value) => value.accipe(&indices).ok().map(RuntimeValue::F64),
+            RuntimeSparse::I32(value) => value.accipe(&indices).ok().map(RuntimeValue::I32),
+            RuntimeSparse::I64(value) => value.accipe(&indices).ok().map(RuntimeValue::I64),
         };
         let Some(value) = value else {
             return STATUS_INVALID_ARGUMENT;
@@ -209,10 +201,18 @@ pub unsafe extern "C" fn __faber_rt_v1_sparse_set(
             return STATUS_INVALID_ARGUMENT;
         }
         let ok = match (sparse, value) {
-            (RuntimeSparse::F32(sparse), RuntimeValue::F32(value)) => sparse.ponde(&indices, value).is_ok(),
-            (RuntimeSparse::F64(sparse), RuntimeValue::F64(value)) => sparse.ponde(&indices, value).is_ok(),
-            (RuntimeSparse::I32(sparse), RuntimeValue::I32(value)) => sparse.ponde(&indices, value).is_ok(),
-            (RuntimeSparse::I64(sparse), RuntimeValue::I64(value)) => sparse.ponde(&indices, value).is_ok(),
+            (RuntimeSparse::F32(sparse), RuntimeValue::F32(value)) => {
+                sparse.ponde(&indices, value).is_ok()
+            }
+            (RuntimeSparse::F64(sparse), RuntimeValue::F64(value)) => {
+                sparse.ponde(&indices, value).is_ok()
+            }
+            (RuntimeSparse::I32(sparse), RuntimeValue::I32(value)) => {
+                sparse.ponde(&indices, value).is_ok()
+            }
+            (RuntimeSparse::I64(sparse), RuntimeValue::I64(value)) => {
+                sparse.ponde(&indices, value).is_ok()
+            }
             _ => false,
         };
         if ok {

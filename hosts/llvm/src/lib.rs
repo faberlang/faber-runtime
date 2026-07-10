@@ -4,9 +4,10 @@ mod collection_map;
 mod convert;
 mod format;
 mod instans;
+mod intervallum;
 mod octeti;
-mod regex_rt;
 mod option;
+mod regex_rt;
 mod sparsa;
 mod tensor;
 mod text;
@@ -73,6 +74,14 @@ use instans::{
     __faber_rt_v1_instans_get_text, __faber_rt_v1_instans_retag,
 };
 #[cfg(test)]
+use intervallum::{
+    __faber_rt_v1_interval_clamp, __faber_rt_v1_interval_clamp_i64,
+    __faber_rt_v1_interval_contains, __faber_rt_v1_interval_intersect,
+    __faber_rt_v1_interval_length, __faber_rt_v1_interval_materialize_array,
+    __faber_rt_v1_interval_materialize_tensor, __faber_rt_v1_interval_new,
+    __faber_rt_v1_interval_union,
+};
+#[cfg(test)]
 use octeti::{
     __faber_rt_v1_octeti_append, __faber_rt_v1_octeti_from_ascii, __faber_rt_v1_octeti_from_text,
     __faber_rt_v1_octeti_get, __faber_rt_v1_octeti_get_ascii, __faber_rt_v1_octeti_get_text,
@@ -84,18 +93,22 @@ use option::{
     __faber_rt_v1_option_get, __faber_rt_v1_option_get_or, __faber_rt_v1_option_is_present,
     __faber_rt_v1_option_none, __faber_rt_v1_option_some,
 };
-use sparsa::RuntimeSparse;
-use tensor::RuntimeTensor;
-#[cfg(test)]
 #[cfg(test)]
 use regex_rt::{
     __faber_rt_v1_regex_from_ascii, __faber_rt_v1_regex_from_text, __faber_rt_v1_regex_get_text,
 };
+use sparsa::RuntimeSparse;
 use sparsa::{
     __faber_rt_v1_sparse_densify, __faber_rt_v1_sparse_from_tensor, __faber_rt_v1_sparse_get,
     __faber_rt_v1_sparse_new, __faber_rt_v1_sparse_nonzero, __faber_rt_v1_sparse_rank,
     __faber_rt_v1_sparse_set,
 };
+use std::ffi::{c_char, c_int};
+use std::fmt::Display;
+use std::io::{self, Write};
+use std::panic::{self, AssertUnwindSafe};
+use std::ptr;
+use tensor::RuntimeTensor;
 use tensor::{
     __faber_rt_v1_tensor_add, __faber_rt_v1_tensor_convert, __faber_rt_v1_tensor_create,
     __faber_rt_v1_tensor_fill, __faber_rt_v1_tensor_flatten, __faber_rt_v1_tensor_from_flat,
@@ -105,11 +118,6 @@ use tensor::{
     __faber_rt_v1_tensor_shape, __faber_rt_v1_tensor_slice, __faber_rt_v1_tensor_sub,
     __faber_rt_v1_tensor_sum,
 };
-use std::ffi::{c_char, c_int};
-use std::fmt::Display;
-use std::io::{self, Write};
-use std::panic::{self, AssertUnwindSafe};
-use std::ptr;
 #[cfg(test)]
 use text::{
     __faber_rt_v1_text_contains, __faber_rt_v1_text_ends_with, __faber_rt_v1_text_is_empty,
@@ -142,6 +150,7 @@ struct RuntimeContext {
     tensors: Vec<Box<RuntimeTensor>>,
     sparses: Vec<Box<RuntimeSparse>>,
     regexes: Vec<Box<faber::Regex>>,
+    intervals: Vec<Box<faber::Intervallum<i64>>>,
 }
 
 /// Initialize one process-lifetime LLVM host context.
@@ -184,6 +193,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             tensors: Vec::new(),
             sparses: Vec::new(),
             regexes: Vec::new(),
+            intervals: Vec::new(),
         });
         *out_context = Box::into_raw(context).cast();
         STATUS_OK
