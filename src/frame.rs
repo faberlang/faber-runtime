@@ -502,6 +502,10 @@ fn ensure_runtime_response_started_for_type<T>(sermo: &mut Sermo)
 where
     T: crate::FromValor,
 {
+    ensure_runtime_response_started_for_target(sermo, std::any::type_name::<T>());
+}
+
+fn ensure_runtime_response_started_for_target(sermo: &mut Sermo, target: &'static str) {
     let mut inner = lock_sermo(&sermo.inner);
     if inner.runtime_response_generated {
         return;
@@ -509,7 +513,6 @@ where
     inner.runtime_response_generated = true;
     let route = inner.route.clone();
     let data = request_data(&inner);
-    let target = std::any::type_name::<T>();
     let shared = Arc::clone(&sermo.inner);
     thread::spawn(move || {
         let frames = runtime_response_frames(&route, data, Some(target));
@@ -1024,6 +1027,7 @@ pub fn sermo_materialize_textus(sermo: &mut Sermo) -> String {
 }
 
 pub fn try_sermo_materialize_textus(sermo: &mut Sermo) -> Result<String, FrameError> {
+    ensure_runtime_response_started_for_target(sermo, std::any::type_name::<String>());
     let mut out = String::new();
     while let Some(frame) = sermo_recv(sermo) {
         if let Some(message) = terminal_error(&frame) {
@@ -1053,6 +1057,7 @@ pub async fn sermo_materialize_textus_async(sermo: &mut Sermo) -> String {
 }
 
 pub async fn try_sermo_materialize_textus_async(sermo: &mut Sermo) -> Result<String, FrameError> {
+    ensure_runtime_response_started_for_target(sermo, std::any::type_name::<String>());
     let mut out = String::new();
     while let Some(frame) = sermo_recv_async(sermo).await {
         if let Some(message) = terminal_error(&frame) {
@@ -1240,6 +1245,9 @@ pub fn try_sermo_materialize_lista<T>(sermo: &mut Sermo) -> Result<Vec<T>, Frame
 where
     T: crate::FromValor,
 {
+    if std::any::type_name::<T>() == std::any::type_name::<String>() {
+        ensure_runtime_response_started_for_target(sermo, std::any::type_name::<Vec<String>>());
+    }
     let mut out = Vec::new();
     while let Some(frame) = sermo_recv(sermo) {
         if let Some(message) = terminal_error(&frame) {
@@ -1275,6 +1283,9 @@ pub async fn try_sermo_materialize_lista_async<T>(sermo: &mut Sermo) -> Result<V
 where
     T: crate::FromValor,
 {
+    if std::any::type_name::<T>() == std::any::type_name::<String>() {
+        ensure_runtime_response_started_for_target(sermo, std::any::type_name::<Vec<String>>());
+    }
     let mut out = Vec::new();
     while let Some(frame) = sermo_recv_async(sermo).await {
         if let Some(message) = terminal_error(&frame) {
