@@ -26,13 +26,14 @@ use array::{
 use array_numeric::{__faber_rt_v1_array_sort, __faber_rt_v1_array_sum};
 #[cfg(test)]
 use collection_map::{
-    __faber_rt_v1_map_contains, __faber_rt_v1_map_delete, __faber_rt_v1_map_is_empty,
-    __faber_rt_v1_map_keys, __faber_rt_v1_map_length, __faber_rt_v1_map_new,
-    __faber_rt_v1_map_option, __faber_rt_v1_map_put, __faber_rt_v1_map_values,
-    __faber_rt_v1_set_add, __faber_rt_v1_set_contains, __faber_rt_v1_set_delete,
-    __faber_rt_v1_set_difference, __faber_rt_v1_set_intersection, __faber_rt_v1_set_is_empty,
-    __faber_rt_v1_set_is_subset, __faber_rt_v1_set_is_superset, __faber_rt_v1_set_length,
-    __faber_rt_v1_set_new, __faber_rt_v1_set_symmetric_difference, __faber_rt_v1_set_union,
+    __faber_rt_v1_array_from_set, __faber_rt_v1_map_contains, __faber_rt_v1_map_delete,
+    __faber_rt_v1_map_is_empty, __faber_rt_v1_map_keys, __faber_rt_v1_map_length,
+    __faber_rt_v1_map_new, __faber_rt_v1_map_option, __faber_rt_v1_map_put,
+    __faber_rt_v1_map_values, __faber_rt_v1_set_add, __faber_rt_v1_set_contains,
+    __faber_rt_v1_set_delete, __faber_rt_v1_set_difference, __faber_rt_v1_set_from_array,
+    __faber_rt_v1_set_intersection, __faber_rt_v1_set_is_empty, __faber_rt_v1_set_is_subset,
+    __faber_rt_v1_set_is_superset, __faber_rt_v1_set_length, __faber_rt_v1_set_new,
+    __faber_rt_v1_set_symmetric_difference, __faber_rt_v1_set_union,
 };
 use collection_map::{RuntimeMap, RuntimeSet};
 #[cfg(test)]

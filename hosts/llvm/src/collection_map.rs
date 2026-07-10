@@ -1,6 +1,6 @@
 //! Arena-owned typed maps and sets for the LLVM host ABI.
 
-use super::array::{read_value, store_array, valid_kind, RuntimeValue};
+use super::array::{find_array, read_value, store_array, valid_kind, RuntimeValue};
 use super::option::store_option;
 use super::RuntimeContext;
 use faber::llvm_abi::{
@@ -276,6 +276,47 @@ pub unsafe extern "C" fn __faber_rt_v1_set_add(
             set.values.push(value)
         }
         STATUS_OK
+    })
+}
+
+/// `lista ↦ copia` — dedupe array elements into a set of the same value kind.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_set_from_array(
+    context: *mut FaberRtContextV1,
+    array: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let Some(array) = find_array(runtime, array) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let kind = array.kind;
+        let mut values = Vec::new();
+        for value in &array.values {
+            if !contains(kind, &values, *value) {
+                values.push(*value);
+            }
+        }
+        store_set(runtime, kind, values)
+    })
+}
+
+/// `copia ↦ lista` — materialize set members into an array (unordered).
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_array_from_set(
+    context: *mut FaberRtContextV1,
+    set: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let Some(set) = find_set(runtime, set) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        store_array(runtime, set.kind, set.values.clone())
     })
 }
 

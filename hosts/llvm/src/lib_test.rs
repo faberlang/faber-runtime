@@ -2050,6 +2050,48 @@ fn regex_conversion_preserves_pattern_text() {
 }
 
 #[test]
+fn set_array_collection_conversion_dedupes() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    assert_eq!(array.status, STATUS_OK);
+    for value in [1_i64, 2, 2, 3] {
+        let mut slot = value;
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    array.value,
+                    VALUE_KIND_I64,
+                    &mut slot as *mut _ as *const _,
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let set = unsafe { __faber_rt_v1_set_from_array(context, array.value) };
+    assert_eq!(set.status, STATUS_OK);
+    let mut length = 0_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_set_length(context, set.value, &mut length) },
+        STATUS_OK
+    );
+    assert_eq!(length, 3);
+    let back = unsafe { __faber_rt_v1_array_from_set(context, set.value) };
+    assert_eq!(back.status, STATUS_OK);
+    length = 0;
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_length(context, back.value, &mut length) },
+        STATUS_OK
+    );
+    assert_eq!(length, 3);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
 fn interval_carrier_algebra_and_materialize() {
     let mut context = std::ptr::null_mut();
     assert_eq!(
