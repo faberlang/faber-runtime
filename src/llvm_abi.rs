@@ -15,6 +15,12 @@ pub const SYMBOL_FORMAT_I64: &str = "__faber_rt_v1_format_i64";
 pub const SYMBOL_FORMAT_I64_I64: &str = "__faber_rt_v1_format_i64_i64";
 pub const SYMBOL_FORMAT_I64_I64_I64: &str = "__faber_rt_v1_format_i64_i64_i64";
 pub const SYMBOL_FORMAT_F64: &str = "__faber_rt_v1_format_f64";
+pub const SYMBOL_TEXT_I64: &str = "__faber_rt_v1_text_i64";
+pub const SYMBOL_TEXT_F64: &str = "__faber_rt_v1_text_f64";
+pub const SYMBOL_TEXT_I1: &str = "__faber_rt_v1_text_i1";
+pub const SYMBOL_VALOR_I64: &str = "__faber_rt_v1_valor_i64";
+pub const SYMBOL_VALOR_F64: &str = "__faber_rt_v1_valor_f64";
+pub const SYMBOL_VALOR_I1: &str = "__faber_rt_v1_valor_i1";
 pub const SYMBOL_PROGRAM_ENTRY: &str = "__faber_program_entry_v1";
 
 pub const LLVM_SLICE_TYPE: &str = "%FaberRtSliceV1";

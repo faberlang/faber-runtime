@@ -44,6 +44,12 @@ fn llvm_abi_v1_symbol_namespace_is_versioned() {
         SYMBOL_FORMAT_I64_I64,
         SYMBOL_FORMAT_I64_I64_I64,
         SYMBOL_FORMAT_F64,
+        SYMBOL_TEXT_I64,
+        SYMBOL_TEXT_F64,
+        SYMBOL_TEXT_I1,
+        SYMBOL_VALOR_I64,
+        SYMBOL_VALOR_F64,
+        SYMBOL_VALOR_I1,
     ] {
         assert!(symbol.starts_with("__faber_rt_v1_"), "{symbol}");
     }

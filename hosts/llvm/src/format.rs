@@ -54,6 +54,30 @@ pub unsafe extern "C" fn __faber_rt_v1_format_f64(
     format_scalar_values(context, template, &[value.to_string()])
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_text_i64(
+    context: *mut FaberRtContextV1,
+    value: i64,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| store_text(context, value.to_string()))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_text_f64(
+    context: *mut FaberRtContextV1,
+    value: f64,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| store_text(context, value.to_string()))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_text_i1(
+    context: *mut FaberRtContextV1,
+    value: u8,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| store_text(context, (value != 0).to_string()))
+}
+
 fn format_scalar_values(
     context: *mut FaberRtContextV1,
     template: FaberRtSliceV1,
@@ -74,13 +98,19 @@ fn format_scalar_values(
         let Ok(template) = std::str::from_utf8(bytes) else {
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
-        let rendered = render_template(template, args);
-        let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
-        let mut text = Box::new(RuntimeText { _value: rendered });
-        let handle = std::ptr::from_mut(text.as_mut()).cast::<c_void>();
-        runtime.texts.push(text);
-        FaberRtPtrResultV1::success(handle)
+        store_text(context, render_template(template, args))
     })
+}
+
+fn store_text(context: *mut FaberRtContextV1, value: String) -> FaberRtPtrResultV1 {
+    if context.is_null() {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    }
+    let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
+    let mut text = Box::new(RuntimeText { _value: value });
+    let handle = std::ptr::from_mut(text.as_mut()).cast::<c_void>();
+    runtime.texts.push(text);
+    FaberRtPtrResultV1::success(handle)
 }
 
 fn render_template(template: &str, args: &[String]) -> String {

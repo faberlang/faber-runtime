@@ -1,5 +1,8 @@
+mod convert;
 mod format;
 
+#[cfg(test)]
+use convert::{__faber_rt_v1_valor_f64, __faber_rt_v1_valor_i1, __faber_rt_v1_valor_i64};
 #[cfg(not(test))]
 use faber::llvm_abi::FaberRtExitV1;
 #[cfg(test)]
@@ -8,11 +11,13 @@ use faber::llvm_abi::{
     FaberRtContextV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT, STATUS_IO_ERROR,
     STATUS_OK, STATUS_PANIC, STATUS_UNSUPPORTED,
 };
+use faber::Valor;
 use format::RuntimeText;
 #[cfg(test)]
 use format::{
     __faber_rt_v1_format_f64, __faber_rt_v1_format_i64, __faber_rt_v1_format_i64_i64,
-    __faber_rt_v1_format_i64_i64_i64,
+    __faber_rt_v1_format_i64_i64_i64, __faber_rt_v1_text_f64, __faber_rt_v1_text_i1,
+    __faber_rt_v1_text_i64,
 };
 use std::ffi::{c_char, c_int};
 use std::fmt::Display;
@@ -23,6 +28,7 @@ use std::ptr;
 struct RuntimeContext {
     _arguments: Vec<Vec<u8>>,
     texts: Vec<Box<RuntimeText>>,
+    valors: Vec<Box<Valor>>,
 }
 
 /// Initialize one process-lifetime LLVM host context.
@@ -53,6 +59,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
         let context = Box::new(RuntimeContext {
             _arguments: arguments,
             texts: Vec::new(),
+            valors: Vec::new(),
         });
         *out_context = Box::into_raw(context).cast();
         STATUS_OK

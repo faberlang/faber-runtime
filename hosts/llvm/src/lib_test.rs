@@ -133,3 +133,58 @@ fn scalar_format_family_renders_and_owns_text() {
 
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn scalar_text_conversion_family_owns_canonical_values() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    let integer = unsafe { __faber_rt_v1_text_i64(context, -42) };
+    let float = unsafe { __faber_rt_v1_text_f64(context, 3.25) };
+    let boolean = unsafe { __faber_rt_v1_text_i1(context, 1) };
+
+    assert_eq!(integer.status, STATUS_OK);
+    assert_eq!(float.status, STATUS_OK);
+    assert_eq!(boolean.status, STATUS_OK);
+    assert_eq!(
+        unsafe { &*integer.value.cast::<RuntimeText>() }._value,
+        "-42"
+    );
+    assert_eq!(
+        unsafe { &*float.value.cast::<RuntimeText>() }._value,
+        "3.25"
+    );
+    assert_eq!(
+        unsafe { &*boolean.value.cast::<RuntimeText>() }._value,
+        "true"
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn scalar_valor_conversion_family_owns_typed_values() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    let integer = unsafe { __faber_rt_v1_valor_i64(context, -42) };
+    let float = unsafe { __faber_rt_v1_valor_f64(context, 3.25) };
+    let boolean = unsafe { __faber_rt_v1_valor_i1(context, 1) };
+
+    assert_eq!(
+        unsafe { &*integer.value.cast::<Valor>() },
+        &Valor::Numerus(-42)
+    );
+    assert_eq!(
+        unsafe { &*float.value.cast::<Valor>() },
+        &Valor::Fractus(3.25)
+    );
+    assert_eq!(
+        unsafe { &*boolean.value.cast::<Valor>() },
+        &Valor::Bivalens(true)
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
