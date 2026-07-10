@@ -2,16 +2,18 @@
 
 use super::RuntimeContext;
 use faber::llvm_abi::{
-    FaberRtArrayRangeModeV1, FaberRtContextV1, FaberRtPtrResultV1, FaberRtStatusV1,
-    FaberRtValueKindV1, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE, ARRAY_RANGE_TAKE,
-    ARRAY_RANGE_TAKE_LAST, STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_F32,
-    VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR,
+    FaberRtArrayOptionModeV1, FaberRtArrayRangeModeV1, FaberRtContextV1, FaberRtPtrResultV1,
+    FaberRtStatusV1, FaberRtValueKindV1, ARRAY_OPTION_FIRST, ARRAY_OPTION_INDEX, ARRAY_OPTION_LAST,
+    ARRAY_OPTION_REMOVE_FIRST, ARRAY_OPTION_REMOVE_LAST, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE,
+    ARRAY_RANGE_TAKE, ARRAY_RANGE_TAKE_LAST, STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC,
+    VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8,
+    VALUE_KIND_PTR,
 };
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 
 #[derive(Clone, Copy, PartialEq)]
-enum RuntimeValue {
+pub(super) enum RuntimeValue {
     I1(u8),
     I8(i8),
     I32(i32),
@@ -24,6 +26,11 @@ enum RuntimeValue {
 pub(super) struct RuntimeArray {
     kind: FaberRtValueKindV1,
     values: Vec<RuntimeValue>,
+}
+
+pub(super) struct RuntimeOption {
+    pub(super) _kind: FaberRtValueKindV1,
+    pub(super) _value: Option<RuntimeValue>,
 }
 
 #[no_mangle]
@@ -286,6 +293,42 @@ pub unsafe extern "C" fn __faber_rt_v1_array_range(
         let kind = source.kind;
         let values = source.values[start..end].to_vec();
         store_array(runtime, kind, values)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_array_option(
+    context: *mut FaberRtContextV1,
+    array: *mut c_void,
+    mode: FaberRtArrayOptionModeV1,
+    index: i64,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let Some(array_index) = find_array_index(runtime, array) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let array = &mut runtime.arrays[array_index];
+        let kind = array.kind;
+        let value = match mode {
+            ARRAY_OPTION_INDEX => usize::try_from(index)
+                .ok()
+                .and_then(|index| array.values.get(index).copied()),
+            ARRAY_OPTION_FIRST => array.values.first().copied(),
+            ARRAY_OPTION_LAST => array.values.last().copied(),
+            ARRAY_OPTION_REMOVE_FIRST => (!array.values.is_empty()).then(|| array.values.remove(0)),
+            ARRAY_OPTION_REMOVE_LAST => array.values.pop(),
+            _ => return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT),
+        };
+        let mut option = Box::new(RuntimeOption {
+            _kind: kind,
+            _value: value,
+        });
+        let handle = std::ptr::from_mut(option.as_mut()).cast::<c_void>();
+        runtime.options.push(option);
+        FaberRtPtrResultV1::success(handle)
     })
 }
 

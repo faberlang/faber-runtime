@@ -2,14 +2,14 @@ mod array;
 mod convert;
 mod format;
 
-use array::RuntimeArray;
 #[cfg(test)]
 use array::{
     __faber_rt_v1_array_clone, __faber_rt_v1_array_contains, __faber_rt_v1_array_extend,
     __faber_rt_v1_array_get, __faber_rt_v1_array_is_empty, __faber_rt_v1_array_length,
-    __faber_rt_v1_array_new, __faber_rt_v1_array_push, __faber_rt_v1_array_range,
-    __faber_rt_v1_array_reverse, __faber_rt_v1_array_set,
+    __faber_rt_v1_array_new, __faber_rt_v1_array_option, __faber_rt_v1_array_push,
+    __faber_rt_v1_array_range, __faber_rt_v1_array_reverse, __faber_rt_v1_array_set,
 };
+use array::{RuntimeArray, RuntimeOption};
 #[cfg(test)]
 use convert::{__faber_rt_v1_valor_f64, __faber_rt_v1_valor_i1, __faber_rt_v1_valor_i64};
 #[cfg(not(test))]
@@ -22,9 +22,10 @@ use faber::llvm_abi::{
 };
 #[cfg(test)]
 use faber::llvm_abi::{
-    ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE, ARRAY_RANGE_TAKE, ARRAY_RANGE_TAKE_LAST,
-    VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8,
-    VALUE_KIND_PTR,
+    ARRAY_OPTION_FIRST, ARRAY_OPTION_INDEX, ARRAY_OPTION_LAST, ARRAY_OPTION_REMOVE_FIRST,
+    ARRAY_OPTION_REMOVE_LAST, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE, ARRAY_RANGE_TAKE,
+    ARRAY_RANGE_TAKE_LAST, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I32,
+    VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR,
 };
 use faber::Valor;
 use format::RuntimeText;
@@ -45,6 +46,7 @@ struct RuntimeContext {
     texts: Vec<Box<RuntimeText>>,
     valors: Vec<Box<Valor>>,
     arrays: Vec<Box<RuntimeArray>>,
+    options: Vec<Box<RuntimeOption>>,
 }
 
 /// Initialize one process-lifetime LLVM host context.
@@ -77,6 +79,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             texts: Vec::new(),
             valors: Vec::new(),
             arrays: Vec::new(),
+            options: Vec::new(),
         });
         *out_context = Box::into_raw(context).cast();
         STATUS_OK

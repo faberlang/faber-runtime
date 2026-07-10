@@ -70,10 +70,24 @@ fn llvm_abi_v1_symbol_namespace_is_versioned() {
         SYMBOL_ARRAY_IS_EMPTY,
         SYMBOL_ARRAY_REVERSE,
         SYMBOL_ARRAY_RANGE,
+        SYMBOL_ARRAY_OPTION,
     ] {
         assert!(symbol.starts_with("__faber_rt_v1_"), "{symbol}");
     }
     assert_eq!(SYMBOL_PROGRAM_ENTRY, "__faber_program_entry_v1");
+    assert_eq!(
+        [
+            ARRAY_OPTION_INDEX,
+            ARRAY_OPTION_FIRST,
+            ARRAY_OPTION_LAST,
+            ARRAY_OPTION_REMOVE_FIRST,
+            ARRAY_OPTION_REMOVE_LAST,
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .len(),
+        5
+    );
     assert_eq!(
         [
             VALUE_KIND_I1,

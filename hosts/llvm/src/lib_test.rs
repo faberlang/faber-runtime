@@ -531,3 +531,56 @@ fn assert_array_i64(
         assert_eq!(&actual, expected);
     }
 }
+
+#[test]
+fn array_option_methods_cover_access_empty_and_removal() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for value in [10_i64, 20, 30] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    array.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&value).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+
+    for (mode, index, expected) in [
+        (ARRAY_OPTION_INDEX, 1, Some(20_i64)),
+        (ARRAY_OPTION_FIRST, 0, Some(10)),
+        (ARRAY_OPTION_LAST, 0, Some(30)),
+        (ARRAY_OPTION_INDEX, -1, None),
+        (ARRAY_OPTION_INDEX, 99, None),
+        (ARRAY_OPTION_REMOVE_FIRST, 0, Some(10)),
+        (ARRAY_OPTION_REMOVE_LAST, 0, Some(30)),
+    ] {
+        let result = unsafe { __faber_rt_v1_array_option(context, array.value, mode, index) };
+        assert_eq!(result.status, STATUS_OK);
+        let option = unsafe { &*result.value.cast::<RuntimeOption>() };
+        assert_eq!(option._kind, VALUE_KIND_I64);
+        assert_eq!(option_i64(option), expected);
+    }
+    assert_array_i64(context, array.value, &[20]);
+
+    let invalid = unsafe { __faber_rt_v1_array_option(context, array.value, 99, 0) };
+    assert_eq!(invalid.status, STATUS_INVALID_ARGUMENT);
+    assert!(invalid.value.is_null());
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+fn option_i64(option: &RuntimeOption) -> Option<i64> {
+    match option._value {
+        Some(array::RuntimeValue::I64(value)) => Some(value),
+        None => None,
+        _ => panic!("unexpected runtime option kind"),
+    }
+}
