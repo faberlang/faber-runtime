@@ -11,12 +11,18 @@ pub const SYMBOL_ASSERT: &str = "__faber_rt_v1_assert";
 pub const SYMBOL_ASSERT_MESSAGE: &str = "__faber_rt_v1_assert_message";
 pub const SYMBOL_FATAL: &str = "__faber_rt_v1_fatal";
 pub const SYMBOL_FATAL_OPAQUE: &str = "__faber_rt_v1_fatal_opaque";
+pub const SYMBOL_FORMAT_I64: &str = "__faber_rt_v1_format_i64";
+pub const SYMBOL_FORMAT_I64_I64: &str = "__faber_rt_v1_format_i64_i64";
+pub const SYMBOL_FORMAT_I64_I64_I64: &str = "__faber_rt_v1_format_i64_i64_i64";
+pub const SYMBOL_FORMAT_F64: &str = "__faber_rt_v1_format_f64";
 pub const SYMBOL_PROGRAM_ENTRY: &str = "__faber_program_entry_v1";
 
 pub const LLVM_SLICE_TYPE: &str = "%FaberRtSliceV1";
 pub const LLVM_SLICE_TYPE_DEFINITION: &str = "%FaberRtSliceV1 = type { ptr, i64 }";
 pub const LLVM_EXIT_TYPE: &str = "%FaberRtExitV1";
 pub const LLVM_EXIT_TYPE_DEFINITION: &str = "%FaberRtExitV1 = type { i32, i32 }";
+pub const LLVM_PTR_RESULT_TYPE: &str = "%FaberRtPtrResultV1";
+pub const LLVM_PTR_RESULT_TYPE_DEFINITION: &str = "%FaberRtPtrResultV1 = type { i32, ptr }";
 
 pub const STATUS_OK: FaberRtStatusV1 = FaberRtStatusV1 { code: 0 };
 pub const STATUS_INVALID_ARGUMENT: FaberRtStatusV1 = FaberRtStatusV1 { code: 1 };
@@ -72,6 +78,29 @@ pub struct FaberRtStatusV1 {
 impl FaberRtStatusV1 {
     pub const fn is_ok(self) -> bool {
         self.code == STATUS_OK.code
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FaberRtPtrResultV1 {
+    pub status: FaberRtStatusV1,
+    pub value: *mut c_void,
+}
+
+impl FaberRtPtrResultV1 {
+    pub const fn failure(status: FaberRtStatusV1) -> Self {
+        Self {
+            status,
+            value: core::ptr::null_mut(),
+        }
+    }
+
+    pub const fn success(value: *mut c_void) -> Self {
+        Self {
+            status: STATUS_OK,
+            value,
+        }
     }
 }
 

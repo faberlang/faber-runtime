@@ -8,6 +8,8 @@ fn llvm_abi_v1_carriers_have_stable_host_layout() {
     assert_eq!(align_of::<FaberRtSliceV1>(), 8);
     assert_eq!(size_of::<FaberRtStatusV1>(), 4);
     assert_eq!(align_of::<FaberRtStatusV1>(), 4);
+    assert_eq!(size_of::<FaberRtPtrResultV1>(), size_of::<usize>() * 2);
+    assert_eq!(align_of::<FaberRtPtrResultV1>(), align_of::<*mut c_void>());
     assert_eq!(size_of::<FaberRtExitV1>(), 8);
     assert_eq!(align_of::<FaberRtExitV1>(), 4);
     assert_eq!(size_of::<FaberRtContextV1>(), 0);
@@ -38,6 +40,10 @@ fn llvm_abi_v1_symbol_namespace_is_versioned() {
         SYMBOL_ASSERT_MESSAGE,
         SYMBOL_FATAL,
         SYMBOL_FATAL_OPAQUE,
+        SYMBOL_FORMAT_I64,
+        SYMBOL_FORMAT_I64_I64,
+        SYMBOL_FORMAT_I64_I64_I64,
+        SYMBOL_FORMAT_F64,
     ] {
         assert!(symbol.starts_with("__faber_rt_v1_"), "{symbol}");
     }
@@ -49,5 +55,9 @@ fn llvm_abi_v1_symbol_namespace_is_versioned() {
     assert_eq!(
         LLVM_EXIT_TYPE_DEFINITION,
         "%FaberRtExitV1 = type { i32, i32 }"
+    );
+    assert_eq!(
+        LLVM_PTR_RESULT_TYPE_DEFINITION,
+        "%FaberRtPtrResultV1 = type { i32, ptr }"
     );
 }

@@ -76,3 +76,60 @@ fn assertion_family_returns_handled_statuses() {
 
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn scalar_format_family_renders_and_owns_text() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    let one = unsafe {
+        __faber_rt_v1_format_i64(context, FaberRtSliceV1::from_static("n=§".as_bytes()), 42)
+    };
+    let reordered = unsafe {
+        __faber_rt_v1_format_i64_i64(
+            context,
+            FaberRtSliceV1::from_static("§1/§0/§9".as_bytes()),
+            3,
+            7,
+        )
+    };
+    let float = unsafe {
+        __faber_rt_v1_format_f64(context, FaberRtSliceV1::from_static("x=§".as_bytes()), 1.5)
+    };
+    let three = unsafe {
+        __faber_rt_v1_format_i64_i64_i64(
+            context,
+            FaberRtSliceV1::from_static("§/§/§".as_bytes()),
+            1,
+            2,
+            3,
+        )
+    };
+    let invalid =
+        unsafe { __faber_rt_v1_format_i64(context, FaberRtSliceV1::from_static(&[0xff]), 42) };
+
+    assert_eq!(one.status, STATUS_OK);
+    assert_eq!(reordered.status, STATUS_OK);
+    assert_eq!(float.status, STATUS_OK);
+    assert_eq!(three.status, STATUS_OK);
+    assert_eq!(
+        invalid,
+        FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT)
+    );
+    assert_eq!(unsafe { &*one.value.cast::<RuntimeText>() }._value, "n=42");
+    assert_eq!(
+        unsafe { &*reordered.value.cast::<RuntimeText>() }._value,
+        "7/3/§9"
+    );
+    assert_eq!(
+        unsafe { &*float.value.cast::<RuntimeText>() }._value,
+        "x=1.5"
+    );
+    assert_eq!(
+        unsafe { &*three.value.cast::<RuntimeText>() }._value,
+        "1/2/3"
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
