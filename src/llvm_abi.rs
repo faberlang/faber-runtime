@@ -27,6 +27,11 @@ pub const SYMBOL_ARRAY_EXTEND: &str = "__faber_rt_v1_array_extend";
 pub const SYMBOL_ARRAY_LENGTH: &str = "__faber_rt_v1_array_length";
 pub const SYMBOL_ARRAY_GET: &str = "__faber_rt_v1_array_get";
 pub const SYMBOL_ARRAY_SET: &str = "__faber_rt_v1_array_set";
+pub const SYMBOL_ARRAY_CLONE: &str = "__faber_rt_v1_array_clone";
+pub const SYMBOL_ARRAY_CONTAINS: &str = "__faber_rt_v1_array_contains";
+pub const SYMBOL_ARRAY_IS_EMPTY: &str = "__faber_rt_v1_array_is_empty";
+pub const SYMBOL_ARRAY_REVERSE: &str = "__faber_rt_v1_array_reverse";
+pub const SYMBOL_ARRAY_RANGE: &str = "__faber_rt_v1_array_range";
 pub const SYMBOL_PROGRAM_ENTRY: &str = "__faber_program_entry_v1";
 
 pub type FaberRtValueKindV1 = u32;
@@ -37,6 +42,12 @@ pub const VALUE_KIND_I64: FaberRtValueKindV1 = 4;
 pub const VALUE_KIND_F32: FaberRtValueKindV1 = 5;
 pub const VALUE_KIND_F64: FaberRtValueKindV1 = 6;
 pub const VALUE_KIND_PTR: FaberRtValueKindV1 = 7;
+
+pub type FaberRtArrayRangeModeV1 = u32;
+pub const ARRAY_RANGE_SLICE: FaberRtArrayRangeModeV1 = 1;
+pub const ARRAY_RANGE_TAKE: FaberRtArrayRangeModeV1 = 2;
+pub const ARRAY_RANGE_TAKE_LAST: FaberRtArrayRangeModeV1 = 3;
+pub const ARRAY_RANGE_DROP_FIRST: FaberRtArrayRangeModeV1 = 4;
 
 pub const LLVM_SLICE_TYPE: &str = "%FaberRtSliceV1";
 pub const LLVM_SLICE_TYPE_DEFINITION: &str = "%FaberRtSliceV1 = type { ptr, i64 }";

@@ -65,6 +65,11 @@ fn llvm_abi_v1_symbol_namespace_is_versioned() {
         SYMBOL_ARRAY_LENGTH,
         SYMBOL_ARRAY_GET,
         SYMBOL_ARRAY_SET,
+        SYMBOL_ARRAY_CLONE,
+        SYMBOL_ARRAY_CONTAINS,
+        SYMBOL_ARRAY_IS_EMPTY,
+        SYMBOL_ARRAY_REVERSE,
+        SYMBOL_ARRAY_RANGE,
     ] {
         assert!(symbol.starts_with("__faber_rt_v1_"), "{symbol}");
     }
@@ -83,6 +88,18 @@ fn llvm_abi_v1_symbol_namespace_is_versioned() {
         .collect::<BTreeSet<_>>()
         .len(),
         7
+    );
+    assert_eq!(
+        [
+            ARRAY_RANGE_SLICE,
+            ARRAY_RANGE_TAKE,
+            ARRAY_RANGE_TAKE_LAST,
+            ARRAY_RANGE_DROP_FIRST,
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .len(),
+        4
     );
     assert_eq!(
         LLVM_SLICE_TYPE_DEFINITION,

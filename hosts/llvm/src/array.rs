@@ -2,14 +2,15 @@
 
 use super::RuntimeContext;
 use faber::llvm_abi::{
-    FaberRtContextV1, FaberRtPtrResultV1, FaberRtStatusV1, FaberRtValueKindV1,
-    STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_F32, VALUE_KIND_F64,
-    VALUE_KIND_I1, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR,
+    FaberRtArrayRangeModeV1, FaberRtContextV1, FaberRtPtrResultV1, FaberRtStatusV1,
+    FaberRtValueKindV1, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE, ARRAY_RANGE_TAKE,
+    ARRAY_RANGE_TAKE_LAST, STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_F32,
+    VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR,
 };
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum RuntimeValue {
     I1(u8),
     I8(i8),
@@ -111,13 +112,12 @@ pub unsafe extern "C" fn __faber_rt_v1_array_length(
         let Some(array) = find_array(runtime, array) else {
             return STATUS_INVALID_ARGUMENT;
         };
-        if output.is_null() {
-            return STATUS_INVALID_ARGUMENT;
-        }
         let Ok(length) = i64::try_from(array.values.len()) else {
             return STATUS_INVALID_ARGUMENT;
         };
-        output.write(length);
+        if !(unsafe { write_typed(output.cast(), length) }) {
+            return STATUS_INVALID_ARGUMENT;
+        }
         STATUS_OK
     })
 }
@@ -179,6 +179,144 @@ pub unsafe extern "C" fn __faber_rt_v1_array_set(
         }
         *slot = value;
         STATUS_OK
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_array_clone(
+    context: *mut FaberRtContextV1,
+    array: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let Some(source_index) = find_array_index(runtime, array) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let kind = runtime.arrays[source_index].kind;
+        let values = runtime.arrays[source_index].values.clone();
+        store_array(runtime, kind, values)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_array_contains(
+    context: *mut FaberRtContextV1,
+    array: *mut c_void,
+    kind: FaberRtValueKindV1,
+    value: *const c_void,
+    output: *mut u8,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(value) = (unsafe { read_value(kind, value) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(array) = find_array(runtime, array) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if array.kind != kind
+            || !(unsafe { write_typed(output.cast(), u8::from(array.values.contains(&value))) })
+        {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        STATUS_OK
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_array_is_empty(
+    context: *mut FaberRtContextV1,
+    array: *mut c_void,
+    output: *mut u8,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(array) = find_array(runtime, array) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if !(unsafe { write_typed(output.cast(), u8::from(array.values.is_empty())) }) {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        STATUS_OK
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_array_reverse(
+    context: *mut FaberRtContextV1,
+    array: *mut c_void,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(array) = find_array_mut(runtime, array) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        array.values.reverse();
+        STATUS_OK
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_array_range(
+    context: *mut FaberRtContextV1,
+    array: *mut c_void,
+    mode: FaberRtArrayRangeModeV1,
+    first: i64,
+    second: i64,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let Some(source_index) = find_array_index(runtime, array) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let source = &runtime.arrays[source_index];
+        let Some((start, end)) = range_bounds(mode, first, second, source.values.len()) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let kind = source.kind;
+        let values = source.values[start..end].to_vec();
+        store_array(runtime, kind, values)
+    })
+}
+
+fn store_array(
+    runtime: &mut RuntimeContext,
+    kind: FaberRtValueKindV1,
+    values: Vec<RuntimeValue>,
+) -> FaberRtPtrResultV1 {
+    let mut array = Box::new(RuntimeArray { kind, values });
+    let handle = std::ptr::from_mut(array.as_mut()).cast::<c_void>();
+    runtime.arrays.push(array);
+    FaberRtPtrResultV1::success(handle)
+}
+
+fn range_bounds(
+    mode: FaberRtArrayRangeModeV1,
+    first: i64,
+    second: i64,
+    len: usize,
+) -> Option<(usize, usize)> {
+    let clamp = |value: i64| usize::try_from(value).ok().map(|value| value.min(len));
+    Some(match mode {
+        ARRAY_RANGE_SLICE => {
+            let end = clamp(second)?;
+            let start = clamp(first)?.min(end);
+            (start, end)
+        }
+        ARRAY_RANGE_TAKE => (0, clamp(first)?),
+        ARRAY_RANGE_TAKE_LAST => (len.saturating_sub(clamp(first)?), len),
+        ARRAY_RANGE_DROP_FIRST => (clamp(first)?, len),
+        _ => return None,
     })
 }
 

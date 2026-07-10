@@ -418,6 +418,116 @@ fn array_family_rejects_foreign_handles_kinds_and_bounds() {
         unsafe { __faber_rt_v1_array_get(context, array.value, 0, VALUE_KIND_I64, misaligned) },
         STATUS_INVALID_ARGUMENT
     );
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_length(context, array.value, misaligned.cast()) },
+        STATUS_INVALID_ARGUMENT
+    );
 
     unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn array_value_preserving_methods_clone_query_reverse_and_range() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for value in [1_i64, 2, 3, 4, 5] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    array.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&value).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+
+    let mut output = 0_u8;
+    let three = 3_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_contains(
+                context,
+                array.value,
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&three).cast(),
+                &mut output,
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(output, 1);
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_is_empty(context, array.value, &mut output) },
+        STATUS_OK
+    );
+    assert_eq!(output, 0);
+
+    let clone = unsafe { __faber_rt_v1_array_clone(context, array.value) };
+    assert_eq!(clone.status, STATUS_OK);
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_reverse(context, clone.value) },
+        STATUS_OK
+    );
+    assert_array_i64(context, clone.value, &[5, 4, 3, 2, 1]);
+    assert_array_i64(context, array.value, &[1, 2, 3, 4, 5]);
+
+    for (mode, first, second, expected) in [
+        (ARRAY_RANGE_SLICE, 1, 4, &[2_i64, 3, 4][..]),
+        (ARRAY_RANGE_TAKE, 2, 0, &[1_i64, 2][..]),
+        (ARRAY_RANGE_TAKE_LAST, 2, 0, &[4_i64, 5][..]),
+        (ARRAY_RANGE_DROP_FIRST, 2, 0, &[3_i64, 4, 5][..]),
+    ] {
+        let result =
+            unsafe { __faber_rt_v1_array_range(context, array.value, mode, first, second) };
+        assert_eq!(result.status, STATUS_OK);
+        assert_array_i64(context, result.value, expected);
+    }
+    for (mode, first, second) in [
+        (ARRAY_RANGE_TAKE, -1, 0),
+        (ARRAY_RANGE_SLICE, 0, -1),
+        (99, 0, 0),
+    ] {
+        let result =
+            unsafe { __faber_rt_v1_array_range(context, array.value, mode, first, second) };
+        assert_eq!(result.status, STATUS_INVALID_ARGUMENT);
+        assert!(result.value.is_null());
+    }
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+fn assert_array_i64(
+    context: *mut FaberRtContextV1,
+    array: *mut std::ffi::c_void,
+    expected: &[i64],
+) {
+    let mut length = -1_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_length(context, array, &mut length) },
+        STATUS_OK
+    );
+    assert_eq!(usize::try_from(length), Ok(expected.len()));
+    for (index, expected) in expected.iter().enumerate() {
+        let mut actual = 0_i64;
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_get(
+                    context,
+                    array,
+                    index as i64,
+                    VALUE_KIND_I64,
+                    std::ptr::from_mut(&mut actual).cast(),
+                )
+            },
+            STATUS_OK
+        );
+        assert_eq!(&actual, expected);
+    }
 }
