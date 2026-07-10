@@ -1,6 +1,13 @@
+mod array;
 mod convert;
 mod format;
 
+use array::RuntimeArray;
+#[cfg(test)]
+use array::{
+    __faber_rt_v1_array_extend, __faber_rt_v1_array_get, __faber_rt_v1_array_length,
+    __faber_rt_v1_array_new, __faber_rt_v1_array_push, __faber_rt_v1_array_set,
+};
 #[cfg(test)]
 use convert::{__faber_rt_v1_valor_f64, __faber_rt_v1_valor_i1, __faber_rt_v1_valor_i64};
 #[cfg(not(test))]
@@ -10,6 +17,11 @@ use faber::llvm_abi::FaberRtPtrResultV1;
 use faber::llvm_abi::{
     FaberRtContextV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT, STATUS_IO_ERROR,
     STATUS_OK, STATUS_PANIC, STATUS_UNSUPPORTED,
+};
+#[cfg(test)]
+use faber::llvm_abi::{
+    VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8,
+    VALUE_KIND_PTR,
 };
 use faber::Valor;
 use format::RuntimeText;
@@ -29,6 +41,7 @@ struct RuntimeContext {
     _arguments: Vec<Vec<u8>>,
     texts: Vec<Box<RuntimeText>>,
     valors: Vec<Box<Valor>>,
+    arrays: Vec<Box<RuntimeArray>>,
 }
 
 /// Initialize one process-lifetime LLVM host context.
@@ -60,6 +73,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             _arguments: arguments,
             texts: Vec::new(),
             valors: Vec::new(),
+            arrays: Vec::new(),
         });
         *out_context = Box::into_raw(context).cast();
         STATUS_OK

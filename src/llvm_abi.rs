@@ -21,7 +21,22 @@ pub const SYMBOL_TEXT_I1: &str = "__faber_rt_v1_text_i1";
 pub const SYMBOL_VALOR_I64: &str = "__faber_rt_v1_valor_i64";
 pub const SYMBOL_VALOR_F64: &str = "__faber_rt_v1_valor_f64";
 pub const SYMBOL_VALOR_I1: &str = "__faber_rt_v1_valor_i1";
+pub const SYMBOL_ARRAY_NEW: &str = "__faber_rt_v1_array_new";
+pub const SYMBOL_ARRAY_PUSH: &str = "__faber_rt_v1_array_push";
+pub const SYMBOL_ARRAY_EXTEND: &str = "__faber_rt_v1_array_extend";
+pub const SYMBOL_ARRAY_LENGTH: &str = "__faber_rt_v1_array_length";
+pub const SYMBOL_ARRAY_GET: &str = "__faber_rt_v1_array_get";
+pub const SYMBOL_ARRAY_SET: &str = "__faber_rt_v1_array_set";
 pub const SYMBOL_PROGRAM_ENTRY: &str = "__faber_program_entry_v1";
+
+pub type FaberRtValueKindV1 = u32;
+pub const VALUE_KIND_I1: FaberRtValueKindV1 = 1;
+pub const VALUE_KIND_I8: FaberRtValueKindV1 = 2;
+pub const VALUE_KIND_I32: FaberRtValueKindV1 = 3;
+pub const VALUE_KIND_I64: FaberRtValueKindV1 = 4;
+pub const VALUE_KIND_F32: FaberRtValueKindV1 = 5;
+pub const VALUE_KIND_F64: FaberRtValueKindV1 = 6;
+pub const VALUE_KIND_PTR: FaberRtValueKindV1 = 7;
 
 pub const LLVM_SLICE_TYPE: &str = "%FaberRtSliceV1";
 pub const LLVM_SLICE_TYPE_DEFINITION: &str = "%FaberRtSliceV1 = type { ptr, i64 }";

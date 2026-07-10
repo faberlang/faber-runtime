@@ -216,3 +216,208 @@ fn scalar_valor_conversion_family_owns_typed_values() {
 
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn array_family_round_trips_every_value_kind_and_spreads() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+
+    let i1 = 1_u8;
+    let i8_value = -8_i8;
+    let i32_value = -32_i32;
+    let i64_value = -64_i64;
+    let f32_value = 3.25_f32;
+    let f64_value = 6.5_f64;
+    let pointer_value = context.cast::<std::ffi::c_void>();
+    let cases = [
+        (VALUE_KIND_I1, std::ptr::from_ref(&i1).cast()),
+        (VALUE_KIND_I8, std::ptr::from_ref(&i8_value).cast()),
+        (VALUE_KIND_I32, std::ptr::from_ref(&i32_value).cast()),
+        (VALUE_KIND_I64, std::ptr::from_ref(&i64_value).cast()),
+        (VALUE_KIND_F32, std::ptr::from_ref(&f32_value).cast()),
+        (VALUE_KIND_F64, std::ptr::from_ref(&f64_value).cast()),
+        (VALUE_KIND_PTR, std::ptr::from_ref(&pointer_value).cast()),
+    ];
+
+    for (kind, input) in cases {
+        let array = unsafe { __faber_rt_v1_array_new(context, kind) };
+        assert_eq!(array.status, STATUS_OK);
+        assert_eq!(
+            unsafe { __faber_rt_v1_array_push(context, array.value, kind, input) },
+            STATUS_OK
+        );
+
+        let mut length = -1_i64;
+        assert_eq!(
+            unsafe { __faber_rt_v1_array_length(context, array.value, &mut length) },
+            STATUS_OK
+        );
+        assert_eq!(length, 1);
+
+        let mut output = 0_u64;
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_get(
+                    context,
+                    array.value,
+                    0,
+                    kind,
+                    std::ptr::from_mut(&mut output).cast(),
+                )
+            },
+            STATUS_OK
+        );
+        let width = match kind {
+            VALUE_KIND_I1 | VALUE_KIND_I8 => 1,
+            VALUE_KIND_I32 | VALUE_KIND_F32 => 4,
+            VALUE_KIND_I64 | VALUE_KIND_F64 | VALUE_KIND_PTR => 8,
+            _ => unreachable!(),
+        };
+        assert_eq!(&output.to_ne_bytes()[..width], unsafe {
+            std::slice::from_raw_parts(input.cast::<u8>(), width)
+        });
+    }
+
+    let source = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    let target = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    let first = 1_i64;
+    let second = 2_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_push(
+                context,
+                source.value,
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&first).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_extend(context, target.value, source.value) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_set(
+                context,
+                target.value,
+                0,
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&second).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    let mut output = 0_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_get(
+                context,
+                target.value,
+                0,
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(output, second);
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn array_family_rejects_foreign_handles_kinds_and_bounds() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    let value = 1_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_push(
+                context,
+                array.value,
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&value).cast(),
+            )
+        },
+        STATUS_OK
+    );
+
+    let mut output = 0_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_get(
+                context,
+                context.cast(),
+                0,
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_get(
+                context,
+                array.value,
+                -1,
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_get(
+                context,
+                array.value,
+                1,
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_get(
+                context,
+                array.value,
+                0,
+                VALUE_KIND_F64,
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_length(context, array.value, ptr::null_mut()) },
+        STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_push(context, array.value, VALUE_KIND_I64, ptr::null()) },
+        STATUS_INVALID_ARGUMENT
+    );
+    let mut aligned = [0_u64; 2];
+    let misaligned = unsafe { aligned.as_mut_ptr().cast::<u8>().add(1).cast() };
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_push(context, array.value, VALUE_KIND_I64, misaligned) },
+        STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_get(context, array.value, 0, VALUE_KIND_I64, misaligned) },
+        STATUS_INVALID_ARGUMENT
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}

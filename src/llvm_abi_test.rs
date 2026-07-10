@@ -59,10 +59,31 @@ fn llvm_abi_v1_symbol_namespace_is_versioned() {
         SYMBOL_VALOR_I64,
         SYMBOL_VALOR_F64,
         SYMBOL_VALOR_I1,
+        SYMBOL_ARRAY_NEW,
+        SYMBOL_ARRAY_PUSH,
+        SYMBOL_ARRAY_EXTEND,
+        SYMBOL_ARRAY_LENGTH,
+        SYMBOL_ARRAY_GET,
+        SYMBOL_ARRAY_SET,
     ] {
         assert!(symbol.starts_with("__faber_rt_v1_"), "{symbol}");
     }
     assert_eq!(SYMBOL_PROGRAM_ENTRY, "__faber_program_entry_v1");
+    assert_eq!(
+        [
+            VALUE_KIND_I1,
+            VALUE_KIND_I8,
+            VALUE_KIND_I32,
+            VALUE_KIND_I64,
+            VALUE_KIND_F32,
+            VALUE_KIND_F64,
+            VALUE_KIND_PTR,
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .len(),
+        7
+    );
     assert_eq!(
         LLVM_SLICE_TYPE_DEFINITION,
         "%FaberRtSliceV1 = type { ptr, i64 }"
