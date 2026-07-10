@@ -6,6 +6,7 @@ mod format;
 mod instans;
 mod octeti;
 mod option;
+mod sparsa;
 mod tensor;
 mod text;
 mod valor_aggregate;
@@ -82,8 +83,14 @@ use option::{
     __faber_rt_v1_option_get, __faber_rt_v1_option_get_or, __faber_rt_v1_option_is_present,
     __faber_rt_v1_option_none, __faber_rt_v1_option_some,
 };
+use sparsa::RuntimeSparse;
 use tensor::RuntimeTensor;
 #[cfg(test)]
+use sparsa::{
+    __faber_rt_v1_sparse_densify, __faber_rt_v1_sparse_from_tensor, __faber_rt_v1_sparse_get,
+    __faber_rt_v1_sparse_new, __faber_rt_v1_sparse_nonzero, __faber_rt_v1_sparse_rank,
+    __faber_rt_v1_sparse_set,
+};
 use tensor::{
     __faber_rt_v1_tensor_add, __faber_rt_v1_tensor_convert, __faber_rt_v1_tensor_create,
     __faber_rt_v1_tensor_fill, __faber_rt_v1_tensor_flatten, __faber_rt_v1_tensor_from_flat,
@@ -128,6 +135,7 @@ struct RuntimeContext {
     maps: Vec<Box<RuntimeMap>>,
     sets: Vec<Box<RuntimeSet>>,
     tensors: Vec<Box<RuntimeTensor>>,
+    sparses: Vec<Box<RuntimeSparse>>,
 }
 
 /// Initialize one process-lifetime LLVM host context.
@@ -168,6 +176,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             maps: Vec::new(),
             sets: Vec::new(),
             tensors: Vec::new(),
+            sparses: Vec::new(),
         });
         *out_context = Box::into_raw(context).cast();
         STATUS_OK

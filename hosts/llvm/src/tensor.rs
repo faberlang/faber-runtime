@@ -22,9 +22,9 @@ use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 
 pub(super) struct RuntimeTensor {
-    kind: FaberRtValueKindV1,
-    shape: Vec<i64>,
-    data: Vec<RuntimeValue>,
+    pub(super) kind: FaberRtValueKindV1,
+    pub(super) shape: Vec<i64>,
+    pub(super) data: Vec<RuntimeValue>,
 }
 
 fn ffi_ptr(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrResultV1 {
@@ -71,7 +71,7 @@ fn default_value(kind: FaberRtValueKindV1) -> Option<RuntimeValue> {
     })
 }
 
-fn store_tensor(
+pub(super) fn store_tensor(
     runtime: &mut RuntimeContext,
     kind: FaberRtValueKindV1,
     shape: Vec<i64>,
@@ -83,7 +83,7 @@ fn store_tensor(
     FaberRtPtrResultV1::success(handle)
 }
 
-fn find_tensor(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeTensor> {
+pub(super) fn find_tensor(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeTensor> {
     runtime
         .tensors
         .iter()
@@ -832,4 +832,20 @@ fn value_as_i128(value: RuntimeValue, kind: FaberRtValueKindV1) -> Option<i128> 
         (faber::llvm_abi::VALUE_KIND_F64, RuntimeValue::F64(v)) => v as i128,
         _ => return None,
     })
+}
+
+
+pub(super) fn store_tensor_from_parts(
+    runtime: &mut RuntimeContext,
+    kind: FaberRtValueKindV1,
+    shape: Vec<i64>,
+    data: Vec<RuntimeValue>,
+) -> FaberRtPtrResultV1 {
+    store_tensor(runtime, kind, shape, data)
+}
+
+pub(super) fn tensor_to_runtime_values(
+    tensor: &RuntimeTensor,
+) -> Option<(Vec<i64>, Vec<RuntimeValue>)> {
+    Some((tensor.shape.clone(), tensor.data.clone()))
 }

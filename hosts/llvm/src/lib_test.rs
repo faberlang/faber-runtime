@@ -1938,3 +1938,94 @@ fn tensor_convert_widens_and_narrows_element_kinds() {
     assert_eq!(length, 2);
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn sparse_core_carrier_sets_gets_and_densifies() {
+    let mut context = std::ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let shape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for dim in [2_i64, 3_i64] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    shape.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&dim).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let sparse = unsafe { __faber_rt_v1_sparse_new(context, VALUE_KIND_F32, shape.value) };
+    assert_eq!(sparse.status, STATUS_OK);
+    let idx = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for dim in [0_i64, 1_i64] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    idx.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&dim).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let four = 4.0_f32;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_sparse_set(
+                context,
+                sparse.value,
+                idx.value,
+                VALUE_KIND_F32,
+                std::ptr::from_ref(&four).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    let mut got = 0.0_f32;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_sparse_get(
+                context,
+                sparse.value,
+                idx.value,
+                VALUE_KIND_F32,
+                std::ptr::from_mut(&mut got).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(got, 4.0);
+    let mut count = 0_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_sparse_nonzero(context, sparse.value, &mut count) },
+        STATUS_OK
+    );
+    assert_eq!(count, 1);
+    let dense = unsafe { __faber_rt_v1_sparse_densify(context, sparse.value) };
+    assert_eq!(dense.status, STATUS_OK);
+    let mut rank = 0_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_tensor_rank(context, dense.value, &mut rank) },
+        STATUS_OK
+    );
+    assert_eq!(rank, 2);
+    let back = unsafe {
+        __faber_rt_v1_sparse_from_tensor(context, dense.value, VALUE_KIND_F32)
+    };
+    assert_eq!(back.status, STATUS_OK);
+    let mut count2 = 0_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_sparse_nonzero(context, back.value, &mut count2) },
+        STATUS_OK
+    );
+    assert_eq!(count2, 1);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}

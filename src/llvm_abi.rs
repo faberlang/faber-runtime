@@ -129,6 +129,13 @@ pub const SYMBOL_TENSOR_MATMUL: &str = "__faber_rt_v1_tensor_matmul";
 pub const SYMBOL_TENSOR_SUM: &str = "__faber_rt_v1_tensor_sum";
 pub const SYMBOL_TENSOR_MEAN: &str = "__faber_rt_v1_tensor_mean";
 pub const SYMBOL_TENSOR_CONVERT: &str = "__faber_rt_v1_tensor_convert";
+pub const SYMBOL_SPARSE_NEW: &str = "__faber_rt_v1_sparse_new";
+pub const SYMBOL_SPARSE_GET: &str = "__faber_rt_v1_sparse_get";
+pub const SYMBOL_SPARSE_SET: &str = "__faber_rt_v1_sparse_set";
+pub const SYMBOL_SPARSE_NONZERO: &str = "__faber_rt_v1_sparse_nonzero";
+pub const SYMBOL_SPARSE_RANK: &str = "__faber_rt_v1_sparse_rank";
+pub const SYMBOL_SPARSE_DENSIFY: &str = "__faber_rt_v1_sparse_densify";
+pub const SYMBOL_SPARSE_FROM_TENSOR: &str = "__faber_rt_v1_sparse_from_tensor";
 pub const SYMBOL_PROGRAM_ENTRY: &str = "__faber_program_entry_v1";
 
 pub type FaberRtValueKindV1 = u32;
