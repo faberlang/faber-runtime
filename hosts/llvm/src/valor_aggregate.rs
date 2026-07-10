@@ -4,6 +4,7 @@ use super::array::{find_array, store_array, RuntimeValue};
 use super::collection_map::{find_map, store_map};
 use super::convert::{store_valor, with_valor};
 use super::format::{store_text, text_value};
+use super::tensor::find_tensor;
 use super::RuntimeContext;
 use faber::llvm_abi::*;
 use faber::{FromValor, Valor};
@@ -76,6 +77,30 @@ pub unsafe extern "C" fn __faber_rt_v1_valor_octeti(
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
         store_valor(context, Valor::Octeti(bytes))
+    })
+}
+
+/// `tensor ↦ valor` — box flat tensor elements as a Valor lista (kernel bridge).
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_valor_tensor(
+    context: *mut FaberRtContextV1,
+    tensor: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr(|| {
+        let Some(runtime) = context_mut(context) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let Some(tensor) = find_tensor(runtime, tensor) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let mut values = Vec::with_capacity(tensor.data.len());
+        for value in &tensor.data {
+            let Some(item) = runtime_value_to_valor(runtime, tensor.kind, *value) else {
+                return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+            };
+            values.push(item);
+        }
+        store_valor(context, Valor::Lista(values))
     })
 }
 

@@ -1,6 +1,6 @@
 //! Arena-owned typed maps and sets for the LLVM host ABI.
 
-use super::array::{find_array, read_value, store_array, valid_kind, RuntimeValue};
+use super::array::{find_array, read_value, store_array, valid_kind, write_value, RuntimeValue};
 use super::option::store_option;
 use super::RuntimeContext;
 use faber::llvm_abi::{
@@ -104,6 +104,43 @@ pub unsafe extern "C" fn __faber_rt_v1_map_option(
                 .map(|(_, value)| *value)
         };
         store_option(runtime, value_kind, value)
+    })
+}
+
+/// Non-optional tabula index: write the value or fail closed when missing.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_map_get(
+    context: *mut FaberRtContextV1,
+    map: *mut c_void,
+    key_kind: FaberRtValueKindV1,
+    key: *const c_void,
+    value_kind: FaberRtValueKindV1,
+    output: *mut c_void,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        let Some(runtime) = (unsafe { runtime_mut(context) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(key) = (unsafe { read_value(key_kind, key) }) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(map) = find_map(runtime, map) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if map.key_kind != key_kind || map.value_kind != value_kind || output.is_null() {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        let Some((_, value)) = map
+            .entries
+            .iter()
+            .find(|(candidate, _)| values_equal(key_kind, *candidate, key))
+        else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if !(unsafe { write_value(*value, output) }) {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        STATUS_OK
     })
 }
 
