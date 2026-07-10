@@ -59,6 +59,7 @@ struct SermoInner {
     incoming_terminal: Option<FrameStatus>,
     incoming_wake_epoch: u64,
     incoming_waiters: Vec<Waker>,
+    runtime_cancellation: Option<Cancellation>,
     detached: bool,
     meus_closed: bool,
 }
@@ -234,12 +235,16 @@ impl ResponseSender {
         self.send(FrameStatus::Cancel, Valor::Nihil)
     }
 
-    pub fn send(&self, status: FrameStatus, data: Valor) -> Result<(), FrameError> {
+    pub fn send(&self, mut status: FrameStatus, mut data: Valor) -> Result<(), FrameError> {
         if self.is_cancelled() && !status.is_terminal() {
             return Err(FrameError::new(
                 "frame_response_cancelled",
                 "response sender cannot enqueue content after cancellation",
             ));
+        }
+        if self.is_cancelled() && status == FrameStatus::Done {
+            status = FrameStatus::Cancel;
+            data = Valor::Nihil;
         }
         if status.is_terminal() {
             if self.lease.terminal_sent.swap(true, Ordering::SeqCst) {
@@ -290,11 +295,15 @@ impl Drop for ResponseSender {
         if self.lease.terminal_sent.swap(true, Ordering::SeqCst) {
             return;
         }
-        push_response_frame(
-            &self.lease.shared,
-            FrameStatus::Error,
-            Valor::Textus("response producer dropped before terminal frame".to_owned()),
-        );
+        if self.lease.cancellation.is_cancelled() {
+            push_response_frame(&self.lease.shared, FrameStatus::Cancel, Valor::Nihil);
+        } else {
+            push_response_frame(
+                &self.lease.shared,
+                FrameStatus::Error,
+                Valor::Textus("response producer dropped before terminal frame".to_owned()),
+            );
+        }
     }
 }
 
@@ -413,6 +422,7 @@ pub fn sermo_open(route: &str) -> Sermo {
             incoming_terminal: None,
             incoming_wake_epoch: 0,
             incoming_waiters: Vec::new(),
+            runtime_cancellation: None,
             detached: false,
             meus_closed: false,
         })),
@@ -542,6 +552,7 @@ pub fn tuus_as_sermo<T>(tuus: &Tuus<T>) -> Sermo {
 fn record_incoming_terminal(inner: &mut SermoInner, status: FrameStatus) {
     inner.incoming_terminal = Some(status);
     inner.incoming_drained = true;
+    inner.runtime_cancellation = None;
 }
 
 fn wake_incoming(inner: &mut SermoInner) {
@@ -619,22 +630,10 @@ pub fn sermo_recv(sermo: &mut Sermo) -> Option<Scrinium> {
     Some(frame)
 }
 
-pub async fn sermo_recv_async(sermo: &mut Sermo) -> Option<Scrinium> {
-    loop {
-        if let Some(frame) = sermo_recv_ready(sermo) {
-            return Some(frame);
-        }
-        let wait = {
-            let inner = lock_sermo(&sermo.inner);
-            if inner.detached || inner.incoming_drained {
-                return None;
-            }
-            IncomingWake {
-                inner: sermo.inner.clone(),
-                seen_epoch: inner.incoming_wake_epoch,
-            }
-        };
-        wait.await;
+pub fn sermo_recv_async(sermo: &mut Sermo) -> SermoRecvFuture<'_> {
+    SermoRecvFuture {
+        sermo,
+        completed: false,
     }
 }
 
@@ -653,22 +652,32 @@ fn sermo_recv_ready(sermo: &mut Sermo) -> Option<Scrinium> {
     Some(frame)
 }
 
-struct IncomingWake {
-    inner: Arc<SermoShared>,
-    seen_epoch: u64,
+pub struct SermoRecvFuture<'a> {
+    sermo: &'a mut Sermo,
+    completed: bool,
 }
 
-impl std::future::Future for IncomingWake {
-    type Output = ();
+impl std::future::Future for SermoRecvFuture<'_> {
+    type Output = Option<Scrinium>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut inner = lock_sermo(&self.inner);
-        if inner.detached
-            || inner.incoming_drained
-            || !inner.incoming.is_empty()
-            || inner.incoming_wake_epoch != self.seen_epoch
-        {
-            return Poll::Ready(());
+        let this = self.get_mut();
+        if let Some(frame) = sermo_recv_ready(this.sermo) {
+            this.completed = true;
+            return Poll::Ready(Some(frame));
+        }
+        let mut inner = lock_sermo(&this.sermo.inner);
+        if inner.detached || inner.incoming_drained {
+            this.completed = true;
+            return Poll::Ready(None);
+        }
+        if !inner.incoming.is_empty() {
+            drop(inner);
+            if let Some(frame) = sermo_recv_ready(this.sermo) {
+                this.completed = true;
+                return Poll::Ready(Some(frame));
+            }
+            return Poll::Pending;
         }
         if !inner
             .incoming_waiters
@@ -681,6 +690,23 @@ impl std::future::Future for IncomingWake {
     }
 }
 
+impl Drop for SermoRecvFuture<'_> {
+    fn drop(&mut self) {
+        if !self.completed {
+            cancel_runtime_response(&self.sermo.inner);
+        }
+    }
+}
+
+fn cancel_runtime_response(shared: &Arc<SermoShared>) {
+    let mut inner = lock_sermo(shared);
+    if let Some(cancellation) = inner.runtime_cancellation.take() {
+        cancellation.cancel();
+        wake_incoming(&mut inner);
+        shared.incoming_changed.notify_all();
+    }
+}
+
 fn ensure_runtime_response_started(shared: &Arc<SermoShared>, inner: &mut SermoInner) {
     if inner.runtime_response_generated {
         return;
@@ -690,6 +716,7 @@ fn ensure_runtime_response_started(shared: &Arc<SermoShared>, inner: &mut SermoI
     let cancellation = Cancellation {
         cancelled: Arc::new(AtomicBool::new(false)),
     };
+    inner.runtime_cancellation = Some(cancellation.clone());
     let responses = ResponseSender::new(Arc::clone(shared), cancellation.clone());
     if let Err(error) = start_host_dispatch(request, responses.clone(), cancellation) {
         responses.reject_start_error(error);
@@ -713,6 +740,7 @@ fn ensure_runtime_response_started_for_target(sermo: &mut Sermo, target: &'stati
     let cancellation = Cancellation {
         cancelled: Arc::new(AtomicBool::new(false)),
     };
+    inner.runtime_cancellation = Some(cancellation.clone());
     let responses = ResponseSender::new(Arc::clone(&sermo.inner), cancellation.clone());
     if let Err(error) = start_host_dispatch(request, responses.clone(), cancellation) {
         responses.reject_start_error(error);

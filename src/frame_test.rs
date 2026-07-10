@@ -61,7 +61,7 @@ fn runtime_echo_returns_opener_then_done() {
 
 #[test]
 fn sermo_recv_async_registers_runtime_neutral_wake() {
-    let mut sermo = frame::sermo_open("test:manual-wake");
+    let (mut sermo, _sender, _cancellation) = frame::test_response_sender("test:manual-wake");
     let wake = Arc::new(CountingWake::default());
     let waker = test_waker(&wake);
     let mut cx = Context::from_waker(&waker);
@@ -87,6 +87,27 @@ fn sermo_recv_async_registers_runtime_neutral_wake() {
 
     let frame = block_on(frame::sermo_recv_async(&mut sermo)).expect("manual frame");
     assert_eq!(frame.data, Valor::Textus("awakened".into()));
+}
+
+#[test]
+fn dropping_pending_async_receive_cancels_runtime_response() {
+    let mut sermo = frame::sermo_open("tempus:dormiet");
+    frame::sermo_set_opener(&mut sermo, Valor::Numerus(25));
+    let wake = Arc::new(CountingWake::default());
+    let waker = test_waker(&wake);
+    let mut cx = Context::from_waker(&waker);
+
+    {
+        let mut future = Box::pin(frame::sermo_recv_async(&mut sermo));
+        assert!(matches!(
+            Future::poll(Pin::as_mut(&mut future), &mut cx),
+            Poll::Pending
+        ));
+    }
+
+    let terminal = frame::sermo_recv(&mut sermo).expect("cancel terminal");
+    assert_eq!(terminal.status, FrameStatus::Cancel);
+    assert!(sermo.incoming_drained());
 }
 
 #[test]
