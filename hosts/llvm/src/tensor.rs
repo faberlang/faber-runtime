@@ -1,11 +1,11 @@
-//! Arena-owned dense tensor carrier for the LLVM host ABI (Stage 4V core).
+//! Arena-owned dense tensor carrier for the LLVM host ABI (Stages 4V–4W).
 //!
 //! Tensors store a typed flat element buffer plus an explicit shape. Views from
 //! `sectio` materialize so the link surface stays honest without exposing Rust
-//! layout. Arithmetic and element-width conversion remain residual families.
+//! layout. Element-width conversion and sparse remain residual families.
 
 use super::array::{
-    find_array, read_value, store_array, valid_kind, RuntimeArray, RuntimeValue,
+    find_array, read_value, store_array, valid_kind, write_value, RuntimeArray, RuntimeValue,
 };
 use super::option::store_option;
 use super::RuntimeContext;
@@ -17,6 +17,7 @@ use faber::tensor::{
     tensor_flat_offset, tensor_shape_element_count, tensor_shape_has_element_count, ERR_INDEX_OUT_OF_BOUNDS,
     ERR_INVALID_SLICE_RANGE, ERR_NEGATIVE_DIM, ERR_NEGATIVE_INDEX, ERR_NEGATIVE_SLICE,
 };
+use faber::Tensor;
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 
@@ -440,4 +441,286 @@ pub unsafe extern "C" fn __faber_rt_v1_tensor_slice(
         let data = tensor.data[start_off..end_off].to_vec();
         store_tensor(runtime, tensor.kind, shape, data)
     })
+}
+
+fn binary_tensor_op(
+    context: *mut FaberRtContextV1,
+    lhs: *mut c_void,
+    rhs: *mut c_void,
+    op: BinaryOp,
+) -> FaberRtPtrResultV1 {
+    let Some(runtime) = runtime(context) else {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    };
+    let Some(left) = find_tensor(runtime, lhs) else {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    };
+    let Some(right) = find_tensor(runtime, rhs) else {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    };
+    if left.kind != right.kind {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    }
+    let kind = left.kind;
+    let Some((shape, data)) = apply_binary(left, right, op) else {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    };
+    store_tensor(runtime, kind, shape, data)
+}
+
+#[derive(Clone, Copy)]
+enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    MatMul,
+}
+
+fn apply_binary(left: &RuntimeTensor, right: &RuntimeTensor, op: BinaryOp) -> Option<(Vec<i64>, Vec<RuntimeValue>)> {
+    match left.kind {
+        faber::llvm_abi::VALUE_KIND_F32 => {
+            let lhs = to_tensor_f32(left)?;
+            let rhs = to_tensor_f32(right)?;
+            let result = match op {
+                BinaryOp::Add => lhs.addita(&rhs).ok()?,
+                BinaryOp::Sub => lhs.subtrahe(&rhs).ok()?,
+                BinaryOp::Mul => lhs.multiplica(&rhs).ok()?,
+                BinaryOp::MatMul => lhs.matmul(&rhs).ok()?,
+            };
+            Some(from_tensor_f32(&result))
+        }
+        faber::llvm_abi::VALUE_KIND_F64 => {
+            let lhs = to_tensor_f64(left)?;
+            let rhs = to_tensor_f64(right)?;
+            let result = match op {
+                BinaryOp::Add => lhs.addita(&rhs).ok()?,
+                BinaryOp::Sub => lhs.subtrahe(&rhs).ok()?,
+                BinaryOp::Mul => lhs.multiplica(&rhs).ok()?,
+                BinaryOp::MatMul => lhs.matmul(&rhs).ok()?,
+            };
+            Some(from_tensor_f64(&result))
+        }
+        faber::llvm_abi::VALUE_KIND_I64 => {
+            let lhs = to_tensor_i64(left)?;
+            let rhs = to_tensor_i64(right)?;
+            let result = match op {
+                BinaryOp::Add => lhs.addita(&rhs).ok()?,
+                BinaryOp::Sub => lhs.subtrahe(&rhs).ok()?,
+                BinaryOp::Mul => lhs.multiplica(&rhs).ok()?,
+                BinaryOp::MatMul => lhs.matmul(&rhs).ok()?,
+            };
+            Some(from_tensor_i64(&result))
+        }
+        faber::llvm_abi::VALUE_KIND_I32 => {
+            let lhs = to_tensor_i32(left)?;
+            let rhs = to_tensor_i32(right)?;
+            let result = match op {
+                BinaryOp::Add => lhs.addita(&rhs).ok()?,
+                BinaryOp::Sub => lhs.subtrahe(&rhs).ok()?,
+                BinaryOp::Mul => lhs.multiplica(&rhs).ok()?,
+                BinaryOp::MatMul => lhs.matmul(&rhs).ok()?,
+            };
+            Some(from_tensor_i32(&result))
+        }
+        _ => None,
+    }
+}
+
+fn to_tensor_f32(tensor: &RuntimeTensor) -> Option<Tensor<f32>> {
+    let data = tensor
+        .data
+        .iter()
+        .map(|value| match value {
+            RuntimeValue::F32(value) => Some(*value),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Tensor::structa(data, &tensor.shape).ok()
+}
+
+fn from_tensor_f32(tensor: &Tensor<f32>) -> (Vec<i64>, Vec<RuntimeValue>) {
+    (
+        tensor.magnitudines(),
+        tensor.planata().into_iter().map(RuntimeValue::F32).collect(),
+    )
+}
+
+fn to_tensor_f64(tensor: &RuntimeTensor) -> Option<Tensor<f64>> {
+    let data = tensor
+        .data
+        .iter()
+        .map(|value| match value {
+            RuntimeValue::F64(value) => Some(*value),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Tensor::structa(data, &tensor.shape).ok()
+}
+
+fn from_tensor_f64(tensor: &Tensor<f64>) -> (Vec<i64>, Vec<RuntimeValue>) {
+    (
+        tensor.magnitudines(),
+        tensor.planata().into_iter().map(RuntimeValue::F64).collect(),
+    )
+}
+
+fn to_tensor_i64(tensor: &RuntimeTensor) -> Option<Tensor<i64>> {
+    let data = tensor
+        .data
+        .iter()
+        .map(|value| match value {
+            RuntimeValue::I64(value) => Some(*value),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Tensor::structa(data, &tensor.shape).ok()
+}
+
+fn from_tensor_i64(tensor: &Tensor<i64>) -> (Vec<i64>, Vec<RuntimeValue>) {
+    (
+        tensor.magnitudines(),
+        tensor.planata().into_iter().map(RuntimeValue::I64).collect(),
+    )
+}
+
+fn to_tensor_i32(tensor: &RuntimeTensor) -> Option<Tensor<i32>> {
+    let data = tensor
+        .data
+        .iter()
+        .map(|value| match value {
+            RuntimeValue::I32(value) => Some(*value),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Tensor::structa(data, &tensor.shape).ok()
+}
+
+fn from_tensor_i32(tensor: &Tensor<i32>) -> (Vec<i64>, Vec<RuntimeValue>) {
+    (
+        tensor.magnitudines(),
+        tensor.planata().into_iter().map(RuntimeValue::I32).collect(),
+    )
+}
+
+/// Elementwise add with broadcast.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_tensor_add(
+    context: *mut FaberRtContextV1,
+    lhs: *mut c_void,
+    rhs: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr(|| binary_tensor_op(context, lhs, rhs, BinaryOp::Add))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_tensor_sub(
+    context: *mut FaberRtContextV1,
+    lhs: *mut c_void,
+    rhs: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr(|| binary_tensor_op(context, lhs, rhs, BinaryOp::Sub))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_tensor_mul(
+    context: *mut FaberRtContextV1,
+    lhs: *mut c_void,
+    rhs: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr(|| binary_tensor_op(context, lhs, rhs, BinaryOp::Mul))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_tensor_matmul(
+    context: *mut FaberRtContextV1,
+    lhs: *mut c_void,
+    rhs: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr(|| binary_tensor_op(context, lhs, rhs, BinaryOp::MatMul))
+}
+
+/// Element-type fold (`summa`).
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_tensor_sum(
+    context: *mut FaberRtContextV1,
+    handle: *mut c_void,
+    kind: FaberRtValueKindV1,
+    output: *mut c_void,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        let Some(runtime) = runtime(context) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(tensor) = find_tensor(runtime, handle) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if tensor.kind != kind {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        let Some(value) = tensor_sum_value(tensor) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if !(unsafe { write_value(value, output) }) {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        STATUS_OK
+    })
+}
+
+/// Mean (`media`) in the element kind for float carriers.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_tensor_mean(
+    context: *mut FaberRtContextV1,
+    handle: *mut c_void,
+    kind: FaberRtValueKindV1,
+    output: *mut c_void,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        let Some(runtime) = runtime(context) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Some(tensor) = find_tensor(runtime, handle) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if tensor.kind != kind || tensor.data.is_empty() {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        let Some(value) = tensor_mean_value(tensor) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if !(unsafe { write_value(value, output) }) {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        STATUS_OK
+    })
+}
+
+fn tensor_sum_value(tensor: &RuntimeTensor) -> Option<RuntimeValue> {
+    match tensor.kind {
+        faber::llvm_abi::VALUE_KIND_F32 => Some(RuntimeValue::F32(to_tensor_f32(tensor)?.summa())),
+        faber::llvm_abi::VALUE_KIND_F64 => Some(RuntimeValue::F64(to_tensor_f64(tensor)?.summa())),
+        faber::llvm_abi::VALUE_KIND_I64 => Some(RuntimeValue::I64(to_tensor_i64(tensor)?.summa())),
+        faber::llvm_abi::VALUE_KIND_I32 => Some(RuntimeValue::I32(to_tensor_i32(tensor)?.summa())),
+        _ => None,
+    }
+}
+
+fn tensor_mean_value(tensor: &RuntimeTensor) -> Option<RuntimeValue> {
+    let n = tensor.data.len() as f64;
+    if n == 0.0 {
+        return None;
+    }
+    match tensor.kind {
+        faber::llvm_abi::VALUE_KIND_F32 => {
+            let sum = to_tensor_f32(tensor)?.summa();
+            Some(RuntimeValue::F32((sum as f64 / n) as f32))
+        }
+        faber::llvm_abi::VALUE_KIND_F64 => {
+            let sum = to_tensor_f64(tensor)?.summa();
+            Some(RuntimeValue::F64(sum / n))
+        }
+        // Integer mean promotes to f64 carrier storage as f64 RuntimeValue is
+        // wrong for i64 kind — reject integer mean until conversion family lands.
+        _ => None,
+    }
 }

@@ -85,10 +85,12 @@ use option::{
 use tensor::RuntimeTensor;
 #[cfg(test)]
 use tensor::{
-    __faber_rt_v1_tensor_create, __faber_rt_v1_tensor_fill, __faber_rt_v1_tensor_flatten,
-    __faber_rt_v1_tensor_from_flat, __faber_rt_v1_tensor_get, __faber_rt_v1_tensor_materialize,
-    __faber_rt_v1_tensor_new, __faber_rt_v1_tensor_rank, __faber_rt_v1_tensor_reshape,
-    __faber_rt_v1_tensor_set, __faber_rt_v1_tensor_shape, __faber_rt_v1_tensor_slice,
+    __faber_rt_v1_tensor_add, __faber_rt_v1_tensor_create, __faber_rt_v1_tensor_fill,
+    __faber_rt_v1_tensor_flatten, __faber_rt_v1_tensor_from_flat, __faber_rt_v1_tensor_get,
+    __faber_rt_v1_tensor_materialize, __faber_rt_v1_tensor_matmul, __faber_rt_v1_tensor_mean,
+    __faber_rt_v1_tensor_mul, __faber_rt_v1_tensor_new, __faber_rt_v1_tensor_rank,
+    __faber_rt_v1_tensor_reshape, __faber_rt_v1_tensor_set, __faber_rt_v1_tensor_shape,
+    __faber_rt_v1_tensor_slice, __faber_rt_v1_tensor_sub, __faber_rt_v1_tensor_sum,
 };
 use std::ffi::{c_char, c_int};
 use std::fmt::Display;

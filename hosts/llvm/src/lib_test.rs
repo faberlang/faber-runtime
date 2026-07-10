@@ -1726,3 +1726,158 @@ fn tensor_core_carrier_creates_shapes_indexes_and_slices() {
 
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn tensor_arithmetic_family_adds_matmuls_and_reduces() {
+    let mut context = std::ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        STATUS_OK
+    );
+
+    let shape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for dim in [2_i64, 2_i64] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    shape.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&dim).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let flat_a = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_F32) };
+    for value in [1.0_f32, 2.0, 3.0, 4.0] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    flat_a.value,
+                    VALUE_KIND_F32,
+                    std::ptr::from_ref(&value).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let flat_b = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_F32) };
+    for value in [10.0_f32, 20.0, 30.0, 40.0] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    flat_b.value,
+                    VALUE_KIND_F32,
+                    std::ptr::from_ref(&value).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let a = unsafe {
+        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_F32, flat_a.value, shape.value)
+    };
+    let b = unsafe {
+        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_F32, flat_b.value, shape.value)
+    };
+    assert_eq!(a.status, STATUS_OK);
+    assert_eq!(b.status, STATUS_OK);
+
+    let sum = unsafe { __faber_rt_v1_tensor_add(context, a.value, b.value) };
+    assert_eq!(sum.status, STATUS_OK);
+    let diff = unsafe { __faber_rt_v1_tensor_sub(context, sum.value, b.value) };
+    assert_eq!(diff.status, STATUS_OK);
+    let prod = unsafe { __faber_rt_v1_tensor_mul(context, diff.value, a.value) };
+    assert_eq!(prod.status, STATUS_OK);
+    let flat = unsafe { __faber_rt_v1_tensor_flatten(context, prod.value) };
+    assert_eq!(flat.status, STATUS_OK);
+
+    let mut total = 0.0_f32;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_tensor_sum(
+                context,
+                a.value,
+                VALUE_KIND_F32,
+                std::ptr::from_mut(&mut total).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(total, 10.0);
+    let mut mean = 0.0_f32;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_tensor_mean(
+                context,
+                a.value,
+                VALUE_KIND_F32,
+                std::ptr::from_mut(&mut mean).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(mean, 2.5);
+
+    let shape_a = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for dim in [2_i64, 3_i64] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    shape_a.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&dim).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let shape_b = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for dim in [3_i64, 2_i64] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    shape_b.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&dim).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let flat_m = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_F32) };
+    for value in [1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    flat_m.value,
+                    VALUE_KIND_F32,
+                    std::ptr::from_ref(&value).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let left = unsafe {
+        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_F32, flat_m.value, shape_a.value)
+    };
+    let right = unsafe {
+        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_F32, flat_m.value, shape_b.value)
+    };
+    let product = unsafe { __faber_rt_v1_tensor_matmul(context, left.value, right.value) };
+    assert_eq!(product.status, STATUS_OK);
+    let mut rank = 0_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_tensor_rank(context, product.value, &mut rank) },
+        STATUS_OK
+    );
+    assert_eq!(rank, 2);
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
