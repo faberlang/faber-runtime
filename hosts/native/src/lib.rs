@@ -3,6 +3,7 @@ use faber::{
     HostDispatch, ResponseSender, SermoRequest,
 };
 use std::panic::{self, AssertUnwindSafe};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -21,6 +22,7 @@ struct NativeJob {
 #[derive(Clone)]
 pub struct NativeHost {
     queue: SyncSender<NativeJob>,
+    closed: Arc<AtomicBool>,
 }
 
 impl NativeHost {
@@ -35,7 +37,14 @@ impl NativeHost {
         for index in 0..workers {
             spawn_worker(index, Arc::clone(&receiver));
         }
-        Self { queue }
+        Self {
+            queue,
+            closed: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn shutdown(&self) {
+        self.closed.store(true, Ordering::SeqCst);
     }
 }
 
@@ -52,6 +61,12 @@ impl HostDispatch for NativeHost {
         responses: ResponseSender,
         cancellation: Cancellation,
     ) -> Result<(), DispatchError> {
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(DispatchError::new(
+                "native_host_shutdown",
+                "native host worker queue is shut down",
+            ));
+        }
         if !supports_native_route(&request.route) {
             return Err(DispatchError::new(
                 "native_host_unsupported_route",
@@ -111,6 +126,10 @@ fn run_job(job: NativeJob) {
     }
     let responses = job.responses.clone();
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        #[cfg(test)]
+        if job.request.route == "native:test-panic" {
+            panic!("native host test panic");
+        }
         let frames = builtin_route_frames(job.request);
         send_frames(frames, job.responses, &job.cancellation);
     }));
@@ -138,6 +157,10 @@ fn send_frames(
 }
 
 fn supports_native_route(route: &str) -> bool {
+    #[cfg(test)]
+    if route == "native:test-panic" {
+        return true;
+    }
     route.starts_with("tempus:")
         || route.starts_with("solum:")
         || route.starts_with("processus:")
@@ -307,5 +330,71 @@ mod tests {
 
         let terminal = frame::sermo_recv(&mut sermo).expect("terminal");
         assert_eq!(terminal.status, FrameStatus::Cancel);
+    }
+
+    #[test]
+    fn unsupported_route_rejects_without_accepting_work() {
+        let host = NativeHost::with_limits(1, 2);
+        let (_sermo, responses, cancellation) = frame::test_response_sender("ignotum:route");
+        let error = host
+            .start(
+                SermoRequest {
+                    conversation_id: "test".to_owned(),
+                    route: "ignotum:route".to_owned(),
+                    opener: Valor::Nihil,
+                    target: None,
+                },
+                responses,
+                cancellation,
+            )
+            .expect_err("unsupported route must reject");
+
+        assert_eq!(error.issue, "native_host_unsupported_route");
+    }
+
+    #[test]
+    fn shutdown_rejects_new_work() {
+        let host = NativeHost::with_limits(1, 2);
+        host.shutdown();
+        let (_sermo, responses, cancellation) = frame::test_response_sender("tempus:dormiet");
+        let error = host
+            .start(
+                SermoRequest {
+                    conversation_id: "test".to_owned(),
+                    route: "tempus:dormiet".to_owned(),
+                    opener: Valor::Numerus(1),
+                    target: None,
+                },
+                responses,
+                cancellation,
+            )
+            .expect_err("shutdown host must reject");
+
+        assert_eq!(error.issue, "native_host_shutdown");
+    }
+
+    #[test]
+    fn worker_panic_resolves_with_error_terminal() {
+        let host = NativeHost::with_limits(1, 2);
+        let (mut sermo, responses, cancellation) = frame::test_response_sender("native:test-panic");
+
+        host.start(
+            SermoRequest {
+                conversation_id: sermo.conversation_id(),
+                route: "native:test-panic".to_owned(),
+                opener: Valor::Nihil,
+                target: None,
+            },
+            responses,
+            cancellation,
+        )
+        .expect("dispatch");
+
+        let terminal = frame::sermo_recv(&mut sermo).expect("terminal");
+        assert_eq!(terminal.status, FrameStatus::Error);
+        assert_eq!(
+            terminal.data,
+            Valor::Textus("native host worker panicked".to_owned())
+        );
     }
 }
