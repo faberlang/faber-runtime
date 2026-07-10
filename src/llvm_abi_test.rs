@@ -1,5 +1,6 @@
 use super::*;
 use core::mem::{align_of, size_of};
+use std::collections::BTreeSet;
 
 #[test]
 fn llvm_abi_v1_carriers_have_stable_host_layout() {
@@ -11,6 +12,20 @@ fn llvm_abi_v1_carriers_have_stable_host_layout() {
     assert_eq!(align_of::<FaberRtExitV1>(), 4);
     assert_eq!(size_of::<FaberRtContextV1>(), 0);
     assert_eq!(align_of::<FaberRtContextV1>(), align_of::<*mut c_void>());
+}
+
+#[test]
+fn llvm_abi_v1_diagnostic_family_is_complete_and_unique() {
+    assert_eq!(DIAGNOSTIC_SYMBOLS_V1.len(), 11);
+    let symbols = DIAGNOSTIC_SYMBOLS_V1
+        .iter()
+        .map(|(_, _, symbol)| *symbol)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(symbols.len(), DIAGNOSTIC_SYMBOLS_V1.len());
+    for (kind, carrier, symbol) in DIAGNOSTIC_SYMBOLS_V1 {
+        assert_eq!(diagnostic_symbol_v1(kind, carrier), Some(*symbol));
+    }
+    assert_ne!(STATUS_UNSUPPORTED, STATUS_OK);
 }
 
 #[test]

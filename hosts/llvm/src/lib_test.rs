@@ -25,3 +25,28 @@ fn invalid_slice_fails_closed() {
     };
     assert_eq!(status, STATUS_INVALID_ARGUMENT);
 }
+
+#[test]
+fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    assert_eq!(
+        unsafe { __faber_runtime_diagnostic_nota_1_i64(context, 42) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_runtime_diagnostic_nota_1_i1(context, 1) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_runtime_diagnostic_nota_1_ptr(context, ptr::null()) },
+        STATUS_UNSUPPORTED
+    );
+    assert_eq!(
+        unsafe { __faber_runtime_diagnostic_mone_1_ptr(context, ptr::null()) },
+        STATUS_UNSUPPORTED
+    );
+    unsafe { __faber_rt_v1_shutdown(context) };
+}

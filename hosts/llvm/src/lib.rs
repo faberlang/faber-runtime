@@ -2,9 +2,10 @@
 use faber::llvm_abi::FaberRtExitV1;
 use faber::llvm_abi::{
     FaberRtContextV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT, STATUS_IO_ERROR,
-    STATUS_OK, STATUS_PANIC,
+    STATUS_OK, STATUS_PANIC, STATUS_UNSUPPORTED,
 };
 use std::ffi::{c_char, c_int};
+use std::fmt::Display;
 use std::io::{self, Write};
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
@@ -97,6 +98,125 @@ pub unsafe extern "C" fn __faber_rt_v1_write_nota_text(
             Err(_) => STATUS_IO_ERROR,
         }
     })
+}
+
+fn write_diagnostic(
+    context: *mut FaberRtContextV1,
+    stderr: bool,
+    value: impl Display,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        if context.is_null() {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        let result = if stderr {
+            let mut output = io::stderr().lock();
+            writeln!(output, "{value}").and_then(|()| output.flush())
+        } else {
+            let mut output = io::stdout().lock();
+            writeln!(output, "{value}").and_then(|()| output.flush())
+        };
+        match result {
+            Ok(()) => STATUS_OK,
+            Err(_) => STATUS_IO_ERROR,
+        }
+    })
+}
+
+fn unsupported_opaque_diagnostic(context: *mut FaberRtContextV1) -> FaberRtStatusV1 {
+    if context.is_null() {
+        STATUS_INVALID_ARGUMENT
+    } else {
+        STATUS_UNSUPPORTED
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_ptr(
+    context: *mut FaberRtContextV1,
+    _value: *const u8,
+) -> FaberRtStatusV1 {
+    unsupported_opaque_diagnostic(context)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_i64(
+    context: *mut FaberRtContextV1,
+    value: i64,
+) -> FaberRtStatusV1 {
+    write_diagnostic(context, false, value)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_i1(
+    context: *mut FaberRtContextV1,
+    value: u8,
+) -> FaberRtStatusV1 {
+    write_diagnostic(context, false, value != 0)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_f32(
+    context: *mut FaberRtContextV1,
+    value: f32,
+) -> FaberRtStatusV1 {
+    write_diagnostic(context, false, value)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_f64(
+    context: *mut FaberRtContextV1,
+    value: f64,
+) -> FaberRtStatusV1 {
+    write_diagnostic(context, false, value)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_i8(
+    context: *mut FaberRtContextV1,
+    value: i8,
+) -> FaberRtStatusV1 {
+    write_diagnostic(context, false, value)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_runtime_diagnostic_nota_1_i32(
+    context: *mut FaberRtContextV1,
+    value: i32,
+) -> FaberRtStatusV1 {
+    write_diagnostic(context, false, value)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_runtime_diagnostic_mone_1_ptr(
+    context: *mut FaberRtContextV1,
+    _value: *const u8,
+) -> FaberRtStatusV1 {
+    unsupported_opaque_diagnostic(context)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_runtime_diagnostic_mone_1_i64(
+    context: *mut FaberRtContextV1,
+    value: i64,
+) -> FaberRtStatusV1 {
+    write_diagnostic(context, true, value)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_runtime_diagnostic_vide_1_ptr(
+    context: *mut FaberRtContextV1,
+    _value: *const u8,
+) -> FaberRtStatusV1 {
+    unsupported_opaque_diagnostic(context)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_runtime_diagnostic_vide_1_i64(
+    context: *mut FaberRtContextV1,
+    value: i64,
+) -> FaberRtStatusV1 {
+    write_diagnostic(context, false, value)
 }
 
 /// Emit a fatal diagnostic and abort without unwinding across the C boundary.

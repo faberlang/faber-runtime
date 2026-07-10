@@ -19,6 +19,30 @@ pub const STATUS_OK: FaberRtStatusV1 = FaberRtStatusV1 { code: 0 };
 pub const STATUS_INVALID_ARGUMENT: FaberRtStatusV1 = FaberRtStatusV1 { code: 1 };
 pub const STATUS_IO_ERROR: FaberRtStatusV1 = FaberRtStatusV1 { code: 2 };
 pub const STATUS_PANIC: FaberRtStatusV1 = FaberRtStatusV1 { code: 3 };
+pub const STATUS_UNSUPPORTED: FaberRtStatusV1 = FaberRtStatusV1 { code: 4 };
+
+pub const DIAGNOSTIC_SYMBOLS_V1: &[(&str, &str, &str)] = &[
+    ("nota", "ptr", "__faber_runtime_diagnostic_nota_1_ptr"),
+    ("nota", "i64", "__faber_runtime_diagnostic_nota_1_i64"),
+    ("nota", "i1", "__faber_runtime_diagnostic_nota_1_i1"),
+    ("nota", "f32", "__faber_runtime_diagnostic_nota_1_f32"),
+    ("nota", "f64", "__faber_runtime_diagnostic_nota_1_f64"),
+    ("nota", "i8", "__faber_runtime_diagnostic_nota_1_i8"),
+    ("nota", "i32", "__faber_runtime_diagnostic_nota_1_i32"),
+    ("mone", "ptr", "__faber_runtime_diagnostic_mone_1_ptr"),
+    ("mone", "i64", "__faber_runtime_diagnostic_mone_1_i64"),
+    ("vide", "ptr", "__faber_runtime_diagnostic_vide_1_ptr"),
+    ("vide", "i64", "__faber_runtime_diagnostic_vide_1_i64"),
+];
+
+pub fn diagnostic_symbol_v1(kind: &str, carrier: &str) -> Option<&'static str> {
+    DIAGNOSTIC_SYMBOLS_V1
+        .iter()
+        .find(|(candidate_kind, candidate_carrier, _)| {
+            *candidate_kind == kind && *candidate_carrier == carrier
+        })
+        .map(|(_, _, symbol)| *symbol)
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
