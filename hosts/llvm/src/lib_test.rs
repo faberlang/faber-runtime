@@ -206,6 +206,88 @@ fn scalar_format_family_renders_and_owns_text() {
 }
 
 #[test]
+fn text_query_and_transformation_family_preserves_unicode_semantics() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let text = FaberRtSliceV1::from_static("  Rōma/AVĒ  ".as_bytes());
+    let empty = FaberRtSliceV1::from_static(b"");
+    let roma = FaberRtSliceV1::from_static("Rōma".as_bytes());
+    let slash = FaberRtSliceV1::from_static(b"/");
+    let ave = FaberRtSliceV1::from_static("AVĒ".as_bytes());
+    let mut answer = 0;
+
+    assert_eq!(
+        unsafe { __faber_rt_v1_text_is_empty(context, &empty, &mut answer) },
+        STATUS_OK
+    );
+    assert_eq!(answer, 1);
+    assert_eq!(
+        unsafe { __faber_rt_v1_text_contains(context, &text, &roma, &mut answer) },
+        STATUS_OK
+    );
+    assert_eq!(answer, 1);
+    assert_eq!(
+        unsafe { __faber_rt_v1_text_starts_with(context, &text, &empty, &mut answer) },
+        STATUS_OK
+    );
+    assert_eq!(answer, 1);
+    assert_eq!(
+        unsafe { __faber_rt_v1_text_ends_with(context, &text, &empty, &mut answer) },
+        STATUS_OK
+    );
+    assert_eq!(answer, 1);
+
+    let trimmed = unsafe { __faber_rt_v1_text_trim(context, &text) };
+    let lower = unsafe { __faber_rt_v1_text_lowercase(context, trimmed.value.cast()) };
+    let upper = unsafe { __faber_rt_v1_text_uppercase(context, lower.value.cast()) };
+    let sliced = unsafe { __faber_rt_v1_text_slice(context, trimmed.value.cast(), 1, 5) };
+    let replaced =
+        unsafe { __faber_rt_v1_text_replace(context, trimmed.value.cast(), &ave, &roma) };
+    let split = unsafe { __faber_rt_v1_text_split(context, trimmed.value.cast(), &slash) };
+    for result in [trimmed, lower, upper, sliced, replaced, split] {
+        assert_eq!(result.status, STATUS_OK);
+    }
+    assert_eq!(
+        unsafe { &*trimmed.value.cast::<RuntimeText>() }._value,
+        "Rōma/AVĒ"
+    );
+    assert_eq!(
+        unsafe { &*lower.value.cast::<RuntimeText>() }._value,
+        "rōma/avē"
+    );
+    assert_eq!(
+        unsafe { &*upper.value.cast::<RuntimeText>() }._value,
+        "RŌMA/AVĒ"
+    );
+    assert_eq!(
+        unsafe { &*sliced.value.cast::<RuntimeText>() }._value,
+        "ōma/"
+    );
+    assert_eq!(
+        unsafe { &*replaced.value.cast::<RuntimeText>() }._value,
+        "Rōma/Rōma"
+    );
+    let split = unsafe { &*split.value.cast::<RuntimeArray>() };
+    assert_eq!(split.kind, VALUE_KIND_PTR);
+    assert_eq!(split.values.len(), 2);
+    let parts = split
+        .values
+        .iter()
+        .map(|value| match value {
+            array::RuntimeValue::Ptr(value) => {
+                unsafe { &*value.cast::<RuntimeText>() }._value.as_str()
+            }
+            _ => panic!("split produced non-text carrier"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(parts, ["Rōma", "AVĒ"]);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
 fn scalar_text_conversion_family_owns_canonical_values() {
     let mut context = ptr::null_mut();
     let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) };

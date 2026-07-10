@@ -211,7 +211,7 @@ fn format_text_values(
     format_scalar_values(context, template, &values)
 }
 
-fn text_value(text: *const FaberRtSliceV1) -> Option<String> {
+pub(super) fn text_value(text: *const FaberRtSliceV1) -> Option<String> {
     if text.is_null() {
         return None;
     }
@@ -228,7 +228,7 @@ fn text_value(text: *const FaberRtSliceV1) -> Option<String> {
     std::str::from_utf8(bytes).ok().map(str::to_owned)
 }
 
-fn store_text(context: *mut FaberRtContextV1, value: String) -> FaberRtPtrResultV1 {
+pub(super) fn store_text(context: *mut FaberRtContextV1, value: String) -> FaberRtPtrResultV1 {
     if context.is_null() {
         return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
     }
