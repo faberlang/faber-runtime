@@ -22,7 +22,10 @@ pub use display::{
     display_option_fractus, display_option_vacuum, display_text_payload, display_valor,
     FractusDisplay,
 };
-pub use frame::{FrameStatus, IntoFrameStatus, IntoScrinium, Meus, Scrinium, Sermo, Tuus};
+pub use frame::{
+    Cancellation, DispatchError, FrameStatus, HostDispatch, IntoFrameStatus, IntoScrinium, Meus,
+    ResponseSender, Scrinium, Sermo, SermoRequest, Tuus,
+};
 pub use instans::{Instans, InstansPraecisio};
 pub use intervallum::{Intervallum, IntervallumKind};
 pub use json::{Json, JsonError, JsonErrorKind};

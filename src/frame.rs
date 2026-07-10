@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::io::{Read, Seek, SeekFrom};
 use std::marker::PhantomData;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::task::{Context, Poll, Waker};
 use std::thread;
@@ -117,6 +118,174 @@ impl std::fmt::Display for FrameError {
 }
 
 impl std::error::Error for FrameError {}
+
+#[derive(Clone, Debug)]
+pub struct SermoRequest {
+    pub conversation_id: String,
+    pub route: String,
+    pub opener: Valor,
+    pub target: Option<&'static str>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Cancellation {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl Cancellation {
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+}
+
+#[derive(Debug)]
+pub struct ResponseSender {
+    lease: Arc<ResponseLease>,
+}
+
+#[derive(Debug)]
+struct ResponseLease {
+    shared: Arc<SermoShared>,
+    live_senders: AtomicUsize,
+    terminal_sent: AtomicBool,
+    cancellation: Cancellation,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DispatchError {
+    pub issue: &'static str,
+    pub message: String,
+}
+
+impl DispatchError {
+    pub fn new(issue: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            issue,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for DispatchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for DispatchError {}
+
+pub trait HostDispatch: Send + Sync {
+    fn start(
+        &self,
+        request: SermoRequest,
+        responses: ResponseSender,
+        cancellation: Cancellation,
+    ) -> Result<(), DispatchError>;
+}
+
+impl ResponseSender {
+    fn new(shared: Arc<SermoShared>, cancellation: Cancellation) -> Self {
+        Self {
+            lease: Arc::new(ResponseLease {
+                shared,
+                live_senders: AtomicUsize::new(1),
+                terminal_sent: AtomicBool::new(false),
+                cancellation,
+            }),
+        }
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.lease.cancellation.is_cancelled()
+    }
+
+    pub fn item(&self, data: Valor) -> Result<(), FrameError> {
+        self.send(FrameStatus::Item, data)
+    }
+
+    pub fn byte(&self, bytes: Vec<u8>) -> Result<(), FrameError> {
+        self.send(FrameStatus::Byte, Valor::Octeti(bytes))
+    }
+
+    pub fn done(&self) -> Result<(), FrameError> {
+        self.send(FrameStatus::Done, Valor::Nihil)
+    }
+
+    pub fn error(&self, message: impl Into<String>) -> Result<(), FrameError> {
+        self.send(FrameStatus::Error, Valor::Textus(message.into()))
+    }
+
+    pub fn cancel(&self) -> Result<(), FrameError> {
+        self.send(FrameStatus::Cancel, Valor::Nihil)
+    }
+
+    pub fn send(&self, status: FrameStatus, data: Valor) -> Result<(), FrameError> {
+        if self.is_cancelled() && !status.is_terminal() {
+            return Err(FrameError::new(
+                "frame_response_cancelled",
+                "response sender cannot enqueue content after cancellation",
+            ));
+        }
+        if status.is_terminal() {
+            if self.lease.terminal_sent.swap(true, Ordering::SeqCst) {
+                return Err(FrameError::new(
+                    "frame_response_terminal_already_sent",
+                    "response sender already sent a terminal frame",
+                ));
+            }
+        } else if self.lease.terminal_sent.load(Ordering::SeqCst) {
+            return Err(FrameError::new(
+                "frame_response_after_terminal",
+                "response sender cannot enqueue content after a terminal frame",
+            ));
+        }
+        push_response_frame(&self.lease.shared, status, data);
+        Ok(())
+    }
+
+    fn reject_start_error(&self, error: DispatchError) {
+        if self.lease.terminal_sent.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        push_response_frame(
+            &self.lease.shared,
+            FrameStatus::Error,
+            Valor::Textus(error.message),
+        );
+    }
+}
+
+impl Clone for ResponseSender {
+    fn clone(&self) -> Self {
+        self.lease.live_senders.fetch_add(1, Ordering::SeqCst);
+        Self {
+            lease: Arc::clone(&self.lease),
+        }
+    }
+}
+
+impl Drop for ResponseSender {
+    fn drop(&mut self) {
+        if self.lease.live_senders.fetch_sub(1, Ordering::SeqCst) != 1 {
+            return;
+        }
+        if self.lease.terminal_sent.load(Ordering::SeqCst) {
+            return;
+        }
+        if self.lease.terminal_sent.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        push_response_frame(
+            &self.lease.shared,
+            FrameStatus::Error,
+            Valor::Textus("response producer dropped before terminal frame".to_owned()),
+        );
+    }
+}
 
 impl<T> std::fmt::Debug for Meus<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -239,6 +408,20 @@ pub fn sermo_open(route: &str) -> Sermo {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn test_response_sender(route: &str) -> (Sermo, ResponseSender, Cancellation) {
+    let sermo = sermo_open(route);
+    {
+        let mut inner = lock_sermo(&sermo.inner);
+        inner.runtime_response_generated = true;
+    }
+    let cancellation = Cancellation {
+        cancelled: Arc::new(AtomicBool::new(false)),
+    };
+    let sender = ResponseSender::new(Arc::clone(&sermo.inner), cancellation.clone());
+    (sermo, sender, cancellation)
+}
+
 pub fn sermo_meus<T>(sermo: &Sermo) -> Meus<T> {
     Meus {
         inner: sermo.inner.clone(),
@@ -354,6 +537,12 @@ fn wake_incoming(inner: &mut SermoInner) {
     for waiter in inner.incoming_waiters.drain(..) {
         waiter.wake();
     }
+}
+
+fn push_response_frame(shared: &SermoShared, status: FrameStatus, data: Valor) {
+    let mut inner = lock_sermo(shared);
+    push_runtime_frame(&mut inner, status, data);
+    shared.incoming_changed.notify_all();
 }
 
 fn recv_content_frame(inner: &mut SermoInner) -> Option<Scrinium> {
@@ -485,17 +674,14 @@ fn ensure_runtime_response_started(shared: &Arc<SermoShared>, inner: &mut SermoI
         return;
     }
     inner.runtime_response_generated = true;
-    let route = inner.route.clone();
-    let data = request_data(inner);
-    let shared = Arc::clone(shared);
-    thread::spawn(move || {
-        let frames = runtime_response_frames(&route, data, None);
-        let mut inner = lock_sermo(&shared);
-        for (status, data) in frames {
-            push_runtime_frame(&mut inner, status, data);
-        }
-        shared.incoming_changed.notify_all();
-    });
+    let request = sermo_request(inner, None);
+    let cancellation = Cancellation {
+        cancelled: Arc::new(AtomicBool::new(false)),
+    };
+    let responses = ResponseSender::new(Arc::clone(shared), cancellation.clone());
+    if let Err(error) = BuiltinRuntimeDispatch.start(request, responses.clone(), cancellation) {
+        responses.reject_start_error(error);
+    }
 }
 
 fn ensure_runtime_response_started_for_type<T>(sermo: &mut Sermo)
@@ -511,53 +697,111 @@ fn ensure_runtime_response_started_for_target(sermo: &mut Sermo, target: &'stati
         return;
     }
     inner.runtime_response_generated = true;
-    let route = inner.route.clone();
-    let data = request_data(&inner);
-    let shared = Arc::clone(&sermo.inner);
-    thread::spawn(move || {
-        let frames = runtime_response_frames(&route, data, Some(target));
-        let mut inner = lock_sermo(&shared);
-        for (status, data) in frames {
-            push_runtime_frame(&mut inner, status, data);
-        }
-        shared.incoming_changed.notify_all();
-    });
+    let request = sermo_request(&inner, Some(target));
+    let cancellation = Cancellation {
+        cancelled: Arc::new(AtomicBool::new(false)),
+    };
+    let responses = ResponseSender::new(Arc::clone(&sermo.inner), cancellation.clone());
+    if let Err(error) = BuiltinRuntimeDispatch.start(request, responses.clone(), cancellation) {
+        responses.reject_start_error(error);
+    }
 }
 
-fn runtime_response_frames(
-    route: &str,
-    data: Valor,
-    target: Option<&'static str>,
-) -> Vec<(FrameStatus, Valor)> {
-    match route {
-        "runtime:echo" => item_done_frames(data),
+fn sermo_request(inner: &SermoInner, target: Option<&'static str>) -> SermoRequest {
+    SermoRequest {
+        conversation_id: inner.conversation_id.clone(),
+        route: inner.route.clone(),
+        opener: request_data(inner),
+        target,
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct BuiltinRuntimeDispatch;
+
+impl HostDispatch for BuiltinRuntimeDispatch {
+    fn start(
+        &self,
+        request: SermoRequest,
+        responses: ResponseSender,
+        _cancellation: Cancellation,
+    ) -> Result<(), DispatchError> {
+        thread::spawn(move || runtime_dispatch_builtin(request, responses));
+        Ok(())
+    }
+}
+
+fn runtime_dispatch_builtin(request: SermoRequest, responses: ResponseSender) {
+    match request.route.as_str() {
+        "runtime:echo" => {
+            let _ = responses.item(request.opener);
+            let _ = responses.done();
+        }
         "tempus:nunc" => {
             let now = epoch_nanos();
             let instans = Instans::from_nanos(now, InstansPraecisio::Nanosecunda);
-            item_done_frames(Valor::Instans(instans.to_rfc3339()))
+            let _ = responses.item(Valor::Instans(instans.to_rfc3339()));
+            let _ = responses.done();
         }
-        "tempus:monotonicum" => item_done_frames(Valor::Numerus(monotonic_nanos())),
-        "tempus:activum" => item_done_frames(Valor::Numerus(process_active_millis())),
+        "tempus:monotonicum" => {
+            let _ = responses.item(Valor::Numerus(monotonic_nanos()));
+            let _ = responses.done();
+        }
+        "tempus:activum" => {
+            let _ = responses.item(Valor::Numerus(process_active_millis()));
+            let _ = responses.done();
+        }
         "tempus:dormiet" | "tempus:expectet" => {
-            let ms = valor_numerus(&data).unwrap_or(0).max(0);
+            let ms = valor_numerus(&request.opener).unwrap_or(0).max(0);
             thread::sleep(Duration::from_millis(ms as u64));
-            done_frames()
+            let _ = responses.done();
         }
         "solum:scribe" | "solum:scribet" | "solum:appone" | "solum:apponet" => {
-            solum_write_text_frames(route, data)
+            send_response_frames(
+                responses,
+                solum_write_text_frames(&request.route, request.opener),
+            );
         }
-        "solum:dele" | "solum:delet" => solum_delete_frames(data),
-        "solum:parens" => solum_parent_frames(data),
-        "solum:partem" => solum_partem_frames(data, target),
-        "processus:exsequi" | "processus:exsequetur" => processus_exsequi_frames(data),
-        "processus:captura" => processus_captura_frames(data),
-        "solum:lege" => solum_lege_frames(data, target),
-        "solum:mensura" => solum_mensura_frames(data, target),
-        "solum:inveni" => solum_inveni_frames(data, target),
+        "solum:dele" | "solum:delet" => {
+            send_response_frames(responses, solum_delete_frames(request.opener))
+        }
+        "solum:parens" => send_response_frames(responses, solum_parent_frames(request.opener)),
+        "solum:partem" => send_response_frames(
+            responses,
+            solum_partem_frames(request.opener, request.target),
+        ),
+        "processus:exsequi" | "processus:exsequetur" => {
+            send_response_frames(responses, processus_exsequi_frames(request.opener));
+        }
+        "processus:captura" => {
+            send_response_frames(responses, processus_captura_frames(request.opener))
+        }
+        "solum:lege" => {
+            send_response_frames(responses, solum_lege_frames(request.opener, request.target))
+        }
+        "solum:mensura" => send_response_frames(
+            responses,
+            solum_mensura_frames(request.opener, request.target),
+        ),
+        "solum:inveni" => send_response_frames(
+            responses,
+            solum_inveni_frames(request.opener, request.target),
+        ),
         "solum:exstat" | "solum:directoriumne" | "solum:regularene" | "solum:legibilene" => {
-            solum_path_bool_frames(route, data, target)
+            send_response_frames(
+                responses,
+                solum_path_bool_frames(&request.route, request.opener, request.target),
+            );
         }
-        _ => error_frames(format!("unsupported ad route `{route}`")),
+        _ => {
+            let _ = responses.error(format!("unsupported ad route `{}`", request.route));
+        }
+    }
+}
+
+fn send_response_frames(responses: ResponseSender, frames: Vec<(FrameStatus, Valor)>) {
+    for (status, data) in frames {
+        let _ = responses.send(status, data);
     }
 }
 

@@ -104,6 +104,44 @@ fn unsupported_route_resolves_to_error_terminal() {
 }
 
 #[test]
+fn response_sender_enforces_one_terminal_frame() {
+    let (_sermo, sender, _cancellation) = frame::test_response_sender("test:sender-terminal");
+
+    sender.done().expect("first terminal succeeds");
+    let err = sender
+        .error("late error")
+        .expect_err("second terminal must fail");
+    assert_eq!(err.issue, "frame_response_terminal_already_sent");
+    let err = sender
+        .item(Valor::Textus("late".into()))
+        .expect_err("content after terminal must fail");
+    assert_eq!(err.issue, "frame_response_after_terminal");
+}
+
+#[test]
+fn dropped_last_response_sender_enqueues_producer_dropped_error() {
+    let (mut sermo, sender, _cancellation) = frame::test_response_sender("test:producer-drop");
+
+    drop(sender);
+    let frame = frame::sermo_recv(&mut sermo).expect("producer drop terminal");
+
+    assert_eq!(frame.status, FrameStatus::Error);
+    assert!(matches!(frame.data, Valor::Textus(message) if message.contains("producer dropped")));
+}
+
+#[test]
+fn response_sender_suppresses_content_after_cancellation() {
+    let (_sermo, sender, cancellation) = frame::test_response_sender("test:cancelled-response");
+
+    cancellation.cancel();
+    let err = sender
+        .item(Valor::Textus("late".into()))
+        .expect_err("content after cancellation must fail");
+    assert_eq!(err.issue, "frame_response_cancelled");
+    sender.cancel().expect("cancel terminal still succeeds");
+}
+
+#[test]
 fn async_receive_poll_does_not_sleep_for_timer_route() {
     let mut sermo = frame::sermo_open("tempus:dormiet");
     frame::sermo_set_opener(&mut sermo, Valor::Numerus(75));
