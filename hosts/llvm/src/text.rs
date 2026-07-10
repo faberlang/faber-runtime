@@ -5,7 +5,9 @@ use super::format::{store_text, text_value};
 use super::RuntimeContext;
 use faber::llvm_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT,
-    STATUS_OK, STATUS_PANIC, VALUE_KIND_PTR,
+    STATUS_OK, STATUS_PANIC, VALUE_KIND_F16, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I16,
+    VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR, VALUE_KIND_U16, VALUE_KIND_U32,
+    VALUE_KIND_U64, VALUE_KIND_U8,
 };
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
@@ -13,6 +15,10 @@ use std::panic::{self, AssertUnwindSafe};
 fn ffi_ptr_result(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrResultV1 {
     panic::catch_unwind(AssertUnwindSafe(operation))
         .unwrap_or(FaberRtPtrResultV1::failure(STATUS_PANIC))
+}
+
+fn ffi_status(operation: impl FnOnce() -> FaberRtStatusV1) -> FaberRtStatusV1 {
+    panic::catch_unwind(AssertUnwindSafe(operation)).unwrap_or(STATUS_PANIC)
 }
 
 fn query(
@@ -181,4 +187,81 @@ pub unsafe extern "C" fn __faber_rt_v1_text_split(
         runtime.arrays.push(array);
         FaberRtPtrResultV1::success(handle)
     })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_text_parse_integer(
+    context: *mut FaberRtContextV1,
+    text: *const FaberRtSliceV1,
+    radix: u32,
+    kind: u32,
+    out: *mut c_void,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        if context.is_null() || out.is_null() || !matches!(radix, 2 | 8 | 10 | 16) {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        let Some(text) = text_value(text) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        macro_rules! parse {
+            ($ty:ty) => {
+                match <$ty>::from_str_radix(&text, radix) {
+                    Ok(value) => unsafe { out.cast::<$ty>().write(value) },
+                    Err(_) => return STATUS_INVALID_ARGUMENT,
+                }
+            };
+        }
+        match kind {
+            VALUE_KIND_I8 => parse!(i8),
+            VALUE_KIND_I16 => parse!(i16),
+            VALUE_KIND_I32 => parse!(i32),
+            VALUE_KIND_I64 => parse!(i64),
+            VALUE_KIND_U8 => parse!(u8),
+            VALUE_KIND_U16 => parse!(u16),
+            VALUE_KIND_U32 => parse!(u32),
+            VALUE_KIND_U64 => parse!(u64),
+            _ => return STATUS_INVALID_ARGUMENT,
+        }
+        STATUS_OK
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_text_parse_float(
+    context: *mut FaberRtContextV1,
+    text: *const FaberRtSliceV1,
+    kind: u32,
+    out: *mut c_void,
+) -> FaberRtStatusV1 {
+    ffi_status(|| {
+        if context.is_null() || out.is_null() {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        let Some(text) = text_value(text) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        match kind {
+            VALUE_KIND_F32 => match text.parse::<f32>() {
+                Ok(value) => unsafe { out.cast::<f32>().write(value) },
+                Err(_) => return STATUS_INVALID_ARGUMENT,
+            },
+            VALUE_KIND_F64 => match text.parse::<f64>() {
+                Ok(value) => unsafe { out.cast::<f64>().write(value) },
+                Err(_) => return STATUS_INVALID_ARGUMENT,
+            },
+            VALUE_KIND_F16 => return STATUS_INVALID_ARGUMENT,
+            _ => return STATUS_INVALID_ARGUMENT,
+        }
+        STATUS_OK
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_text_truthy(
+    context: *mut FaberRtContextV1,
+    text: *const FaberRtSliceV1,
+    out: *mut u8,
+) -> FaberRtStatusV1 {
+    query(context, out, || Some(!text_value(text)?.is_empty()))
 }

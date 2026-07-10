@@ -288,6 +288,82 @@ fn text_query_and_transformation_family_preserves_unicode_semantics() {
 }
 
 #[test]
+fn text_scalar_conversion_family_honors_width_radix_recovery_status() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let hex = FaberRtSliceV1::from_static(b"ff");
+    let negative = FaberRtSliceV1::from_static(b"-8");
+    let decimal = FaberRtSliceV1::from_static(b"1.25");
+    let invalid = FaberRtSliceV1::from_static(b"invalid");
+    let empty = FaberRtSliceV1::from_static(b"");
+    let mut i32_value = 0i32;
+    let mut i8_value = 0i8;
+    let mut i64_value = 0i64;
+    let mut f64_value = 0.0f64;
+    let mut truthy = 1u8;
+
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_text_parse_integer(
+                context,
+                &hex,
+                16,
+                VALUE_KIND_I32,
+                std::ptr::from_mut(&mut i32_value).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(i32_value, 255);
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_text_parse_integer(
+                context,
+                &negative,
+                10,
+                VALUE_KIND_I8,
+                std::ptr::from_mut(&mut i8_value).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(i8_value, -8);
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_text_parse_float(
+                context,
+                &decimal,
+                VALUE_KIND_F64,
+                std::ptr::from_mut(&mut f64_value).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(f64_value, 1.25);
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_text_parse_integer(
+                context,
+                &invalid,
+                10,
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut i64_value).cast(),
+            )
+        },
+        STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_text_truthy(context, &empty, &mut truthy) },
+        STATUS_OK
+    );
+    assert_eq!(truthy, 0);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
 fn scalar_text_conversion_family_owns_canonical_values() {
     let mut context = ptr::null_mut();
     let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) };

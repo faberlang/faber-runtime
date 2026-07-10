@@ -56,8 +56,9 @@ use std::ptr;
 #[cfg(test)]
 use text::{
     __faber_rt_v1_text_contains, __faber_rt_v1_text_ends_with, __faber_rt_v1_text_is_empty,
-    __faber_rt_v1_text_lowercase, __faber_rt_v1_text_replace, __faber_rt_v1_text_slice,
-    __faber_rt_v1_text_split, __faber_rt_v1_text_starts_with, __faber_rt_v1_text_trim,
+    __faber_rt_v1_text_lowercase, __faber_rt_v1_text_parse_float, __faber_rt_v1_text_parse_integer,
+    __faber_rt_v1_text_replace, __faber_rt_v1_text_slice, __faber_rt_v1_text_split,
+    __faber_rt_v1_text_starts_with, __faber_rt_v1_text_trim, __faber_rt_v1_text_truthy,
     __faber_rt_v1_text_uppercase,
 };
 
