@@ -858,6 +858,8 @@ pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> 
         "processus:exsequi" | "processus:exsequetur" => processus_exsequi_frames(request.opener),
         "processus:captura" => processus_captura_frames(request.opener),
         "solum:lege" => solum_lege_frames(request.opener, request.target),
+        // Line-oriented read: one Item frame per line (for sermo ↦ lista<textus>).
+        "solum:carpe" | "solum:carpiet" => solum_carpe_frames(request.opener),
         "solum:mensura" => solum_mensura_frames(request.opener, request.target),
         "solum:inveni" => solum_inveni_frames(request.opener, request.target),
         "solum:exstat" | "solum:directoriumne" | "solum:regularene" | "solum:legibilene" => {
@@ -1091,6 +1093,27 @@ fn processus_captura_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
             item_done_frames(Valor::Tabula(fields))
         }
         Err(err) => error_frames(format!("processus.captura failed: {err}")),
+    }
+}
+
+/// Read a file as text lines for `norma:solum.carpe` / `solum:carpe`.
+///
+/// WHY: product native apps materialize `↦ lista<textus>` via one content frame
+/// per element (`try_sermo_materialize_lista`), not a single Lista Valor item.
+fn solum_carpe_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:carpe opener must be textus");
+    };
+    match std::fs::read_to_string(&path) {
+        Ok(text) => {
+            let mut frames: Vec<(FrameStatus, Valor)> = text
+                .lines()
+                .map(|line| (FrameStatus::Item, Valor::Textus(line.to_owned())))
+                .collect();
+            frames.push((FrameStatus::Done, Valor::Nihil));
+            frames
+        }
+        Err(err) => error_frames(format!("solum:carpe failed for {path}: {err}")),
     }
 }
 

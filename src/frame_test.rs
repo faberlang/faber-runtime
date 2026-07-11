@@ -533,6 +533,23 @@ fn tempus_nunc_route_materializes_instans() {
 }
 
 #[test]
+fn solum_carpe_route_materializes_line_lista() {
+    let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
+    std::fs::write(&path, "alpha\nbeta\ngamma\n").expect("write carpe fixture");
+    let path_s = path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:carpe");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus(path_s));
+    let lines: Vec<String> = frame::sermo_materialize_lista(&mut sermo);
+    assert_eq!(
+        lines,
+        vec!["alpha".to_owned(), "beta".to_owned(), "gamma".to_owned()]
+    );
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn solum_lege_route_materializes_scalar_target_shape() {
     let stem = frame::next_frame_id();
     let text_path = std::env::temp_dir().join(format!("{stem}.txt"));
