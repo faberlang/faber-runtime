@@ -18,8 +18,14 @@ fn two_handles_share_one_resource_identity() {
     let node_left = geo;
     let node_right = geo;
     assert_eq!(node_left, node_right);
-    assert_eq!(arena.get(node_left).map(String::as_str), Some("shared-mesh"));
-    assert_eq!(arena.get(node_right).map(String::as_str), Some("shared-mesh"));
+    assert_eq!(
+        arena.get(node_left).map(String::as_str),
+        Some("shared-mesh")
+    );
+    assert_eq!(
+        arena.get(node_right).map(String::as_str),
+        Some("shared-mesh")
+    );
 }
 
 #[test]

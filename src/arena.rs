@@ -33,8 +33,14 @@ impl fmt::Display for ArenaHandle {
 
 #[derive(Debug)]
 enum Slot<T> {
-    Free { generation: u32, next_free: Option<u32> },
-    Live { generation: u32, value: T },
+    Free {
+        generation: u32,
+        next_free: Option<u32>,
+    },
+    Live {
+        generation: u32,
+        value: T,
+    },
 }
 
 /// Generational arena store.
@@ -73,7 +79,10 @@ impl<T> Arena<T> {
         if let Some(index) = self.free_head {
             let slot = &mut self.slots[index as usize];
             let generation = match slot {
-                Slot::Free { generation, next_free } => {
+                Slot::Free {
+                    generation,
+                    next_free,
+                } => {
                     self.free_head = *next_free;
                     *generation
                 }
