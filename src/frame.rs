@@ -899,6 +899,10 @@ pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> 
         "solum:exscribe" | "solum:exscribet" => solum_copy_frames(request.opener),
         "solum:renomina" | "solum:renominabit" => solum_rename_frames(request.opener),
         "solum:tange" | "solum:tanget" => solum_touch_frames(request.opener),
+        "solum:sequere" | "solum:sequetur" => solum_follow_symlink_frames(request.opener),
+        "solum:vincula" => solum_create_symlink_frames(request.opener),
+        "solum:modum" => solum_set_mode_frames(request.opener),
+        "solum:modus" => solum_get_mode_frames(request.opener),
         "solum:exstat"
         | "solum:exstabit"
         | "solum:directoriumne"
@@ -907,6 +911,12 @@ pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> 
         | "solum:vinculumne" => {
             solum_path_bool_frames(&request.route, request.opener, request.target)
         }
+        // Random / seed — product packages without host=native (host-providers aleator parity).
+        "aleator:fractum" => aleator_fractum_frames(),
+        "aleator:sortire" => aleator_sortire_frames(request.opener),
+        "aleator:octetos" => aleator_octetos_frames(request.opener),
+        "aleator:uuid" => aleator_uuid_frames(),
+        "aleator:semina" => aleator_semina_frames(request.opener),
         _ => error_frames(format!("unsupported ad route `{}`", request.route)),
     }
 }
@@ -1215,6 +1225,189 @@ fn solum_touch_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
             .set_accessed(now);
         let _ = handle.set_times(times);
     }
+    done_frames()
+}
+
+fn solum_follow_symlink_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:sequere opener must be textus");
+    };
+    match std::fs::read_link(&path) {
+        Ok(target) => item_done_frames(Valor::Textus(target.to_string_lossy().into_owned())),
+        Err(err) => error_frames(format!("solum:sequere failed for {path}: {err}")),
+    }
+}
+
+fn solum_create_symlink_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Ok((source, destination)) = valor_text_pair(data) else {
+        return error_frames("solum:vincula opener must be [textus, textus]");
+    };
+    match std::os::unix::fs::symlink(&source, &destination) {
+        Ok(()) => done_frames(),
+        Err(err) => error_frames(format!("solum:vincula failed: {err}")),
+    }
+}
+
+fn solum_set_mode_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Ok((path, mode)) = valor_text_numerus_pair(data) else {
+        return error_frames("solum:modum opener must be [textus, numerus]");
+    };
+    if !(0..=0o7777).contains(&mode) {
+        return error_frames("solum:modum modus must be between 0 and 0o7777");
+    }
+    use std::os::unix::fs::PermissionsExt;
+    match std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode as u32)) {
+        Ok(()) => done_frames(),
+        Err(err) => error_frames(format!("solum:modum failed for {path}: {err}")),
+    }
+}
+
+fn solum_get_mode_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:modus opener must be textus");
+    };
+    use std::os::unix::fs::PermissionsExt;
+    match std::fs::metadata(&path) {
+        Ok(meta) => item_done_frames(Valor::Numerus(i64::from(meta.permissions().mode()))),
+        Err(err) => error_frames(format!("solum:modus failed for {path}: {err}")),
+    }
+}
+
+fn valor_text_numerus_pair(data: Valor) -> Result<(String, i64), String> {
+    let Valor::Lista(items) = data else {
+        return Err("expected lista".to_owned());
+    };
+    if items.len() != 2 {
+        return Err("expected [textus, numerus]".to_owned());
+    }
+    let path = valor_text(&items[0]).ok_or_else(|| "path must be textus".to_owned())?;
+    let mode = valor_numerus(&items[1]).ok_or_else(|| "mode must be numerus".to_owned())?;
+    Ok((path, mode))
+}
+
+// ---- aleator (host-providers parity; process-local PRNG + urandom) ----
+
+#[derive(Clone, Copy)]
+struct AleatorPrng {
+    state: u64,
+}
+
+impl AleatorPrng {
+    fn next_u64(&mut self) -> u64 {
+        if self.state == 0 {
+            self.state = aleator_default_seed();
+        }
+        let mut x = self.state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.state = x;
+        x
+    }
+}
+
+static ALEATOR_RNG: Mutex<AleatorPrng> = Mutex::new(AleatorPrng { state: 0 });
+
+fn aleator_rng() -> MutexGuard<'static, AleatorPrng> {
+    ALEATOR_RNG
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn aleator_default_seed() -> u64 {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos() as u64);
+    nanos ^ u64::from(std::process::id())
+}
+
+fn aleator_fractum_frames() -> Vec<(FrameStatus, Valor)> {
+    let bits = aleator_rng().next_u64() >> 11;
+    let frac = (bits as f64) / ((1_u64 << 53) as f64);
+    item_done_frames(Valor::Fractus(frac))
+}
+
+fn aleator_sortire_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let (min, max) = match &data {
+        Valor::Lista(items) if items.len() >= 2 => {
+            let min = valor_numerus(&items[0]);
+            let max = valor_numerus(&items[1]);
+            match (min, max) {
+                (Some(a), Some(b)) => (a, b),
+                _ => return error_frames("aleator:sortire opener must be [numerus, numerus]"),
+            }
+        }
+        _ => return error_frames("aleator:sortire opener must be [numerus, numerus]"),
+    };
+    let (lo, hi) = if min <= max { (min, max) } else { (max, min) };
+    let span = (hi as i128 - lo as i128 + 1) as u128;
+    if span == 0 {
+        return error_frames("aleator:sortire empty range");
+    }
+    let offset = (u128::from(aleator_rng().next_u64()) % span) as i128;
+    item_done_frames(Valor::Numerus((lo as i128 + offset) as i64))
+}
+
+fn aleator_octetos_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    use std::io::Read;
+    let Some(n) = valor_numerus(&data) else {
+        return error_frames("aleator:octetos opener must be numerus");
+    };
+    let Ok(len) = usize::try_from(n.max(0)) else {
+        return error_frames("aleator:octetos n is too large");
+    };
+    let mut bytes = vec![0_u8; len];
+    if len > 0 {
+        if let Err(err) =
+            std::fs::File::open("/dev/urandom").and_then(|mut file| file.read_exact(&mut bytes))
+        {
+            return error_frames(format!("aleator:octetos failed: {err}"));
+        }
+    }
+    bytes_done_frames(bytes)
+}
+
+fn aleator_uuid_frames() -> Vec<(FrameStatus, Valor)> {
+    use std::io::Read;
+    let mut bytes = vec![0_u8; 16];
+    if let Err(err) =
+        std::fs::File::open("/dev/urandom").and_then(|mut file| file.read_exact(&mut bytes))
+    {
+        return error_frames(format!("aleator:uuid failed: {err}"));
+    }
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let uuid = format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4],
+        bytes[5],
+        bytes[6],
+        bytes[7],
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15]
+    );
+    item_done_frames(Valor::Textus(uuid))
+}
+
+fn aleator_semina_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(n) = valor_numerus(&data) else {
+        return error_frames("aleator:semina opener must be numerus");
+    };
+    aleator_rng().state = if n > 0 {
+        n as u64
+    } else {
+        aleator_default_seed()
+    };
     done_frames()
 }
 

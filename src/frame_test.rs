@@ -893,6 +893,83 @@ fn solum_dele_route_materializes_vacuum_after_removing_file() {
 }
 
 #[test]
+fn solum_sequere_vincula_modum_product_routes() {
+    let stem = frame::next_frame_id();
+    let dir = std::env::temp_dir().join(format!("faber-solum-link-{stem}"));
+    let target = dir.join("target.txt");
+    let link = dir.join("link.txt");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("dir");
+    std::fs::write(&target, b"x").expect("target");
+
+    let mut vincula = frame::sermo_open("solum:vincula");
+    frame::sermo_set_opener(
+        &mut vincula,
+        Valor::Lista(vec![
+            Valor::Textus(target.to_string_lossy().into_owned()),
+            Valor::Textus(link.to_string_lossy().into_owned()),
+        ]),
+    );
+    frame::sermo_materialize_vacuum(&mut vincula);
+    assert!(link.is_symlink() || std::fs::symlink_metadata(&link).is_ok());
+
+    let mut sequere = frame::sermo_open("solum:sequere");
+    frame::sermo_set_opener(
+        &mut sequere,
+        Valor::Textus(link.to_string_lossy().into_owned()),
+    );
+    let followed = frame::sermo_materialize_textus(&mut sequere);
+    assert!(
+        followed.ends_with("target.txt") || followed.contains("target.txt"),
+        "sequere={followed}"
+    );
+
+    let mut modum = frame::sermo_open("solum:modum");
+    frame::sermo_set_opener(
+        &mut modum,
+        Valor::Lista(vec![
+            Valor::Textus(target.to_string_lossy().into_owned()),
+            Valor::Numerus(0o644),
+        ]),
+    );
+    frame::sermo_materialize_vacuum(&mut modum);
+
+    let mut modus = frame::sermo_open("solum:modus");
+    frame::sermo_set_opener(
+        &mut modus,
+        Valor::Textus(target.to_string_lossy().into_owned()),
+    );
+    let mode: i64 = frame::sermo_materialize_scalar(&mut modus);
+    assert_eq!(mode & 0o777, 0o644);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn aleator_fractum_sortire_uuid_product_routes() {
+    let mut semina = frame::sermo_open("aleator:semina");
+    frame::sermo_set_opener(&mut semina, Valor::Numerus(42));
+    frame::sermo_materialize_vacuum(&mut semina);
+
+    let mut a = frame::sermo_open("aleator:sortire");
+    frame::sermo_set_opener(
+        &mut a,
+        Valor::Lista(vec![Valor::Numerus(1), Valor::Numerus(10)]),
+    );
+    let n1: i64 = frame::sermo_materialize_scalar(&mut a);
+    assert!((1..=10).contains(&n1));
+
+    let mut fractum = frame::sermo_open("aleator:fractum");
+    let f: f64 = frame::sermo_materialize_scalar(&mut fractum);
+    assert!((0.0..1.0).contains(&f));
+
+    let mut uuid = frame::sermo_open("aleator:uuid");
+    let id = frame::sermo_materialize_textus(&mut uuid);
+    assert_eq!(id.len(), 36);
+    assert_eq!(id.chars().filter(|c| *c == '-').count(), 4);
+}
+
+#[test]
 fn consolum_dic_scribe_mone_product_routes() {
     // dic: no newline; scribe: with newline — both vacuum success on builtin.
     let mut dic = frame::sermo_open("consolum:dic");
