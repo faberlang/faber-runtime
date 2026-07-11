@@ -533,6 +533,22 @@ fn tempus_nunc_route_materializes_instans() {
 }
 
 #[test]
+fn solum_temporarium_route_materializes_temp_dir_textus() {
+    let mut sermo = frame::sermo_open("solum:temporarium");
+    let path: String = frame::sermo_materialize_textus(&mut sermo);
+    assert!(
+        !path.is_empty(),
+        "temporarium must return a non-empty path"
+    );
+    assert!(
+        std::path::Path::new(&path).is_dir(),
+        "temporarium path must be an existing directory: {path}"
+    );
+    let expected = std::env::temp_dir().to_string_lossy().into_owned();
+    assert_eq!(path, expected);
+}
+
+#[test]
 fn solum_carpe_route_materializes_line_lista() {
     let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
     std::fs::write(&path, "alpha\nbeta\ngamma\n").expect("write carpe fixture");

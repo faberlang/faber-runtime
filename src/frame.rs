@@ -854,6 +854,9 @@ pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> 
         }
         "solum:dele" | "solum:delet" => solum_delete_frames(request.opener),
         "solum:parens" => solum_parent_frames(request.opener),
+        // Zero-arg path facts (host-providers solum + MIR stepper parity).
+        "solum:temporarium" => solum_temporarium_frames(),
+        "solum:domus" => solum_domus_frames(),
         "solum:partem" => solum_partem_frames(request.opener, request.target),
         "processus:exsequi" | "processus:exsequetur" => processus_exsequi_frames(request.opener),
         "processus:captura" => processus_captura_frames(request.opener),
@@ -1036,6 +1039,19 @@ fn solum_parent_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
         .map(|parent| parent.to_string_lossy().into_owned())
         .unwrap_or_default();
     item_done_frames(Valor::Textus(parent))
+}
+
+/// Platform temporary directory as one textus item (`norma:solum.temporarium`).
+fn solum_temporarium_frames() -> Vec<(FrameStatus, Valor)> {
+    item_done_frames(Valor::Textus(
+        std::env::temp_dir().to_string_lossy().into_owned(),
+    ))
+}
+
+/// User home directory as one textus item (`norma:solum.domus`).
+fn solum_domus_frames() -> Vec<(FrameStatus, Valor)> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_owned());
+    item_done_frames(Valor::Textus(home))
 }
 
 fn solum_delete_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
