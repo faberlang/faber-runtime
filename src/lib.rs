@@ -3,6 +3,7 @@
 //! WHY: language-owned carriers (`Valor`, `Ascii`, `Regex`, frame types) live here
 //! so codegen emits `faber::*` instead of inlined `Faber*` prelude types.
 
+pub mod arena;
 pub mod ascii;
 pub mod display;
 pub mod frame;
@@ -17,6 +18,7 @@ pub mod tensor;
 pub mod textus;
 pub mod valor;
 
+pub use arena::{Arena, ArenaHandle};
 pub use ascii::Ascii;
 pub use display::{
     display_bivalens, display_fractus, display_option, display_option_bivalens,
