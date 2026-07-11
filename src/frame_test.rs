@@ -576,6 +576,17 @@ fn solum_lege_route_materializes_scalar_target_shape() {
     let bytes: Vec<u8> = frame::sermo_materialize_scalar(&mut bytes_sermo);
     assert_eq!(bytes, vec![1, 2, 3]);
 
+    // Generic monomorph path (provider lege<T>): auto picks lista for Vec<String>.
+    let mut auto_lines = frame::sermo_open("solum:lege");
+    frame::sermo_set_opener(&mut auto_lines, Valor::Textus(text_path.clone()));
+    let auto: Vec<String> = frame::try_sermo_materialize_auto(&mut auto_lines).expect("auto lista");
+    assert_eq!(auto, vec!["prima".to_owned(), "secunda".to_owned()]);
+
+    let mut auto_text = frame::sermo_open("solum:lege");
+    frame::sermo_set_opener(&mut auto_text, Valor::Textus(text_path.clone()));
+    let auto_s: String = frame::try_sermo_materialize_auto(&mut auto_text).expect("auto text");
+    assert_eq!(auto_s, "prima\nsecunda\n");
+
     let _ = std::fs::remove_file(text_path);
     let _ = std::fs::remove_file(bin_path);
 }

@@ -1854,6 +1854,66 @@ where
     })
 }
 
+/// Materialize `↦ T` for monomorphized generic provider bodies (`lege<T>`, …).
+///
+/// Codegen cannot pick lista vs scalar vs octeti while `T` is still a type
+/// parameter. At monomorphization this dispatches by `TypeId` so
+/// `lista<textus>` uses multi-item frames and does not panic on
+/// `frame_scalar_multiple_content_frames`.
+pub fn try_sermo_materialize_auto<T>(sermo: &mut Sermo) -> Result<T, FrameError>
+where
+    T: crate::FromValor + 'static,
+{
+    use std::any::TypeId;
+    if TypeId::of::<T>() == TypeId::of::<Vec<String>>() {
+        let lines = try_sermo_materialize_lista::<String>(sermo)?;
+        return ok_type_id_cast(lines);
+    }
+    if TypeId::of::<T>() == TypeId::of::<Vec<u8>>() {
+        let bytes = try_sermo_materialize_octeti(sermo)?;
+        return ok_type_id_cast(bytes);
+    }
+    if TypeId::of::<T>() == TypeId::of::<String>() {
+        let text = try_sermo_materialize_textus(sermo)?;
+        return ok_type_id_cast(text);
+    }
+    try_sermo_materialize_scalar(sermo)
+}
+
+/// Async twin of [`try_sermo_materialize_auto`].
+pub async fn try_sermo_materialize_auto_async<T>(sermo: &mut Sermo) -> Result<T, FrameError>
+where
+    T: crate::FromValor + 'static,
+{
+    use std::any::TypeId;
+    if TypeId::of::<T>() == TypeId::of::<Vec<String>>() {
+        let lines = try_sermo_materialize_lista_async::<String>(sermo).await?;
+        return ok_type_id_cast(lines);
+    }
+    if TypeId::of::<T>() == TypeId::of::<Vec<u8>>() {
+        let bytes = try_sermo_materialize_octeti_async(sermo).await?;
+        return ok_type_id_cast(bytes);
+    }
+    if TypeId::of::<T>() == TypeId::of::<String>() {
+        let text = try_sermo_materialize_textus_async(sermo).await?;
+        return ok_type_id_cast(text);
+    }
+    try_sermo_materialize_scalar_async(sermo).await
+}
+
+fn ok_type_id_cast<T: 'static, U: 'static>(value: U) -> Result<T, FrameError> {
+    use std::any::TypeId;
+    if TypeId::of::<T>() != TypeId::of::<U>() {
+        return Err(FrameError::new(
+            "frame_materialize_auto_type_id_mismatch",
+            "sermo materialize_auto internal type-id cast mismatch",
+        ));
+    }
+    // SAFETY: TypeId equality above guarantees T and U are the same type.
+    let ptr = Box::into_raw(Box::new(value)) as *mut T;
+    Ok(unsafe { *Box::from_raw(ptr) })
+}
+
 async fn drain_remaining_then_err_async<T>(
     sermo: &mut Sermo,
     error: FrameError,
