@@ -565,6 +565,7 @@ fn solum_lege_route_materializes_scalar_target_shape() {
     let text: String = frame::sermo_materialize_scalar(&mut text_sermo);
     assert_eq!(text, "prima\nsecunda\n");
 
+    // Contract: lista materialization is one Item Lista (scalar FromValor), not multi-item stream.
     let mut lines_sermo = frame::sermo_open("solum:lege");
     frame::sermo_set_opener(&mut lines_sermo, Valor::Textus(text_path.clone()));
     let lines: Vec<String> = frame::sermo_materialize_scalar(&mut lines_sermo);
@@ -577,6 +578,39 @@ fn solum_lege_route_materializes_scalar_target_shape() {
 
     let _ = std::fs::remove_file(text_path);
     let _ = std::fs::remove_file(bin_path);
+}
+
+#[test]
+fn solum_inveni_empty_pattern_is_found_at_start() {
+    let path = std::env::temp_dir().join(format!("{}.bin", frame::next_frame_id()));
+    std::fs::write(&path, b"payload").expect("write search fixture");
+    let path = path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:inveni");
+    frame::sermo_set_opener(
+        &mut sermo,
+        Valor::Lista(vec![
+            Valor::Textus(path.clone()),
+            Valor::Textus(String::new()),
+            Valor::Numerus(3),
+            Valor::Numerus(8),
+        ]),
+    );
+    let offset: i64 = frame::sermo_materialize_scalar(&mut sermo);
+    assert_eq!(offset, 3);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn solum_dele_missing_path_is_success() {
+    let missing = std::env::temp_dir().join(format!("{}.missing", frame::next_frame_id()));
+    let missing = missing.to_string_lossy().into_owned();
+    assert!(!std::path::Path::new(&missing).exists());
+
+    let mut sermo = frame::sermo_open("solum:dele");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus(missing));
+    frame::sermo_materialize_vacuum(&mut sermo);
 }
 
 #[test]

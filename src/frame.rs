@@ -1224,8 +1224,10 @@ fn solum_inveni_frames(data: Valor, target: Option<&'static str>) -> Vec<(FrameS
         return error_frames("solum:inveni length must be non-negative");
     };
     let pattern = pattern.into_bytes();
+    // Parity with host-providers solum: empty needle is found at `start`.
     if pattern.is_empty() {
-        return item_done_frames(Valor::Numerus(-1));
+        let offset = i64::try_from(start).unwrap_or(i64::MAX);
+        return item_done_frames(Valor::Numerus(offset));
     }
     match std::fs::File::open(&path) {
         Ok(mut file) => {
