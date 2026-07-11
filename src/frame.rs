@@ -1096,15 +1096,10 @@ fn processus_captura_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     }
 }
 
-/// Read a file as text lines for `norma:solum.carpe` / `solum:carpe`.
-///
-/// WHY: product native apps materialize `↦ lista<textus>` via one content frame
-/// per element (`try_sermo_materialize_lista`), not a single Lista Valor item.
-fn solum_carpe_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
-        return error_frames("solum:carpe opener must be textus");
-    };
-    match std::fs::read_to_string(&path) {
+/// One Item per line + Done — frame shape for `try_sermo_materialize_lista::<String>`.
+/// Shared by `solum:carpe` and `solum:lege` → `lista<textus>` (not a single Lista item).
+fn solum_line_item_frames(path: &str, read_err_prefix: &str) -> Vec<(FrameStatus, Valor)> {
+    match std::fs::read_to_string(path) {
         Ok(text) => {
             let mut frames: Vec<(FrameStatus, Valor)> = text
                 .lines()
@@ -1113,8 +1108,16 @@ fn solum_carpe_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
             frames.push((FrameStatus::Done, Valor::Nihil));
             frames
         }
-        Err(err) => error_frames(format!("solum:carpe failed for {path}: {err}")),
+        Err(err) => error_frames(format!("{read_err_prefix}: {err}")),
     }
+}
+
+/// Read a file as text lines for `norma:solum.carpe` / `solum:carpe`.
+fn solum_carpe_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:carpe opener must be textus");
+    };
+    solum_line_item_frames(&path, &format!("solum:carpe failed for {path}"))
 }
 
 fn solum_lege_frames(data: Valor, target: Option<&'static str>) -> Vec<(FrameStatus, Valor)> {
@@ -1130,20 +1133,9 @@ fn solum_lege_frames(data: Valor, target: Option<&'static str>) -> Vec<(FrameSta
             Err(err) => error_frames(format!("failed to read file: {err}")),
         };
     }
-    // Codegen emits `try_sermo_materialize_lista` for `↦ lista<textus>` (one
-    // Item per element), same frame shape as `solum:carpe` — not a single Lista item.
+    // Codegen: `try_sermo_materialize_lista` for `↦ lista<textus>` (carpe shape).
     if target == std::any::type_name::<Vec<String>>() {
-        return match std::fs::read_to_string(&path) {
-            Ok(text) => {
-                let mut frames: Vec<(FrameStatus, Valor)> = text
-                    .lines()
-                    .map(|line| (FrameStatus::Item, Valor::Textus(line.to_owned())))
-                    .collect();
-                frames.push((FrameStatus::Done, Valor::Nihil));
-                frames
-            }
-            Err(err) => error_frames(format!("failed to read file: {err}")),
-        };
+        return solum_line_item_frames(&path, "failed to read file");
     }
     if target == std::any::type_name::<Vec<u8>>() {
         return match std::fs::read(&path) {
