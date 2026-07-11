@@ -1130,13 +1130,18 @@ fn solum_lege_frames(data: Valor, target: Option<&'static str>) -> Vec<(FrameSta
             Err(err) => error_frames(format!("failed to read file: {err}")),
         };
     }
+    // Codegen emits `try_sermo_materialize_lista` for `↦ lista<textus>` (one
+    // Item per element), same frame shape as `solum:carpe` — not a single Lista item.
     if target == std::any::type_name::<Vec<String>>() {
         return match std::fs::read_to_string(&path) {
-            Ok(text) => item_done_frames(Valor::Lista(
-                text.lines()
-                    .map(|line| Valor::Textus(line.to_owned()))
-                    .collect(),
-            )),
+            Ok(text) => {
+                let mut frames: Vec<(FrameStatus, Valor)> = text
+                    .lines()
+                    .map(|line| (FrameStatus::Item, Valor::Textus(line.to_owned())))
+                    .collect();
+                frames.push((FrameStatus::Done, Valor::Nihil));
+                frames
+            }
             Err(err) => error_frames(format!("failed to read file: {err}")),
         };
     }

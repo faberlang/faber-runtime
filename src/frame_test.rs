@@ -565,10 +565,10 @@ fn solum_lege_route_materializes_scalar_target_shape() {
     let text: String = frame::sermo_materialize_scalar(&mut text_sermo);
     assert_eq!(text, "prima\nsecunda\n");
 
-    // Contract: lista materialization is one Item Lista (scalar FromValor), not multi-item stream.
+    // Contract: codegen uses try_sermo_materialize_lista (one Item per line), same as carpe.
     let mut lines_sermo = frame::sermo_open("solum:lege");
     frame::sermo_set_opener(&mut lines_sermo, Valor::Textus(text_path.clone()));
-    let lines: Vec<String> = frame::sermo_materialize_scalar(&mut lines_sermo);
+    let lines: Vec<String> = frame::sermo_materialize_lista(&mut lines_sermo);
     assert_eq!(lines, vec!["prima".to_owned(), "secunda".to_owned()]);
 
     let mut bytes_sermo = frame::sermo_open("solum:lege");
