@@ -885,8 +885,12 @@ pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> 
         "solum:exscribe" | "solum:exscribet" => solum_copy_frames(request.opener),
         "solum:renomina" | "solum:renominabit" => solum_rename_frames(request.opener),
         "solum:tange" | "solum:tanget" => solum_touch_frames(request.opener),
-        "solum:exstat" | "solum:exstabit" | "solum:directoriumne" | "solum:regularene"
-        | "solum:legibilene" | "solum:vinculumne" => {
+        "solum:exstat"
+        | "solum:exstabit"
+        | "solum:directoriumne"
+        | "solum:regularene"
+        | "solum:legibilene"
+        | "solum:vinculumne" => {
             solum_path_bool_frames(&request.route, request.opener, request.target)
         }
         _ => error_frames(format!("unsupported ad route `{}`", request.route)),
@@ -1127,7 +1131,9 @@ fn solum_list_dir_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
                 match entry {
                     Ok(entry) => names.push(entry.file_name().to_string_lossy().into_owned()),
                     Err(err) => {
-                        return error_frames(format!("solum:enumera entry failed for {path}: {err}"));
+                        return error_frames(format!(
+                            "solum:enumera entry failed for {path}: {err}"
+                        ));
                     }
                 }
             }
@@ -1190,7 +1196,9 @@ fn solum_touch_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     }
     let now = std::time::SystemTime::now();
     if let Ok(handle) = std::fs::File::open(path_ref) {
-        let times = std::fs::FileTimes::new().set_modified(now).set_accessed(now);
+        let times = std::fs::FileTimes::new()
+            .set_modified(now)
+            .set_accessed(now);
         let _ = handle.set_times(times);
     }
     done_frames()
@@ -1336,7 +1344,9 @@ fn processus_lege_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     };
     match std::env::var(&name) {
         Ok(value) => item_done_frames(Valor::Textus(value)),
-        Err(_) => error_frames(format!("processus:lege: environment variable `{name}` is not set")),
+        Err(_) => error_frames(format!(
+            "processus:lege: environment variable `{name}` is not set"
+        )),
     }
 }
 
