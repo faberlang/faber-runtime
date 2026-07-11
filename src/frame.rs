@@ -835,6 +835,7 @@ impl HostDispatch for BuiltinRuntimeDispatch {
 }
 
 pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> {
+    // Freeze: add no provider-surface route here without an explicit dual-backend decision.
     match request.route.as_str() {
         "runtime:echo" => item_done_frames(request.opener),
         "tempus:nunc" => {
