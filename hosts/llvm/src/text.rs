@@ -49,6 +49,21 @@ pub unsafe extern "C" fn __faber_rt_v1_text_is_empty(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_text_concat(
+    context: *mut FaberRtContextV1,
+    first: *const FaberRtSliceV1,
+    second: *const FaberRtSliceV1,
+) -> FaberRtPtrResultV1 {
+    let Some(first) = text_value(first) else {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    };
+    let Some(second) = text_value(second) else {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    };
+    ffi_ptr_result(|| store_text(context, format!("{first}{second}")))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_text_contains(
     context: *mut FaberRtContextV1,
     text: *const FaberRtSliceV1,

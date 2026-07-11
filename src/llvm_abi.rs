@@ -22,6 +22,7 @@ pub const SYMBOL_FORMAT_I64_TEXT: &str = "__faber_rt_v1_format_i64_text";
 pub const SYMBOL_FORMAT_TEXT_TEXT_TEXT: &str = "__faber_rt_v1_format_text_text_text";
 pub const SYMBOL_FORMAT_TEXT_I64_I1: &str = "__faber_rt_v1_format_text_i64_i1";
 pub const SYMBOL_TEXT_LENGTH: &str = "__faber_rt_v1_text_length";
+pub const SYMBOL_TEXT_CONCAT: &str = "__faber_rt_v1_text_concat";
 pub const SYMBOL_TEXT_IS_EMPTY: &str = "__faber_rt_v1_text_is_empty";
 pub const SYMBOL_TEXT_CONTAINS: &str = "__faber_rt_v1_text_contains";
 pub const SYMBOL_TEXT_STARTS_WITH: &str = "__faber_rt_v1_text_starts_with";

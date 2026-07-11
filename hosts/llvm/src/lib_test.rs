@@ -289,6 +289,24 @@ fn text_query_and_transformation_family_preserves_unicode_semantics() {
 }
 
 #[test]
+fn text_concat_family_owns_contextual_text_result() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let first = FaberRtSliceV1::from_static("salve".as_bytes());
+    let second = FaberRtSliceV1::from_static(" munde".as_bytes());
+    let result = unsafe { __faber_rt_v1_text_concat(context, &first, &second) };
+    assert!(result.status.is_ok());
+    assert_eq!(
+        unsafe { &*result.value.cast::<RuntimeText>() }._value,
+        "salve munde"
+    );
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
 fn text_scalar_conversion_family_honors_width_radix_recovery_status() {
     let mut context = ptr::null_mut();
     assert_eq!(
