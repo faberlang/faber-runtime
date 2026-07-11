@@ -8,6 +8,7 @@ mod intervallum;
 mod octeti;
 mod option;
 mod regex_rt;
+mod solum;
 mod sparsa;
 mod tensor;
 mod text;
