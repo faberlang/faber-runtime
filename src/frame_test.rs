@@ -893,6 +893,25 @@ fn solum_dele_route_materializes_vacuum_after_removing_file() {
 }
 
 #[test]
+fn consolum_dic_scribe_mone_product_routes() {
+    // dic: no newline; scribe: with newline — both vacuum success on builtin.
+    let mut dic = frame::sermo_open("consolum:dic");
+    frame::sermo_set_opener(&mut dic, Valor::Textus("salve".into()));
+    frame::sermo_materialize_vacuum(&mut dic);
+
+    let mut scribe = frame::sermo_open("consolum:scribe");
+    frame::sermo_set_opener(&mut scribe, Valor::Textus("salve".into()));
+    frame::sermo_materialize_vacuum(&mut scribe);
+
+    let mut mone = frame::sermo_open("consolum:mone");
+    frame::sermo_set_opener(&mut mone, Valor::Textus("cave".into()));
+    frame::sermo_materialize_vacuum(&mut mone);
+
+    let mut audit = frame::sermo_open("consolum:audit");
+    let _is_tty: bool = frame::sermo_materialize_scalar(&mut audit);
+}
+
+#[test]
 fn processus_exsequi_route_materializes_stdout() {
     let mut sermo = frame::sermo_open("processus:exsequi");
     frame::sermo_set_opener(

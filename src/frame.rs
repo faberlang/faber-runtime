@@ -873,6 +873,20 @@ pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> 
         "processus:identitas" => processus_identitas_frames(),
         "processus:argumenta" => processus_argumenta_frames(),
         "processus:exi" => processus_exi_frames(request.opener),
+        // Console I/O — product echo/dic without host=native (host-providers consolum parity).
+        "consolum:dic" | "consolum:dicet" => consolum_write_stdout_frames(request.opener, false),
+        "consolum:scribe" | "consolum:scribet" => {
+            consolum_write_stdout_frames(request.opener, true)
+        }
+        "consolum:mone" | "consolum:monet" | "consolum:vide" | "consolum:videbit" => {
+            consolum_write_stderr_line_frames(request.opener)
+        }
+        "consolum:lege" | "consolum:leget" => consolum_read_line_frames(),
+        "consolum:hauri" | "consolum:hauriet" => consolum_read_stdin_frames(request.opener),
+        "consolum:funde" => consolum_write_stdout_bytes_frames(request.opener),
+        "consolum:audit" => consolum_is_terminal_frames(ConsolumStream::Stdin),
+        "consolum:loquitur" => consolum_is_terminal_frames(ConsolumStream::Stdout),
+        "consolum:admonet" => consolum_is_terminal_frames(ConsolumStream::Stderr),
         "solum:lege" => solum_lege_frames(request.opener, request.target),
         "solum:hauri" | "solum:hauriet" => solum_hauri_frames(request.opener),
         // Line-oriented read: one Item frame per line (for sermo ↦ lista<textus>).
@@ -1398,6 +1412,110 @@ fn processus_exi_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     };
     let code = code.clamp(0, i64::from(u8::MAX)) as i32;
     std::process::exit(code);
+}
+
+enum ConsolumStream {
+    Stdin,
+    Stdout,
+    Stderr,
+}
+
+/// Write text to stdout; `with_newline` selects scribe vs dic.
+fn consolum_write_stdout_frames(data: Valor, with_newline: bool) -> Vec<(FrameStatus, Valor)> {
+    let Some(message) = valor_text(&data) else {
+        return error_frames("consolum write opener must be textus");
+    };
+    use std::io::Write;
+    let mut stdout = std::io::stdout().lock();
+    let result = if with_newline {
+        writeln!(stdout, "{message}").and_then(|()| stdout.flush())
+    } else {
+        write!(stdout, "{message}").and_then(|()| stdout.flush())
+    };
+    match result {
+        Ok(()) => done_frames(),
+        Err(err) => error_frames(format!("consolum stdout write failed: {err}")),
+    }
+}
+
+fn consolum_write_stderr_line_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(message) = valor_text(&data) else {
+        return error_frames("consolum stderr opener must be textus");
+    };
+    use std::io::Write;
+    let mut stderr = std::io::stderr().lock();
+    match writeln!(stderr, "{message}").and_then(|()| stderr.flush()) {
+        Ok(()) => done_frames(),
+        Err(err) => error_frames(format!("consolum stderr write failed: {err}")),
+    }
+}
+
+fn consolum_write_stdout_bytes_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let bytes = match &data {
+        Valor::Octeti(bytes) => bytes.clone(),
+        Valor::Lista(values) => {
+            let mut out = Vec::with_capacity(values.len());
+            for value in values {
+                let Valor::Numerus(byte) = value else {
+                    return error_frames("consolum:funde opener must be octeti");
+                };
+                if !(0..=255).contains(byte) {
+                    return error_frames("consolum:funde byte out of range");
+                }
+                out.push(*byte as u8);
+            }
+            out
+        }
+        _ => return error_frames("consolum:funde opener must be octeti"),
+    };
+    use std::io::Write;
+    let mut stdout = std::io::stdout().lock();
+    match stdout.write_all(&bytes).and_then(|()| stdout.flush()) {
+        Ok(()) => done_frames(),
+        Err(err) => error_frames(format!("consolum:funde failed: {err}")),
+    }
+}
+
+fn consolum_read_line_frames() -> Vec<(FrameStatus, Valor)> {
+    use std::io::BufRead;
+    let mut line = String::new();
+    match std::io::stdin().lock().read_line(&mut line) {
+        Ok(_) => {
+            if line.ends_with("\r\n") {
+                line.truncate(line.len() - 2);
+            } else if line.ends_with('\n') {
+                line.truncate(line.len() - 1);
+            }
+            item_done_frames(Valor::Textus(line))
+        }
+        Err(err) => error_frames(format!("consolum:lege failed: {err}")),
+    }
+}
+
+fn consolum_read_stdin_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    use std::io::Read;
+    let Some(magnitude) = valor_numerus(&data) else {
+        return error_frames("consolum:hauri opener must be numerus");
+    };
+    let magnitude = magnitude.max(0) as usize;
+    let mut buffer = vec![0_u8; magnitude];
+    match std::io::stdin().lock().read(&mut buffer) {
+        Ok(n) => {
+            buffer.truncate(n);
+            bytes_done_frames(buffer)
+        }
+        Err(err) => error_frames(format!("consolum:hauri failed: {err}")),
+    }
+}
+
+fn consolum_is_terminal_frames(stream: ConsolumStream) -> Vec<(FrameStatus, Valor)> {
+    use std::io::IsTerminal;
+    let is_tty = match stream {
+        ConsolumStream::Stdin => std::io::stdin().is_terminal(),
+        ConsolumStream::Stdout => std::io::stdout().is_terminal(),
+        ConsolumStream::Stderr => std::io::stderr().is_terminal(),
+    };
+    item_done_frames(Valor::Bivalens(is_tty))
 }
 
 /// One Item per line + Done — frame shape for `try_sermo_materialize_lista::<String>`.
