@@ -533,13 +533,39 @@ fn tempus_nunc_route_materializes_instans() {
 }
 
 #[test]
+fn solum_crea_hauri_enumera_product_routes() {
+    let stem = frame::next_frame_id();
+    let dir = std::env::temp_dir().join(format!("faber-solum-crea-{stem}"));
+    let file = dir.join("payload.bin");
+    let dir_s = dir.to_string_lossy().into_owned();
+    let file_s = file.to_string_lossy().into_owned();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let mut crea = frame::sermo_open("solum:crea");
+    frame::sermo_set_opener(&mut crea, Valor::Textus(dir_s.clone()));
+    frame::sermo_materialize_vacuum(&mut crea);
+    assert!(dir.is_dir(), "crea must create directory");
+
+    std::fs::write(&file, [9u8, 8, 7]).expect("write fixture");
+
+    let mut hauri = frame::sermo_open("solum:hauri");
+    frame::sermo_set_opener(&mut hauri, Valor::Textus(file_s));
+    let bytes: Vec<u8> = frame::sermo_materialize_octeti(&mut hauri);
+    assert_eq!(bytes, vec![9, 8, 7]);
+
+    let mut enumera = frame::sermo_open("solum:enumera");
+    frame::sermo_set_opener(&mut enumera, Valor::Textus(dir_s));
+    let names: Vec<String> = frame::sermo_materialize_lista(&mut enumera);
+    assert_eq!(names, vec!["payload.bin".to_owned()]);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn solum_temporarium_route_materializes_temp_dir_textus() {
     let mut sermo = frame::sermo_open("solum:temporarium");
     let path: String = frame::sermo_materialize_textus(&mut sermo);
-    assert!(
-        !path.is_empty(),
-        "temporarium must return a non-empty path"
-    );
+    assert!(!path.is_empty(), "temporarium must return a non-empty path");
     assert!(
         std::path::Path::new(&path).is_dir(),
         "temporarium path must be an existing directory: {path}"

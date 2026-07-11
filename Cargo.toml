@@ -7,7 +7,7 @@ license = "MIT"
 readme = "README.md"
 
 [workspace]
-members = ["hosts/llvm", "hosts/native"]
+members = ["hosts/llvm"]
 
 [features]
 test-support = []

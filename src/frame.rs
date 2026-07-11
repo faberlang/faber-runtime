@@ -852,8 +852,13 @@ pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> 
         "solum:scribe" | "solum:scribet" | "solum:appone" | "solum:apponet" => {
             solum_write_text_frames(&request.route, request.opener)
         }
+        "solum:funde" => solum_write_bytes_frames(request.opener),
         "solum:dele" | "solum:delet" => solum_delete_frames(request.opener),
         "solum:parens" => solum_parent_frames(request.opener),
+        "solum:nomen" => solum_file_name_frames(request.opener),
+        "solum:suffixum" => solum_extension_frames(request.opener),
+        "solum:iunge" => solum_join_frames(request.opener),
+        "solum:absolve" => solum_canonicalize_frames(request.opener),
         // Zero-arg path facts (host-providers solum + MIR stepper parity).
         "solum:temporarium" => solum_temporarium_frames(),
         "solum:domus" => solum_domus_frames(),
@@ -861,11 +866,19 @@ pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> 
         "processus:exsequi" | "processus:exsequetur" => processus_exsequi_frames(request.opener),
         "processus:captura" => processus_captura_frames(request.opener),
         "solum:lege" => solum_lege_frames(request.opener, request.target),
+        "solum:hauri" | "solum:hauriet" => solum_hauri_frames(request.opener),
         // Line-oriented read: one Item frame per line (for sermo ↦ lista<textus>).
         "solum:carpe" | "solum:carpiet" => solum_carpe_frames(request.opener),
         "solum:mensura" => solum_mensura_frames(request.opener, request.target),
         "solum:inveni" => solum_inveni_frames(request.opener, request.target),
-        "solum:exstat" | "solum:directoriumne" | "solum:regularene" | "solum:legibilene" => {
+        "solum:crea" | "solum:creabit" => solum_create_dir_frames(request.opener),
+        "solum:enumera" | "solum:enumerabit" => solum_list_dir_frames(request.opener),
+        "solum:amputa" | "solum:amputabit" => solum_remove_dir_frames(request.opener),
+        "solum:exscribe" | "solum:exscribet" => solum_copy_frames(request.opener),
+        "solum:renomina" | "solum:renominabit" => solum_rename_frames(request.opener),
+        "solum:tange" | "solum:tanget" => solum_touch_frames(request.opener),
+        "solum:exstat" | "solum:exstabit" | "solum:directoriumne" | "solum:regularene"
+        | "solum:legibilene" | "solum:vinculumne" => {
             solum_path_bool_frames(&request.route, request.opener, request.target)
         }
         _ => error_frames(format!("unsupported ad route `{}`", request.route)),
@@ -1063,6 +1076,183 @@ fn solum_delete_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => done_frames(),
         Err(err) => error_frames(format!("solum.dele failed for {path}: {err}")),
     }
+}
+
+fn solum_hauri_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:hauri opener must be textus");
+    };
+    match std::fs::read(&path) {
+        Ok(bytes) => bytes_done_frames(bytes),
+        Err(err) => error_frames(format!("solum:hauri failed for {path}: {err}")),
+    }
+}
+
+fn solum_write_bytes_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Ok((path, bytes)) = valor_path_bytes(data) else {
+        return error_frames("solum:funde opener must be [textus, octeti]");
+    };
+    match std::fs::write(&path, bytes) {
+        Ok(()) => done_frames(),
+        Err(err) => error_frames(format!("solum:funde failed for {path}: {err}")),
+    }
+}
+
+fn solum_create_dir_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:crea opener must be textus");
+    };
+    match std::fs::create_dir_all(&path) {
+        Ok(()) => done_frames(),
+        Err(err) => error_frames(format!("solum:crea failed for {path}: {err}")),
+    }
+}
+
+fn solum_list_dir_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:enumera opener must be textus");
+    };
+    match std::fs::read_dir(&path) {
+        Ok(entries) => {
+            let mut names = Vec::new();
+            for entry in entries {
+                match entry {
+                    Ok(entry) => names.push(entry.file_name().to_string_lossy().into_owned()),
+                    Err(err) => {
+                        return error_frames(format!("solum:enumera entry failed for {path}: {err}"));
+                    }
+                }
+            }
+            names.sort();
+            let mut frames: Vec<(FrameStatus, Valor)> = names
+                .into_iter()
+                .map(|name| (FrameStatus::Item, Valor::Textus(name)))
+                .collect();
+            frames.push((FrameStatus::Done, Valor::Nihil));
+            frames
+        }
+        Err(err) => error_frames(format!("solum:enumera failed for {path}: {err}")),
+    }
+}
+
+fn solum_remove_dir_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:amputa opener must be textus");
+    };
+    match std::fs::remove_dir_all(&path) {
+        Ok(()) => done_frames(),
+        Err(err) => error_frames(format!("solum:amputa failed for {path}: {err}")),
+    }
+}
+
+fn solum_copy_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Ok((source, destination)) = valor_text_pair(data) else {
+        return error_frames("solum:exscribe opener must be [textus, textus]");
+    };
+    match std::fs::copy(&source, &destination) {
+        Ok(_) => done_frames(),
+        Err(err) => error_frames(format!("solum:exscribe failed: {err}")),
+    }
+}
+
+fn solum_rename_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Ok((source, destination)) = valor_text_pair(data) else {
+        return error_frames("solum:renomina opener must be [textus, textus]");
+    };
+    match std::fs::rename(&source, &destination) {
+        Ok(()) => done_frames(),
+        Err(err) => error_frames(format!("solum:renomina failed: {err}")),
+    }
+}
+
+fn solum_touch_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:tange opener must be textus");
+    };
+    let path_ref = std::path::Path::new(&path);
+    if !path_ref.exists() {
+        if let Err(err) = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(path_ref)
+        {
+            return error_frames(format!("solum:tange create failed for {path}: {err}"));
+        }
+    }
+    let now = std::time::SystemTime::now();
+    if let Ok(handle) = std::fs::File::open(path_ref) {
+        let times = std::fs::FileTimes::new().set_modified(now).set_accessed(now);
+        let _ = handle.set_times(times);
+    }
+    done_frames()
+}
+
+fn solum_file_name_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:nomen opener must be textus");
+    };
+    let name = std::path::Path::new(&path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    item_done_frames(Valor::Textus(name))
+}
+
+fn solum_extension_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:suffixum opener must be textus");
+    };
+    let ext = std::path::Path::new(&path)
+        .extension()
+        .map(|extension| format!(".{}", extension.to_string_lossy()))
+        .unwrap_or_default();
+    item_done_frames(Valor::Textus(ext))
+}
+
+fn solum_join_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(parts) = valor_text_list(&data) else {
+        return error_frames("solum:iunge opener must be lista<textus>");
+    };
+    item_done_frames(Valor::Textus(parts.join("/")))
+}
+
+fn solum_canonicalize_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("solum:absolve opener must be textus");
+    };
+    match std::fs::canonicalize(&path) {
+        Ok(resolved) => item_done_frames(Valor::Textus(resolved.to_string_lossy().into_owned())),
+        Err(err) => error_frames(format!("solum:absolve failed for {path}: {err}")),
+    }
+}
+
+fn valor_path_bytes(data: Valor) -> Result<(String, Vec<u8>), String> {
+    let Valor::Lista(items) = data else {
+        return Err("expected lista".to_owned());
+    };
+    if items.len() != 2 {
+        return Err("expected [path, bytes]".to_owned());
+    }
+    let path = valor_text(&items[0]).ok_or_else(|| "path must be textus".to_owned())?;
+    let bytes = match &items[1] {
+        Valor::Octeti(bytes) => bytes.clone(),
+        Valor::Lista(values) => {
+            let mut out = Vec::with_capacity(values.len());
+            for value in values {
+                let Valor::Numerus(byte) = value else {
+                    return Err("byte list must be numerus".to_owned());
+                };
+                if !(0..=255).contains(byte) {
+                    return Err("byte out of range".to_owned());
+                }
+                out.push(*byte as u8);
+            }
+            out
+        }
+        _ => return Err("bytes must be octeti or lista<numerus>".to_owned()),
+    };
+    Ok((path, bytes))
 }
 
 fn processus_exsequi_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
@@ -1273,7 +1463,7 @@ fn solum_path_bool_frames(
     let Some(path) = valor_text(&data) else {
         return error_frames(format!("{route} opener must be textus"));
     };
-    if target != Some(std::any::type_name::<bool>()) {
+    if target.is_some_and(|name| name != std::any::type_name::<bool>()) {
         return error_frames(format!(
             "{route} target `{}` is not supported",
             target.unwrap_or("<unknown>")
@@ -1281,10 +1471,13 @@ fn solum_path_bool_frames(
     }
     let path = std::path::Path::new(&path);
     let result = match route {
-        "solum:exstat" => path.exists(),
+        "solum:exstat" | "solum:exstabit" => path.exists(),
         "solum:directoriumne" => path.is_dir(),
         "solum:regularene" => path.is_file(),
         "solum:legibilene" => path.is_file() && std::fs::File::open(path).is_ok(),
+        "solum:vinculumne" => std::fs::symlink_metadata(path)
+            .map(|metadata| metadata.file_type().is_symlink())
+            .unwrap_or(false),
         _ => false,
     };
     item_done_frames(Valor::Bivalens(result))
