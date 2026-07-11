@@ -928,6 +928,51 @@ fn processus_captura_route_materializes_status_stdout_and_stderr() {
 }
 
 #[test]
+fn processus_lege_sedes_identitas_scribe_muta_product_routes() {
+    let key = format!("FABER_PROCESSUS_TEST_{}", frame::next_frame_id());
+    let value = "runtime-env-ok";
+    let mut scribe = frame::sermo_open("processus:scribe");
+    frame::sermo_set_opener(
+        &mut scribe,
+        Valor::Lista(vec![
+            Valor::Textus(key.clone()),
+            Valor::Textus(value.into()),
+        ]),
+    );
+    frame::sermo_materialize_vacuum(&mut scribe);
+
+    let mut lege = frame::sermo_open("processus:lege");
+    frame::sermo_set_opener(&mut lege, Valor::Textus(key.clone()));
+    let read = frame::sermo_materialize_textus(&mut lege);
+    assert_eq!(read, value);
+
+    let mut sedes = frame::sermo_open("processus:sedes");
+    let cwd = frame::sermo_materialize_textus(&mut sedes);
+    assert!(!cwd.is_empty());
+    assert!(std::path::Path::new(&cwd).is_dir());
+
+    let mut identitas = frame::sermo_open("processus:identitas");
+    let pid = frame::sermo_materialize_scalar::<i64>(&mut identitas);
+    assert!(pid > 0);
+    assert_eq!(pid, i64::from(std::process::id()));
+
+    let original = std::env::current_dir().expect("cwd");
+    let target = std::env::temp_dir();
+    let mut muta = frame::sermo_open("processus:muta");
+    frame::sermo_set_opener(
+        &mut muta,
+        Valor::Textus(target.to_string_lossy().into_owned()),
+    );
+    frame::sermo_materialize_vacuum(&mut muta);
+    assert_eq!(
+        std::env::current_dir().expect("cwd after muta"),
+        target.canonicalize().unwrap_or(target)
+    );
+    std::env::set_current_dir(original).expect("restore cwd");
+    std::env::remove_var(&key);
+}
+
+#[test]
 fn solum_parens_route_materializes_parent_path() {
     let mut sermo = frame::sermo_open("solum:parens");
     frame::sermo_set_opener(&mut sermo, Valor::Textus("/tmp/faber/path.txt".into()));

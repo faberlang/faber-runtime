@@ -865,6 +865,14 @@ pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> 
         "solum:partem" => solum_partem_frames(request.opener, request.target),
         "processus:exsequi" | "processus:exsequetur" => processus_exsequi_frames(request.opener),
         "processus:captura" => processus_captura_frames(request.opener),
+        "processus:dimitte" => processus_dimitte_frames(request.opener),
+        "processus:lege" => processus_lege_frames(request.opener),
+        "processus:scribe" => processus_scribe_frames(request.opener),
+        "processus:sedes" => processus_sedes_frames(),
+        "processus:muta" => processus_muta_frames(request.opener),
+        "processus:identitas" => processus_identitas_frames(),
+        "processus:argumenta" => processus_argumenta_frames(),
+        "processus:exi" => processus_exi_frames(request.opener),
         "solum:lege" => solum_lege_frames(request.opener, request.target),
         "solum:hauri" | "solum:hauriet" => solum_hauri_frames(request.opener),
         // Line-oriented read: one Item frame per line (for sermo ↦ lista<textus>).
@@ -1300,6 +1308,86 @@ fn processus_captura_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
         }
         Err(err) => error_frames(format!("processus.captura failed: {err}")),
     }
+}
+
+/// Detached spawn → pid (host-providers processus:dimitte parity).
+fn processus_dimitte_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(args) = valor_text_list(&data) else {
+        return error_frames("processus:dimitte opener must be lista<textus>");
+    };
+    let Some((program, program_args)) = args.split_first() else {
+        return error_frames("processus:dimitte requires a non-empty args list");
+    };
+    match std::process::Command::new(program)
+        .args(program_args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(child) => item_done_frames(Valor::Numerus(i64::from(child.id()))),
+        Err(err) => error_frames(format!("processus:dimitte failed: {err}")),
+    }
+}
+
+fn processus_lege_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(name) = valor_text(&data) else {
+        return error_frames("processus:lege opener must be textus");
+    };
+    match std::env::var(&name) {
+        Ok(value) => item_done_frames(Valor::Textus(value)),
+        Err(_) => error_frames(format!("processus:lege: environment variable `{name}` is not set")),
+    }
+}
+
+fn processus_scribe_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Ok((name, value)) = valor_text_pair(data) else {
+        return error_frames("processus:scribe opener must be [textus, textus]");
+    };
+    // SAFETY: set_env is process-local; same contract as host-providers processus.
+    unsafe {
+        std::env::set_var(&name, &value);
+    }
+    done_frames()
+}
+
+fn processus_sedes_frames() -> Vec<(FrameStatus, Valor)> {
+    match std::env::current_dir() {
+        Ok(path) => item_done_frames(Valor::Textus(path.to_string_lossy().into_owned())),
+        Err(err) => error_frames(format!("processus:sedes failed: {err}")),
+    }
+}
+
+fn processus_muta_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(path) = valor_text(&data) else {
+        return error_frames("processus:muta opener must be textus");
+    };
+    match std::env::set_current_dir(&path) {
+        Ok(()) => done_frames(),
+        Err(err) => error_frames(format!("processus:muta failed: {err}")),
+    }
+}
+
+fn processus_identitas_frames() -> Vec<(FrameStatus, Valor)> {
+    item_done_frames(Valor::Numerus(i64::from(std::process::id())))
+}
+
+fn processus_argumenta_frames() -> Vec<(FrameStatus, Valor)> {
+    let mut frames: Vec<(FrameStatus, Valor)> = std::env::args()
+        .skip(1)
+        .map(|arg| (FrameStatus::Item, Valor::Textus(arg)))
+        .collect();
+    frames.push((FrameStatus::Done, Valor::Nihil));
+    frames
+}
+
+/// Exit process — never returns on success (host-providers processus:exi parity).
+fn processus_exi_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+    let Some(code) = valor_numerus(&data) else {
+        return error_frames("processus:exi opener must be numerus");
+    };
+    let code = code.clamp(0, i64::from(u8::MAX)) as i32;
+    std::process::exit(code);
 }
 
 /// One Item per line + Done — frame shape for `try_sermo_materialize_lista::<String>`.
