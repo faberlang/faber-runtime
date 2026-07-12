@@ -1,6 +1,7 @@
 //! Scalar template formatting and runtime-owned LLVM text handles.
 
 use super::RuntimeContext;
+use faber::display_bivalens;
 use faber::llvm_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT,
     STATUS_OK, STATUS_PANIC,
@@ -125,7 +126,11 @@ pub unsafe extern "C" fn __faber_rt_v1_format_text_i64_i1(
     format_scalar_values(
         context,
         template,
-        &[text, integer.to_string(), (boolean != 0).to_string()],
+        &[
+            text,
+            integer.to_string(),
+            display_bivalens(boolean != 0).to_owned(),
+        ],
     )
 }
 
@@ -169,7 +174,7 @@ pub unsafe extern "C" fn __faber_rt_v1_text_i1(
     context: *mut FaberRtContextV1,
     value: u8,
 ) -> FaberRtPtrResultV1 {
-    ffi_ptr_result(|| store_text(context, (value != 0).to_string()))
+    ffi_ptr_result(|| store_text(context, display_bivalens(value != 0).to_owned()))
 }
 
 fn format_scalar_values(

@@ -61,14 +61,14 @@ use faber::llvm_abi::{
     VALUE_KIND_I1, VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR,
     VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,
 };
-use faber::Valor;
+use faber::{display_bivalens, Valor};
 use format::RuntimeText;
 #[cfg(test)]
 use format::{
     __faber_rt_v1_format_f64, __faber_rt_v1_format_i64, __faber_rt_v1_format_i64_i64,
     __faber_rt_v1_format_i64_i64_i64, __faber_rt_v1_format_text, __faber_rt_v1_format_text_i64,
-    __faber_rt_v1_format_text_text, __faber_rt_v1_text_f64, __faber_rt_v1_text_i1,
-    __faber_rt_v1_text_i64, __faber_rt_v1_text_length,
+    __faber_rt_v1_format_text_i64_i1, __faber_rt_v1_format_text_text, __faber_rt_v1_text_f64,
+    __faber_rt_v1_text_i1, __faber_rt_v1_text_i64, __faber_rt_v1_text_length,
 };
 #[cfg(test)]
 use instans::{
@@ -367,7 +367,7 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i1(
     context: *mut FaberRtContextV1,
     value: u8,
 ) -> FaberRtStatusV1 {
-    write_diagnostic(context, false, value != 0)
+    write_diagnostic(context, false, display_bivalens(value != 0))
 }
 
 #[no_mangle]

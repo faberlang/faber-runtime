@@ -126,6 +126,15 @@ fn scalar_format_family_renders_and_owns_text() {
     let float = unsafe {
         __faber_rt_v1_format_f64(context, FaberRtSliceV1::from_static("x=§".as_bytes()), 1.5)
     };
+    let mixed_bool = unsafe {
+        __faber_rt_v1_format_text_i64_i1(
+            context,
+            FaberRtSliceV1::from_static("§:§:§".as_bytes()),
+            one.value.cast(),
+            9,
+            1,
+        )
+    };
     let three = unsafe {
         __faber_rt_v1_format_i64_i64_i64(
             context,
@@ -171,6 +180,7 @@ fn scalar_format_family_renders_and_owns_text() {
     assert_eq!(paired.status, STATUS_OK);
     assert_eq!(single.status, STATUS_OK);
     assert_eq!(mixed.status, STATUS_OK);
+    assert_eq!(mixed_bool.status, STATUS_OK);
     assert_eq!(length_status, STATUS_OK);
     assert_eq!(length, 12);
     assert_eq!(
@@ -197,6 +207,10 @@ fn scalar_format_family_renders_and_owns_text() {
     assert_eq!(
         unsafe { &*mixed.value.cast::<RuntimeText>() }._value,
         "n=42:9"
+    );
+    assert_eq!(
+        unsafe { &*mixed_bool.value.cast::<RuntimeText>() }._value,
+        "n=42:9:verum"
     );
     assert_eq!(
         unsafe { &*three.value.cast::<RuntimeText>() }._value,
@@ -606,10 +620,12 @@ fn scalar_text_conversion_family_owns_canonical_values() {
     let integer = unsafe { __faber_rt_v1_text_i64(context, -42) };
     let float = unsafe { __faber_rt_v1_text_f64(context, 3.25) };
     let boolean = unsafe { __faber_rt_v1_text_i1(context, 1) };
+    let false_boolean = unsafe { __faber_rt_v1_text_i1(context, 0) };
 
     assert_eq!(integer.status, STATUS_OK);
     assert_eq!(float.status, STATUS_OK);
     assert_eq!(boolean.status, STATUS_OK);
+    assert_eq!(false_boolean.status, STATUS_OK);
     assert_eq!(
         unsafe { &*integer.value.cast::<RuntimeText>() }._value,
         "-42"
@@ -620,7 +636,11 @@ fn scalar_text_conversion_family_owns_canonical_values() {
     );
     assert_eq!(
         unsafe { &*boolean.value.cast::<RuntimeText>() }._value,
-        "true"
+        "verum"
+    );
+    assert_eq!(
+        unsafe { &*false_boolean.value.cast::<RuntimeText>() }._value,
+        "falsum"
     );
 
     unsafe { __faber_rt_v1_shutdown(context) };
