@@ -61,7 +61,7 @@ use faber::llvm_abi::{
     VALUE_KIND_I1, VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR,
     VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,
 };
-use faber::{display_bivalens, Valor};
+use faber::{display_bivalens, display_fractus, Valor};
 #[cfg(test)]
 use format::{
     __faber_rt_v1_format_f64, __faber_rt_v1_format_i1, __faber_rt_v1_format_i64,
@@ -123,11 +123,11 @@ use tensor::{
 };
 #[cfg(test)]
 use text::{
-    __faber_rt_v1_text_concat, __faber_rt_v1_text_contains, __faber_rt_v1_text_ends_with,
-    __faber_rt_v1_text_is_empty, __faber_rt_v1_text_lowercase, __faber_rt_v1_text_parse_float,
-    __faber_rt_v1_text_parse_integer, __faber_rt_v1_text_replace, __faber_rt_v1_text_slice,
-    __faber_rt_v1_text_split, __faber_rt_v1_text_starts_with, __faber_rt_v1_text_trim,
-    __faber_rt_v1_text_truthy, __faber_rt_v1_text_uppercase,
+    __faber_rt_v1_ascii_truthy, __faber_rt_v1_text_concat, __faber_rt_v1_text_contains,
+    __faber_rt_v1_text_ends_with, __faber_rt_v1_text_is_empty, __faber_rt_v1_text_lowercase,
+    __faber_rt_v1_text_parse_float, __faber_rt_v1_text_parse_integer, __faber_rt_v1_text_replace,
+    __faber_rt_v1_text_slice, __faber_rt_v1_text_split, __faber_rt_v1_text_starts_with,
+    __faber_rt_v1_text_trim, __faber_rt_v1_text_truthy, __faber_rt_v1_text_uppercase,
 };
 #[cfg(test)]
 use valor_aggregate::{
@@ -420,7 +420,7 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_f32(
     context: *mut FaberRtContextV1,
     value: f32,
 ) -> FaberRtStatusV1 {
-    write_diagnostic(context, false, value)
+    write_diagnostic(context, false, display_fractus(value))
 }
 
 #[no_mangle]
@@ -428,7 +428,7 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_f64(
     context: *mut FaberRtContextV1,
     value: f64,
 ) -> FaberRtStatusV1 {
-    write_diagnostic(context, false, value)
+    write_diagnostic(context, false, display_fractus(value))
 }
 
 #[no_mangle]

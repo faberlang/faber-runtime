@@ -438,6 +438,52 @@ fn text_scalar_conversion_family_honors_width_radix_recovery_status() {
 }
 
 #[test]
+fn scalar_text_conversion_family_preserves_rust_conversion_spellings() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+
+    let zero = unsafe { __faber_rt_v1_text_f64(context, 0.0) };
+    let truth = unsafe { __faber_rt_v1_text_i1(context, 1) };
+    let falsehood = unsafe { __faber_rt_v1_text_i1(context, 0) };
+
+    assert_eq!(zero.status, STATUS_OK);
+    assert_eq!(truth.status, STATUS_OK);
+    assert_eq!(falsehood.status, STATUS_OK);
+    assert_eq!(unsafe { &*zero.value.cast::<RuntimeText>() }._value, "0.0");
+    assert_eq!(
+        unsafe { &*truth.value.cast::<RuntimeText>() }._value,
+        "true"
+    );
+    assert_eq!(
+        unsafe { &*falsehood.value.cast::<RuntimeText>() }._value,
+        "false"
+    );
+
+    let empty = CStr::from_bytes_with_nul(b"\0").expect("valid empty ASCII");
+    let nonempty = CStr::from_bytes_with_nul(b"yes\0").expect("valid ASCII");
+    let mut answer = 0;
+    assert_eq!(
+        unsafe { __faber_rt_v1_ascii_truthy(context, empty.as_ptr(), &mut answer) },
+        STATUS_OK
+    );
+    assert_eq!(answer, 0);
+    assert_eq!(
+        unsafe { __faber_rt_v1_ascii_truthy(context, nonempty.as_ptr(), &mut answer) },
+        STATUS_OK
+    );
+    assert_eq!(answer, 1);
+    assert_eq!(
+        unsafe { __faber_rt_v1_ascii_truthy(context, ptr::null(), &mut answer) },
+        STATUS_INVALID_ARGUMENT
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
 fn typed_map_and_set_family_preserves_value_semantics() {
     let mut context = ptr::null_mut();
     assert_eq!(
@@ -677,11 +723,11 @@ fn scalar_text_conversion_family_owns_canonical_values() {
     );
     assert_eq!(
         unsafe { &*boolean.value.cast::<RuntimeText>() }._value,
-        "verum"
+        "true"
     );
     assert_eq!(
         unsafe { &*false_boolean.value.cast::<RuntimeText>() }._value,
-        "falsum"
+        "false"
     );
 
     unsafe { __faber_rt_v1_shutdown(context) };

@@ -57,6 +57,7 @@ fn llvm_abi_v1_symbol_namespace_is_versioned() {
         SYMBOL_TEXT_I64,
         SYMBOL_TEXT_F64,
         SYMBOL_TEXT_I1,
+        SYMBOL_ASCII_TRUTHY,
         SYMBOL_TEXT_CONCAT,
         SYMBOL_VALOR_I64,
         SYMBOL_VALOR_F64,
