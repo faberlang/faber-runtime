@@ -533,6 +533,47 @@ fn tempus_nunc_route_materializes_instans() {
 }
 
 #[test]
+fn tempus_activum_route_returns_nanoseconds() {
+    let request = SermoRequest {
+        conversation_id: "tempus-activum".into(),
+        route: "tempus:activum".into(),
+        opener: Valor::Nihil,
+        target: None,
+    };
+    let first = frame::builtin_route_frames(request.clone());
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let second = frame::builtin_route_frames(request);
+
+    let [(FrameStatus::Item, Valor::Numerus(first)), (FrameStatus::Done, Valor::Nihil)] =
+        first.as_slice()
+    else {
+        panic!("tempus:activum must return one numeric item and done");
+    };
+    let [(FrameStatus::Item, Valor::Numerus(second)), (FrameStatus::Done, Valor::Nihil)] =
+        second.as_slice()
+    else {
+        panic!("tempus:activum must return one numeric item and done");
+    };
+    assert!(*second > *first);
+    assert!(
+        second.saturating_sub(*first) >= 1_000_000,
+        "active time must be nanoseconds: {first} -> {second}"
+    );
+}
+
+#[test]
+fn tempus_dormiet_rejects_invalid_duration() {
+    for opener in [Valor::Textus("slow".into()), Valor::Numerus(-1)] {
+        let mut sermo = frame::sermo_open("tempus:dormiet");
+        frame::sermo_set_opener(&mut sermo, opener);
+        let error = frame::try_sermo_materialize_vacuum(&mut sermo)
+            .expect_err("invalid sleep duration must fail");
+        assert!(error.to_string().contains("tempus:dormiet"));
+        assert!(error.to_string().contains("must be"));
+    }
+}
+
+#[test]
 fn solum_crea_hauri_enumera_product_routes() {
     let stem = frame::next_frame_id();
     let dir = std::env::temp_dir().join(format!("faber-solum-crea-{stem}"));

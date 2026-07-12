@@ -843,10 +843,16 @@ pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> 
             let instans = Instans::from_nanos(now, InstansPraecisio::Nanosecunda);
             item_done_frames(Valor::Instans(instans.to_rfc3339()))
         }
-        "tempus:monotonicum" => item_done_frames(Valor::Numerus(monotonic_nanos())),
-        "tempus:activum" => item_done_frames(Valor::Numerus(process_active_millis())),
+        "tempus:monotonicum" | "tempus:activum" => {
+            item_done_frames(Valor::Numerus(elapsed_nanos()))
+        }
         "tempus:dormiet" | "tempus:expectet" => {
-            let ms = valor_numerus(&request.opener).unwrap_or(0).max(0);
+            let Some(ms) = valor_numerus(&request.opener) else {
+                return error_frames("tempus:dormiet opener must be numerus");
+            };
+            if ms < 0 {
+                return error_frames("tempus:dormiet ms must be non-negative");
+            }
             thread::sleep(Duration::from_millis(ms as u64));
             done_frames()
         }
@@ -1922,16 +1928,10 @@ fn epoch_nanos() -> i64 {
         })
 }
 
-fn monotonic_nanos() -> i64 {
+fn elapsed_nanos() -> i64 {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
     let start = START.get_or_init(std::time::Instant::now);
     start.elapsed().as_nanos().min(i64::MAX as u128) as i64
-}
-
-fn process_active_millis() -> i64 {
-    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    let start = START.get_or_init(std::time::Instant::now);
-    start.elapsed().as_millis().min(i64::MAX as u128) as i64
 }
 
 pub fn now_millis() -> i64 {
