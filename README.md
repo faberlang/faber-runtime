@@ -26,6 +26,7 @@ faberlang/
   radix/           private compiler (path-deps here)
   cista/           package manager
   norma/           stdlib source
+  triga/           optional graphics and geometry library
 ```
 
 ## Build
