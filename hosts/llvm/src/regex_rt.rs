@@ -4,7 +4,7 @@
 
 use super::format::{store_text, text_value};
 use super::RuntimeContext;
-use faber::llvm_abi::{
+use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, STATUS_INVALID_ARGUMENT, STATUS_PANIC,
 };
 use faber::Regex;

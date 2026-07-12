@@ -2,7 +2,7 @@
 
 use super::array::{write_value, RuntimeArray, RuntimeValue};
 use super::RuntimeContext;
-use faber::llvm_abi::{
+use faber::host_abi::{
     FaberRtContextV1, FaberRtStatusV1, FaberRtValueKindV1, STATUS_INVALID_ARGUMENT, STATUS_OK,
     STATUS_PANIC, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64,
     VALUE_KIND_I8, VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,

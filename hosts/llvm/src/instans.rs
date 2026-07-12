@@ -3,7 +3,7 @@
 use super::convert::with_valor;
 use super::format::{store_text, text_value};
 use super::RuntimeContext;
-use faber::llvm_abi::*;
+use faber::host_abi::*;
 use faber::{Instans, InstansPraecisio, Valor};
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};

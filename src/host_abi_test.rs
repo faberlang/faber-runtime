@@ -3,7 +3,7 @@ use core::mem::{align_of, size_of};
 use std::collections::BTreeSet;
 
 #[test]
-fn llvm_abi_v1_carriers_have_stable_host_layout() {
+fn host_abi_v1_carriers_have_stable_host_layout() {
     assert_eq!(size_of::<FaberRtSliceV1>(), 16);
     assert_eq!(align_of::<FaberRtSliceV1>(), 8);
     assert_eq!(size_of::<FaberRtStatusV1>(), 4);
@@ -17,7 +17,7 @@ fn llvm_abi_v1_carriers_have_stable_host_layout() {
 }
 
 #[test]
-fn llvm_abi_v1_diagnostic_family_is_complete_and_unique() {
+fn host_abi_v1_diagnostic_family_is_complete_and_unique() {
     assert_eq!(DIAGNOSTIC_SYMBOLS_V1.len(), 17);
     let symbols = DIAGNOSTIC_SYMBOLS_V1
         .iter()
@@ -40,7 +40,7 @@ fn llvm_abi_v1_diagnostic_family_is_complete_and_unique() {
 }
 
 #[test]
-fn llvm_abi_v1_symbol_namespace_is_versioned() {
+fn host_abi_v1_symbol_namespace_is_versioned() {
     for symbol in [
         SYMBOL_INIT,
         SYMBOL_SHUTDOWN,

@@ -1,7 +1,7 @@
 //! Filesystem boundaries used by LLVM-host `norma:solum` providers.
 
 use super::format::{store_text, text_value};
-use faber::llvm_abi::{
+use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT,
     STATUS_IO_ERROR, STATUS_OK,
 };

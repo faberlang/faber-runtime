@@ -8,7 +8,7 @@ use super::array::{store_array, RuntimeValue};
 use super::option::store_option;
 use super::tensor::store_tensor;
 use super::RuntimeContext;
-use faber::llvm_abi::{
+use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT, STATUS_OK,
     STATUS_PANIC, VALUE_KIND_I64, VALUE_KIND_PTR,
 };

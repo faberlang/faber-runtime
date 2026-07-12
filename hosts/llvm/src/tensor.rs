@@ -9,7 +9,7 @@ use super::array::{
 };
 use super::option::store_option;
 use super::RuntimeContext;
-use faber::llvm_abi::{
+use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtStatusV1, FaberRtValueKindV1,
     STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_I64,
 };
@@ -45,29 +45,29 @@ fn tensor_kind(kind: FaberRtValueKindV1) -> bool {
     valid_kind(kind)
         && !matches!(
             kind,
-            faber::llvm_abi::VALUE_KIND_TEXT
-                | faber::llvm_abi::VALUE_KIND_VALOR
-                | faber::llvm_abi::VALUE_KIND_OPTION_I64
-                | faber::llvm_abi::VALUE_KIND_INSTANS
-                | faber::llvm_abi::VALUE_KIND_ASCII
-                | faber::llvm_abi::VALUE_KIND_PTR
+            faber::host_abi::VALUE_KIND_TEXT
+                | faber::host_abi::VALUE_KIND_VALOR
+                | faber::host_abi::VALUE_KIND_OPTION_I64
+                | faber::host_abi::VALUE_KIND_INSTANS
+                | faber::host_abi::VALUE_KIND_ASCII
+                | faber::host_abi::VALUE_KIND_PTR
         )
 }
 
 fn default_value(kind: FaberRtValueKindV1) -> Option<RuntimeValue> {
     Some(match kind {
-        faber::llvm_abi::VALUE_KIND_I1 => RuntimeValue::I1(0),
-        faber::llvm_abi::VALUE_KIND_I8 => RuntimeValue::I8(0),
-        faber::llvm_abi::VALUE_KIND_I16 => RuntimeValue::I16(0),
-        faber::llvm_abi::VALUE_KIND_I32 => RuntimeValue::I32(0),
-        faber::llvm_abi::VALUE_KIND_I64 => RuntimeValue::I64(0),
-        faber::llvm_abi::VALUE_KIND_U8 => RuntimeValue::U8(0),
-        faber::llvm_abi::VALUE_KIND_U16 => RuntimeValue::U16(0),
-        faber::llvm_abi::VALUE_KIND_U32 => RuntimeValue::U32(0),
-        faber::llvm_abi::VALUE_KIND_U64 => RuntimeValue::U64(0),
-        faber::llvm_abi::VALUE_KIND_F16 => RuntimeValue::F16(0),
-        faber::llvm_abi::VALUE_KIND_F32 => RuntimeValue::F32(0.0),
-        faber::llvm_abi::VALUE_KIND_F64 => RuntimeValue::F64(0.0),
+        faber::host_abi::VALUE_KIND_I1 => RuntimeValue::I1(0),
+        faber::host_abi::VALUE_KIND_I8 => RuntimeValue::I8(0),
+        faber::host_abi::VALUE_KIND_I16 => RuntimeValue::I16(0),
+        faber::host_abi::VALUE_KIND_I32 => RuntimeValue::I32(0),
+        faber::host_abi::VALUE_KIND_I64 => RuntimeValue::I64(0),
+        faber::host_abi::VALUE_KIND_U8 => RuntimeValue::U8(0),
+        faber::host_abi::VALUE_KIND_U16 => RuntimeValue::U16(0),
+        faber::host_abi::VALUE_KIND_U32 => RuntimeValue::U32(0),
+        faber::host_abi::VALUE_KIND_U64 => RuntimeValue::U64(0),
+        faber::host_abi::VALUE_KIND_F16 => RuntimeValue::F16(0),
+        faber::host_abi::VALUE_KIND_F32 => RuntimeValue::F32(0.0),
+        faber::host_abi::VALUE_KIND_F64 => RuntimeValue::F64(0.0),
         _ => return None,
     })
 }
@@ -491,7 +491,7 @@ fn apply_binary(
     op: BinaryOp,
 ) -> Option<(Vec<i64>, Vec<RuntimeValue>)> {
     match left.kind {
-        faber::llvm_abi::VALUE_KIND_F32 => {
+        faber::host_abi::VALUE_KIND_F32 => {
             let lhs = to_tensor_f32(left)?;
             let rhs = to_tensor_f32(right)?;
             let result = match op {
@@ -502,7 +502,7 @@ fn apply_binary(
             };
             Some(from_tensor_f32(&result))
         }
-        faber::llvm_abi::VALUE_KIND_F64 => {
+        faber::host_abi::VALUE_KIND_F64 => {
             let lhs = to_tensor_f64(left)?;
             let rhs = to_tensor_f64(right)?;
             let result = match op {
@@ -513,7 +513,7 @@ fn apply_binary(
             };
             Some(from_tensor_f64(&result))
         }
-        faber::llvm_abi::VALUE_KIND_I64 => {
+        faber::host_abi::VALUE_KIND_I64 => {
             let lhs = to_tensor_i64(left)?;
             let rhs = to_tensor_i64(right)?;
             let result = match op {
@@ -524,7 +524,7 @@ fn apply_binary(
             };
             Some(from_tensor_i64(&result))
         }
-        faber::llvm_abi::VALUE_KIND_I32 => {
+        faber::host_abi::VALUE_KIND_I32 => {
             let lhs = to_tensor_i32(left)?;
             let rhs = to_tensor_i32(right)?;
             let result = match op {
@@ -726,10 +726,10 @@ pub unsafe extern "C" fn __faber_rt_v1_tensor_mean(
 
 fn tensor_sum_value(tensor: &RuntimeTensor) -> Option<RuntimeValue> {
     match tensor.kind {
-        faber::llvm_abi::VALUE_KIND_F32 => Some(RuntimeValue::F32(to_tensor_f32(tensor)?.summa())),
-        faber::llvm_abi::VALUE_KIND_F64 => Some(RuntimeValue::F64(to_tensor_f64(tensor)?.summa())),
-        faber::llvm_abi::VALUE_KIND_I64 => Some(RuntimeValue::I64(to_tensor_i64(tensor)?.summa())),
-        faber::llvm_abi::VALUE_KIND_I32 => Some(RuntimeValue::I32(to_tensor_i32(tensor)?.summa())),
+        faber::host_abi::VALUE_KIND_F32 => Some(RuntimeValue::F32(to_tensor_f32(tensor)?.summa())),
+        faber::host_abi::VALUE_KIND_F64 => Some(RuntimeValue::F64(to_tensor_f64(tensor)?.summa())),
+        faber::host_abi::VALUE_KIND_I64 => Some(RuntimeValue::I64(to_tensor_i64(tensor)?.summa())),
+        faber::host_abi::VALUE_KIND_I32 => Some(RuntimeValue::I32(to_tensor_i32(tensor)?.summa())),
         _ => None,
     }
 }
@@ -740,11 +740,11 @@ fn tensor_mean_value(tensor: &RuntimeTensor) -> Option<RuntimeValue> {
         return None;
     }
     match tensor.kind {
-        faber::llvm_abi::VALUE_KIND_F32 => {
+        faber::host_abi::VALUE_KIND_F32 => {
             let sum = to_tensor_f32(tensor)?.summa();
             Some(RuntimeValue::F32((sum as f64 / n) as f32))
         }
-        faber::llvm_abi::VALUE_KIND_F64 => {
+        faber::host_abi::VALUE_KIND_F64 => {
             let sum = to_tensor_f64(tensor)?.summa();
             Some(RuntimeValue::F64(sum / n))
         }
@@ -797,65 +797,65 @@ fn cast_runtime_value(
     // Mirror Rust `as` for numeric lattice cells used by tensor conversio.
     if matches!(
         to_kind,
-        faber::llvm_abi::VALUE_KIND_F32
-            | faber::llvm_abi::VALUE_KIND_F64
-            | faber::llvm_abi::VALUE_KIND_F16
+        faber::host_abi::VALUE_KIND_F32
+            | faber::host_abi::VALUE_KIND_F64
+            | faber::host_abi::VALUE_KIND_F16
     ) {
         let float = value_as_f64(value, from_kind)?;
         return match to_kind {
-            faber::llvm_abi::VALUE_KIND_F32 => Some(RuntimeValue::F32(float as f32)),
-            faber::llvm_abi::VALUE_KIND_F64 => Some(RuntimeValue::F64(float)),
-            faber::llvm_abi::VALUE_KIND_F16 => Some(RuntimeValue::F16(float as u16)),
+            faber::host_abi::VALUE_KIND_F32 => Some(RuntimeValue::F32(float as f32)),
+            faber::host_abi::VALUE_KIND_F64 => Some(RuntimeValue::F64(float)),
+            faber::host_abi::VALUE_KIND_F16 => Some(RuntimeValue::F16(float as u16)),
             _ => None,
         };
     }
     let integer = value_as_i128(value, from_kind)?;
     match to_kind {
-        faber::llvm_abi::VALUE_KIND_I1 => Some(RuntimeValue::I1(u8::from(integer != 0))),
-        faber::llvm_abi::VALUE_KIND_I8 => Some(RuntimeValue::I8(integer as i8)),
-        faber::llvm_abi::VALUE_KIND_I16 => Some(RuntimeValue::I16(integer as i16)),
-        faber::llvm_abi::VALUE_KIND_I32 => Some(RuntimeValue::I32(integer as i32)),
-        faber::llvm_abi::VALUE_KIND_I64 => Some(RuntimeValue::I64(integer as i64)),
-        faber::llvm_abi::VALUE_KIND_U8 => Some(RuntimeValue::U8(integer as u8)),
-        faber::llvm_abi::VALUE_KIND_U16 => Some(RuntimeValue::U16(integer as u16)),
-        faber::llvm_abi::VALUE_KIND_U32 => Some(RuntimeValue::U32(integer as u32)),
-        faber::llvm_abi::VALUE_KIND_U64 => Some(RuntimeValue::U64(integer as u64)),
+        faber::host_abi::VALUE_KIND_I1 => Some(RuntimeValue::I1(u8::from(integer != 0))),
+        faber::host_abi::VALUE_KIND_I8 => Some(RuntimeValue::I8(integer as i8)),
+        faber::host_abi::VALUE_KIND_I16 => Some(RuntimeValue::I16(integer as i16)),
+        faber::host_abi::VALUE_KIND_I32 => Some(RuntimeValue::I32(integer as i32)),
+        faber::host_abi::VALUE_KIND_I64 => Some(RuntimeValue::I64(integer as i64)),
+        faber::host_abi::VALUE_KIND_U8 => Some(RuntimeValue::U8(integer as u8)),
+        faber::host_abi::VALUE_KIND_U16 => Some(RuntimeValue::U16(integer as u16)),
+        faber::host_abi::VALUE_KIND_U32 => Some(RuntimeValue::U32(integer as u32)),
+        faber::host_abi::VALUE_KIND_U64 => Some(RuntimeValue::U64(integer as u64)),
         _ => None,
     }
 }
 
 fn value_as_f64(value: RuntimeValue, kind: FaberRtValueKindV1) -> Option<f64> {
     Some(match (kind, value) {
-        (faber::llvm_abi::VALUE_KIND_I1, RuntimeValue::I1(v)) => f64::from(v),
-        (faber::llvm_abi::VALUE_KIND_I8, RuntimeValue::I8(v)) => f64::from(v),
-        (faber::llvm_abi::VALUE_KIND_I16, RuntimeValue::I16(v)) => f64::from(v),
-        (faber::llvm_abi::VALUE_KIND_I32, RuntimeValue::I32(v)) => f64::from(v),
-        (faber::llvm_abi::VALUE_KIND_I64, RuntimeValue::I64(v)) => v as f64,
-        (faber::llvm_abi::VALUE_KIND_U8, RuntimeValue::U8(v)) => f64::from(v),
-        (faber::llvm_abi::VALUE_KIND_U16, RuntimeValue::U16(v)) => f64::from(v),
-        (faber::llvm_abi::VALUE_KIND_U32, RuntimeValue::U32(v)) => f64::from(v),
-        (faber::llvm_abi::VALUE_KIND_U64, RuntimeValue::U64(v)) => v as f64,
-        (faber::llvm_abi::VALUE_KIND_F16, RuntimeValue::F16(v)) => f64::from(v),
-        (faber::llvm_abi::VALUE_KIND_F32, RuntimeValue::F32(v)) => f64::from(v),
-        (faber::llvm_abi::VALUE_KIND_F64, RuntimeValue::F64(v)) => v,
+        (faber::host_abi::VALUE_KIND_I1, RuntimeValue::I1(v)) => f64::from(v),
+        (faber::host_abi::VALUE_KIND_I8, RuntimeValue::I8(v)) => f64::from(v),
+        (faber::host_abi::VALUE_KIND_I16, RuntimeValue::I16(v)) => f64::from(v),
+        (faber::host_abi::VALUE_KIND_I32, RuntimeValue::I32(v)) => f64::from(v),
+        (faber::host_abi::VALUE_KIND_I64, RuntimeValue::I64(v)) => v as f64,
+        (faber::host_abi::VALUE_KIND_U8, RuntimeValue::U8(v)) => f64::from(v),
+        (faber::host_abi::VALUE_KIND_U16, RuntimeValue::U16(v)) => f64::from(v),
+        (faber::host_abi::VALUE_KIND_U32, RuntimeValue::U32(v)) => f64::from(v),
+        (faber::host_abi::VALUE_KIND_U64, RuntimeValue::U64(v)) => v as f64,
+        (faber::host_abi::VALUE_KIND_F16, RuntimeValue::F16(v)) => f64::from(v),
+        (faber::host_abi::VALUE_KIND_F32, RuntimeValue::F32(v)) => f64::from(v),
+        (faber::host_abi::VALUE_KIND_F64, RuntimeValue::F64(v)) => v,
         _ => return None,
     })
 }
 
 fn value_as_i128(value: RuntimeValue, kind: FaberRtValueKindV1) -> Option<i128> {
     Some(match (kind, value) {
-        (faber::llvm_abi::VALUE_KIND_I1, RuntimeValue::I1(v)) => i128::from(v),
-        (faber::llvm_abi::VALUE_KIND_I8, RuntimeValue::I8(v)) => i128::from(v),
-        (faber::llvm_abi::VALUE_KIND_I16, RuntimeValue::I16(v)) => i128::from(v),
-        (faber::llvm_abi::VALUE_KIND_I32, RuntimeValue::I32(v)) => i128::from(v),
-        (faber::llvm_abi::VALUE_KIND_I64, RuntimeValue::I64(v)) => i128::from(v),
-        (faber::llvm_abi::VALUE_KIND_U8, RuntimeValue::U8(v)) => i128::from(v),
-        (faber::llvm_abi::VALUE_KIND_U16, RuntimeValue::U16(v)) => i128::from(v),
-        (faber::llvm_abi::VALUE_KIND_U32, RuntimeValue::U32(v)) => i128::from(v),
-        (faber::llvm_abi::VALUE_KIND_U64, RuntimeValue::U64(v)) => i128::from(v),
-        (faber::llvm_abi::VALUE_KIND_F16, RuntimeValue::F16(v)) => i128::from(v),
-        (faber::llvm_abi::VALUE_KIND_F32, RuntimeValue::F32(v)) => v as i128,
-        (faber::llvm_abi::VALUE_KIND_F64, RuntimeValue::F64(v)) => v as i128,
+        (faber::host_abi::VALUE_KIND_I1, RuntimeValue::I1(v)) => i128::from(v),
+        (faber::host_abi::VALUE_KIND_I8, RuntimeValue::I8(v)) => i128::from(v),
+        (faber::host_abi::VALUE_KIND_I16, RuntimeValue::I16(v)) => i128::from(v),
+        (faber::host_abi::VALUE_KIND_I32, RuntimeValue::I32(v)) => i128::from(v),
+        (faber::host_abi::VALUE_KIND_I64, RuntimeValue::I64(v)) => i128::from(v),
+        (faber::host_abi::VALUE_KIND_U8, RuntimeValue::U8(v)) => i128::from(v),
+        (faber::host_abi::VALUE_KIND_U16, RuntimeValue::U16(v)) => i128::from(v),
+        (faber::host_abi::VALUE_KIND_U32, RuntimeValue::U32(v)) => i128::from(v),
+        (faber::host_abi::VALUE_KIND_U64, RuntimeValue::U64(v)) => i128::from(v),
+        (faber::host_abi::VALUE_KIND_F16, RuntimeValue::F16(v)) => i128::from(v),
+        (faber::host_abi::VALUE_KIND_F32, RuntimeValue::F32(v)) => v as i128,
+        (faber::host_abi::VALUE_KIND_F64, RuntimeValue::F64(v)) => v as i128,
         _ => return None,
     })
 }

@@ -7,10 +7,10 @@ pub mod arena;
 pub mod ascii;
 pub mod display;
 pub mod frame;
+pub mod host_abi;
 pub mod instans;
 pub mod intervallum;
 pub mod json;
-pub mod llvm_abi;
 pub mod packed_numeric;
 pub mod regex;
 pub mod sparsa;
@@ -30,10 +30,10 @@ pub use frame::{
     Cancellation, DispatchError, FrameStatus, HostDispatch, IntoFrameStatus, IntoScrinium, Meus,
     ResponseSender, Scrinium, Sermo, SermoRequest, Tuus,
 };
+pub use host_abi::{FaberRtContextV1, FaberRtExitV1, FaberRtSliceV1, FaberRtStatusV1};
 pub use instans::{Instans, InstansPraecisio};
 pub use intervallum::{Intervallum, IntervallumKind};
 pub use json::{Json, JsonError, JsonErrorKind};
-pub use llvm_abi::{FaberRtContextV1, FaberRtExitV1, FaberRtSliceV1, FaberRtStatusV1};
 pub use packed_numeric::{
     packed_u4_tensor_integration_rows, PackedBitOrder, PackedTensorIntegrationOperation,
     PackedTensorIntegrationRow, PackedTensorIntegrationStatus, PackedU4Block, PackedU4Layout,

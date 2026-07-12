@@ -6,7 +6,7 @@ use super::convert::{store_valor, with_valor};
 use super::format::{store_text, text_value};
 use super::tensor::find_tensor;
 use super::RuntimeContext;
-use faber::llvm_abi::*;
+use faber::host_abi::*;
 use faber::{FromValor, Valor};
 use std::collections::BTreeMap;
 use std::ffi::c_void;

@@ -5,7 +5,7 @@ use super::format::{store_text, text_value};
 use super::option::store_option;
 use super::valor_aggregate::{find_octeti, store_octeti};
 use super::RuntimeContext;
-use faber::llvm_abi::*;
+use faber::host_abi::*;
 use std::ffi::{c_char, c_void, CStr};
 use std::panic::{self, AssertUnwindSafe};
 

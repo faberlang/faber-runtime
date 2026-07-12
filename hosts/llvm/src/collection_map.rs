@@ -3,7 +3,7 @@
 use super::array::{find_array, read_value, store_array, valid_kind, write_value, RuntimeValue};
 use super::option::store_option;
 use super::RuntimeContext;
-use faber::llvm_abi::{
+use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, FaberRtValueKindV1,
     STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_TEXT,
 };
