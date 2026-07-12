@@ -1100,8 +1100,21 @@ fn solum_temporarium_frames() -> Vec<(FrameStatus, Valor)> {
 
 /// User home directory as one textus item (`norma:solum.domus`).
 fn solum_domus_frames() -> Vec<(FrameStatus, Valor)> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_owned());
-    item_done_frames(Valor::Textus(home))
+    match solum_home_value(
+        std::env::var("HOME").ok(),
+        std::env::var("USERPROFILE").ok(),
+    ) {
+        Ok(home) => item_done_frames(Valor::Textus(home)),
+        Err(message) => error_frames(format!("solum:domus failed: {message}")),
+    }
+}
+
+fn solum_home_value(
+    home: Option<String>,
+    userprofile: Option<String>,
+) -> Result<String, &'static str> {
+    home.or(userprofile)
+        .ok_or("no home directory environment variable")
 }
 
 fn solum_delete_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
@@ -1208,25 +1221,26 @@ fn solum_touch_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
         return error_frames("solum:tange opener must be textus");
     };
-    let path_ref = std::path::Path::new(&path);
-    if !path_ref.exists() {
-        if let Err(err) = std::fs::OpenOptions::new()
+    match solum_touch_path(std::path::Path::new(&path)) {
+        Ok(()) => done_frames(),
+        Err(err) => error_frames(format!("solum:tange failed for {path}: {err}")),
+    }
+}
+
+fn solum_touch_path(path: &std::path::Path) -> std::io::Result<()> {
+    if !path.exists() {
+        std::fs::OpenOptions::new()
             .create(true)
             .truncate(true)
             .write(true)
-            .open(path_ref)
-        {
-            return error_frames(format!("solum:tange create failed for {path}: {err}"));
-        }
+            .open(path)?;
     }
+    let handle = std::fs::File::open(path)?;
     let now = std::time::SystemTime::now();
-    if let Ok(handle) = std::fs::File::open(path_ref) {
-        let times = std::fs::FileTimes::new()
-            .set_modified(now)
-            .set_accessed(now);
-        let _ = handle.set_times(times);
-    }
-    done_frames()
+    let times = std::fs::FileTimes::new()
+        .set_modified(now)
+        .set_accessed(now);
+    handle.set_times(times)
 }
 
 fn solum_follow_symlink_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
@@ -2547,4 +2561,33 @@ async fn drain_remaining_then_err_async<T>(
         record_incoming_terminal(&mut inner, FrameStatus::Done);
     }
     Err(error)
+}
+
+#[cfg(test)]
+mod frame_private_tests {
+    use super::solum_home_value;
+
+    #[test]
+    fn solum_home_value_prefers_home() {
+        assert_eq!(
+            solum_home_value(Some("/home/faber".into()), Some("C:\\Users\\faber".into())),
+            Ok("/home/faber".into())
+        );
+    }
+
+    #[test]
+    fn solum_home_value_falls_back_to_userprofile() {
+        assert_eq!(
+            solum_home_value(None, Some("C:\\Users\\faber".into())),
+            Ok("C:\\Users\\faber".into())
+        );
+    }
+
+    #[test]
+    fn solum_home_value_errors_without_either_environment_variable() {
+        assert_eq!(
+            solum_home_value(None, None),
+            Err("no home directory environment variable")
+        );
+    }
 }

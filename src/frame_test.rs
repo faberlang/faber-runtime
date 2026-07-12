@@ -575,6 +575,25 @@ fn solum_temporarium_route_materializes_temp_dir_textus() {
 }
 
 #[test]
+fn solum_tange_existing_socket_returns_error_instead_of_done() {
+    use std::os::unix::net::UnixListener;
+
+    let path = std::env::temp_dir().join(format!("{}.socket", frame::next_frame_id()));
+    let listener = UnixListener::bind(&path).expect("bind socket fixture");
+    let path_s = path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:tange");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus(path_s.clone()));
+    let error = frame::try_sermo_materialize_vacuum(&mut sermo)
+        .expect_err("touching an unopenable existing path must fail");
+    assert!(error.to_string().contains("solum:tange"));
+    assert!(error.to_string().contains(&path_s));
+
+    drop(listener);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn solum_carpe_route_materializes_line_lista() {
     let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
     std::fs::write(&path, "alpha\nbeta\ngamma\n").expect("write carpe fixture");
