@@ -61,15 +61,16 @@ use faber::llvm_abi::{
     VALUE_KIND_I1, VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR,
     VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,
 };
-use faber::Valor;
-use format::RuntimeText;
+use faber::{display_bivalens, display_fractus, Valor};
 #[cfg(test)]
 use format::{
-    __faber_rt_v1_format_f64, __faber_rt_v1_format_i64, __faber_rt_v1_format_i64_i64,
-    __faber_rt_v1_format_i64_i64_i64, __faber_rt_v1_format_text, __faber_rt_v1_format_text_i64,
+    __faber_rt_v1_format_f64, __faber_rt_v1_format_i1, __faber_rt_v1_format_i64,
+    __faber_rt_v1_format_i64_i64, __faber_rt_v1_format_i64_i64_i64, __faber_rt_v1_format_text,
+    __faber_rt_v1_format_text_i64, __faber_rt_v1_format_text_i64_i1,
     __faber_rt_v1_format_text_text, __faber_rt_v1_text_f64, __faber_rt_v1_text_i1,
     __faber_rt_v1_text_i64, __faber_rt_v1_text_length,
 };
+use format::{text_value, RuntimeText};
 #[cfg(test)]
 use instans::{
     __faber_rt_v1_instans_from_text, __faber_rt_v1_instans_from_valor,
@@ -122,11 +123,11 @@ use tensor::{
 };
 #[cfg(test)]
 use text::{
-    __faber_rt_v1_text_concat, __faber_rt_v1_text_contains, __faber_rt_v1_text_ends_with,
-    __faber_rt_v1_text_is_empty, __faber_rt_v1_text_lowercase, __faber_rt_v1_text_parse_float,
-    __faber_rt_v1_text_parse_integer, __faber_rt_v1_text_replace, __faber_rt_v1_text_slice,
-    __faber_rt_v1_text_split, __faber_rt_v1_text_starts_with, __faber_rt_v1_text_trim,
-    __faber_rt_v1_text_truthy, __faber_rt_v1_text_uppercase,
+    __faber_rt_v1_ascii_truthy, __faber_rt_v1_text_concat, __faber_rt_v1_text_contains,
+    __faber_rt_v1_text_ends_with, __faber_rt_v1_text_is_empty, __faber_rt_v1_text_lowercase,
+    __faber_rt_v1_text_parse_float, __faber_rt_v1_text_parse_integer, __faber_rt_v1_text_replace,
+    __faber_rt_v1_text_slice, __faber_rt_v1_text_split, __faber_rt_v1_text_starts_with,
+    __faber_rt_v1_text_trim, __faber_rt_v1_text_truthy, __faber_rt_v1_text_uppercase,
 };
 #[cfg(test)]
 use valor_aggregate::{
@@ -338,6 +339,34 @@ fn write_diagnostic(
     })
 }
 
+fn write_text_diagnostic(
+    context: *mut FaberRtContextV1,
+    stderr: bool,
+    value: *const FaberRtSliceV1,
+) -> FaberRtStatusV1 {
+    if value.is_null() {
+        return STATUS_INVALID_ARGUMENT;
+    }
+    let Some(value) = text_value(value) else {
+        return STATUS_INVALID_ARGUMENT;
+    };
+    write_diagnostic(context, stderr, value)
+}
+
+fn write_ascii_diagnostic(
+    context: *mut FaberRtContextV1,
+    stderr: bool,
+    value: *const u8,
+) -> FaberRtStatusV1 {
+    if value.is_null() {
+        return STATUS_INVALID_ARGUMENT;
+    }
+    let Ok(value) = unsafe { std::ffi::CStr::from_ptr(value.cast()) }.to_str() else {
+        return STATUS_INVALID_ARGUMENT;
+    };
+    write_diagnostic(context, stderr, value)
+}
+
 fn unsupported_opaque_diagnostic(context: *mut FaberRtContextV1) -> FaberRtStatusV1 {
     if context.is_null() {
         STATUS_INVALID_ARGUMENT
@@ -355,6 +384,22 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_ptr(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_text(
+    context: *mut FaberRtContextV1,
+    value: *const FaberRtSliceV1,
+) -> FaberRtStatusV1 {
+    write_text_diagnostic(context, false, value)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_ascii(
+    context: *mut FaberRtContextV1,
+    value: *const u8,
+) -> FaberRtStatusV1 {
+    write_ascii_diagnostic(context, false, value)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i64(
     context: *mut FaberRtContextV1,
     value: i64,
@@ -367,7 +412,7 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i1(
     context: *mut FaberRtContextV1,
     value: u8,
 ) -> FaberRtStatusV1 {
-    write_diagnostic(context, false, value != 0)
+    write_diagnostic(context, false, display_bivalens(value != 0))
 }
 
 #[no_mangle]
@@ -375,7 +420,7 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_f32(
     context: *mut FaberRtContextV1,
     value: f32,
 ) -> FaberRtStatusV1 {
-    write_diagnostic(context, false, value)
+    write_diagnostic(context, false, display_fractus(value))
 }
 
 #[no_mangle]
@@ -383,7 +428,7 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_f64(
     context: *mut FaberRtContextV1,
     value: f64,
 ) -> FaberRtStatusV1 {
-    write_diagnostic(context, false, value)
+    write_diagnostic(context, false, display_fractus(value))
 }
 
 #[no_mangle]
@@ -411,6 +456,22 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_ptr(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_text(
+    context: *mut FaberRtContextV1,
+    value: *const FaberRtSliceV1,
+) -> FaberRtStatusV1 {
+    write_text_diagnostic(context, true, value)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_ascii(
+    context: *mut FaberRtContextV1,
+    value: *const u8,
+) -> FaberRtStatusV1 {
+    write_ascii_diagnostic(context, true, value)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_i64(
     context: *mut FaberRtContextV1,
     value: i64,
@@ -424,6 +485,22 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_ptr(
     _value: *const u8,
 ) -> FaberRtStatusV1 {
     unsupported_opaque_diagnostic(context)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_text(
+    context: *mut FaberRtContextV1,
+    value: *const FaberRtSliceV1,
+) -> FaberRtStatusV1 {
+    write_text_diagnostic(context, false, value)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_ascii(
+    context: *mut FaberRtContextV1,
+    value: *const u8,
+) -> FaberRtStatusV1 {
+    write_ascii_diagnostic(context, false, value)
 }
 
 #[no_mangle]

@@ -12,6 +12,7 @@ pub const SYMBOL_ASSERT_MESSAGE: &str = "__faber_rt_v1_assert_message";
 pub const SYMBOL_FATAL: &str = "__faber_rt_v1_fatal";
 pub const SYMBOL_FATAL_OPAQUE: &str = "__faber_rt_v1_fatal_opaque";
 pub const SYMBOL_FORMAT_I64: &str = "__faber_rt_v1_format_i64";
+pub const SYMBOL_FORMAT_I1: &str = "__faber_rt_v1_format_i1";
 pub const SYMBOL_FORMAT_I64_I64: &str = "__faber_rt_v1_format_i64_i64";
 pub const SYMBOL_FORMAT_I64_I64_I64: &str = "__faber_rt_v1_format_i64_i64_i64";
 pub const SYMBOL_FORMAT_F64: &str = "__faber_rt_v1_format_f64";
@@ -39,6 +40,7 @@ pub const SYMBOL_TEXT_TRUTHY: &str = "__faber_rt_v1_text_truthy";
 pub const SYMBOL_TEXT_I64: &str = "__faber_rt_v1_text_i64";
 pub const SYMBOL_TEXT_F64: &str = "__faber_rt_v1_text_f64";
 pub const SYMBOL_TEXT_I1: &str = "__faber_rt_v1_text_i1";
+pub const SYMBOL_ASCII_TRUTHY: &str = "__faber_rt_v1_ascii_truthy";
 pub const SYMBOL_SOLUM_READ_TEXT: &str = "__faber_rt_v1_solum_read_text";
 pub const SYMBOL_SOLUM_WRITE_TEXT: &str = "__faber_rt_v1_solum_write_text";
 pub const SYMBOL_VALOR_I64: &str = "__faber_rt_v1_valor_i64";
@@ -211,6 +213,8 @@ pub const STATUS_UNSUPPORTED: FaberRtStatusV1 = FaberRtStatusV1 { code: 4 };
 
 pub const DIAGNOSTIC_SYMBOLS_V1: &[(&str, &str, &str)] = &[
     ("nota", "ptr", "__faber_rt_v1_diagnostic_nota_ptr"),
+    ("nota", "text", "__faber_rt_v1_diagnostic_nota_text"),
+    ("nota", "ascii", "__faber_rt_v1_diagnostic_nota_ascii"),
     ("nota", "i64", "__faber_rt_v1_diagnostic_nota_i64"),
     ("nota", "i1", "__faber_rt_v1_diagnostic_nota_i1"),
     ("nota", "float", "__faber_rt_v1_diagnostic_nota_f32"),
@@ -218,8 +222,12 @@ pub const DIAGNOSTIC_SYMBOLS_V1: &[(&str, &str, &str)] = &[
     ("nota", "i8", "__faber_rt_v1_diagnostic_nota_i8"),
     ("nota", "i32", "__faber_rt_v1_diagnostic_nota_i32"),
     ("mone", "ptr", "__faber_rt_v1_diagnostic_mone_ptr"),
+    ("mone", "text", "__faber_rt_v1_diagnostic_mone_text"),
+    ("mone", "ascii", "__faber_rt_v1_diagnostic_mone_ascii"),
     ("mone", "i64", "__faber_rt_v1_diagnostic_mone_i64"),
     ("vide", "ptr", "__faber_rt_v1_diagnostic_vide_ptr"),
+    ("vide", "text", "__faber_rt_v1_diagnostic_vide_text"),
+    ("vide", "ascii", "__faber_rt_v1_diagnostic_vide_ascii"),
     ("vide", "i64", "__faber_rt_v1_diagnostic_vide_i64"),
 ];
 

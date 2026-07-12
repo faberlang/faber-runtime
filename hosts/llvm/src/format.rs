@@ -5,6 +5,7 @@ use faber::llvm_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT,
     STATUS_OK, STATUS_PANIC,
 };
+use faber::{display_bivalens, display_fractus};
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 
@@ -12,6 +13,20 @@ fn ffi_ptr_result(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrR
     panic::catch_unwind(AssertUnwindSafe(operation))
         .unwrap_or(FaberRtPtrResultV1::failure(STATUS_PANIC))
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_format_i1(
+    context: *mut FaberRtContextV1,
+    template: FaberRtSliceV1,
+    value: u8,
+) -> FaberRtPtrResultV1 {
+    format_scalar_values(
+        context,
+        template,
+        &[display_bivalens(value != 0).to_owned()],
+    )
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_format_i64(
     context: *mut FaberRtContextV1,
@@ -125,7 +140,11 @@ pub unsafe extern "C" fn __faber_rt_v1_format_text_i64_i1(
     format_scalar_values(
         context,
         template,
-        &[text, integer.to_string(), (boolean != 0).to_string()],
+        &[
+            text,
+            integer.to_string(),
+            display_bivalens(boolean != 0).to_owned(),
+        ],
     )
 }
 
@@ -161,7 +180,7 @@ pub unsafe extern "C" fn __faber_rt_v1_text_f64(
     context: *mut FaberRtContextV1,
     value: f64,
 ) -> FaberRtPtrResultV1 {
-    ffi_ptr_result(|| store_text(context, value.to_string()))
+    ffi_ptr_result(|| store_text(context, display_fractus(value)))
 }
 
 #[no_mangle]
@@ -169,7 +188,12 @@ pub unsafe extern "C" fn __faber_rt_v1_text_i1(
     context: *mut FaberRtContextV1,
     value: u8,
 ) -> FaberRtPtrResultV1 {
-    ffi_ptr_result(|| store_text(context, (value != 0).to_string()))
+    ffi_ptr_result(|| {
+        store_text(
+            context,
+            if value != 0 { "true" } else { "false" }.to_owned(),
+        )
+    })
 }
 
 fn format_scalar_values(

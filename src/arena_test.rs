@@ -34,7 +34,7 @@ fn reorder_of_handle_lists_does_not_retarget_identity() {
     let n0 = arena.insert("root".to_owned());
     let n1 = arena.insert("child-a".to_owned());
     let n2 = arena.insert("child-b".to_owned());
-    let mut children = vec![n1, n2];
+    let mut children = [n1, n2];
     children.swap(0, 1);
     assert_eq!(arena.get(children[0]).map(String::as_str), Some("child-b"));
     assert_eq!(arena.get(children[1]).map(String::as_str), Some("child-a"));

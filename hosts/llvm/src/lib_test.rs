@@ -61,9 +61,34 @@ fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
         unsafe { __faber_rt_v1_diagnostic_nota_ptr(context, ptr::null()) },
         STATUS_UNSUPPORTED
     );
+    let text = FaberRtSliceV1::from_static(b"nota text");
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_text(context, &text) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_text(context, ptr::null()) },
+        STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_ascii(context, c"nota ascii".as_ptr().cast()) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_ascii(context, ptr::null()) },
+        STATUS_INVALID_ARGUMENT
+    );
     assert_eq!(
         unsafe { __faber_rt_v1_diagnostic_mone_ptr(context, ptr::null()) },
         STATUS_UNSUPPORTED
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_mone_text(context, &text) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_mone_ascii(context, c"mone ascii".as_ptr().cast()) },
+        STATUS_OK
     );
     assert_eq!(
         unsafe { __faber_rt_v1_diagnostic_mone_i64(context, -64) },
@@ -72,6 +97,14 @@ fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
     assert_eq!(
         unsafe { __faber_rt_v1_diagnostic_vide_ptr(context, ptr::null()) },
         STATUS_UNSUPPORTED
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_vide_text(context, &text) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_vide_ascii(context, c"vide ascii".as_ptr().cast()) },
+        STATUS_OK
     );
     assert_eq!(
         unsafe { __faber_rt_v1_diagnostic_vide_i64(context, 64) },
@@ -126,6 +159,18 @@ fn scalar_format_family_renders_and_owns_text() {
     let float = unsafe {
         __faber_rt_v1_format_f64(context, FaberRtSliceV1::from_static("x=§".as_bytes()), 1.5)
     };
+    let boolean = unsafe {
+        __faber_rt_v1_format_i1(context, FaberRtSliceV1::from_static("b=§".as_bytes()), 1)
+    };
+    let mixed_bool = unsafe {
+        __faber_rt_v1_format_text_i64_i1(
+            context,
+            FaberRtSliceV1::from_static("§:§:§".as_bytes()),
+            one.value.cast(),
+            9,
+            1,
+        )
+    };
     let three = unsafe {
         __faber_rt_v1_format_i64_i64_i64(
             context,
@@ -167,10 +212,12 @@ fn scalar_format_family_renders_and_owns_text() {
     assert_eq!(one.status, STATUS_OK);
     assert_eq!(reordered.status, STATUS_OK);
     assert_eq!(float.status, STATUS_OK);
+    assert_eq!(boolean.status, STATUS_OK);
     assert_eq!(three.status, STATUS_OK);
     assert_eq!(paired.status, STATUS_OK);
     assert_eq!(single.status, STATUS_OK);
     assert_eq!(mixed.status, STATUS_OK);
+    assert_eq!(mixed_bool.status, STATUS_OK);
     assert_eq!(length_status, STATUS_OK);
     assert_eq!(length, 12);
     assert_eq!(
@@ -178,6 +225,10 @@ fn scalar_format_family_renders_and_owns_text() {
         FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT)
     );
     assert_eq!(unsafe { &*one.value.cast::<RuntimeText>() }._value, "n=42");
+    assert_eq!(
+        unsafe { &*boolean.value.cast::<RuntimeText>() }._value,
+        "b=verum"
+    );
     assert_eq!(
         unsafe { &*reordered.value.cast::<RuntimeText>() }._value,
         "7/3/§9"
@@ -197,6 +248,10 @@ fn scalar_format_family_renders_and_owns_text() {
     assert_eq!(
         unsafe { &*mixed.value.cast::<RuntimeText>() }._value,
         "n=42:9"
+    );
+    assert_eq!(
+        unsafe { &*mixed_bool.value.cast::<RuntimeText>() }._value,
+        "n=42:9:verum"
     );
     assert_eq!(
         unsafe { &*three.value.cast::<RuntimeText>() }._value,
@@ -379,6 +434,52 @@ fn text_scalar_conversion_family_honors_width_radix_recovery_status() {
         STATUS_OK
     );
     assert_eq!(truthy, 0);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn scalar_text_conversion_family_preserves_rust_conversion_spellings() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        STATUS_OK
+    );
+
+    let zero = unsafe { __faber_rt_v1_text_f64(context, 0.0) };
+    let truth = unsafe { __faber_rt_v1_text_i1(context, 1) };
+    let falsehood = unsafe { __faber_rt_v1_text_i1(context, 0) };
+
+    assert_eq!(zero.status, STATUS_OK);
+    assert_eq!(truth.status, STATUS_OK);
+    assert_eq!(falsehood.status, STATUS_OK);
+    assert_eq!(unsafe { &*zero.value.cast::<RuntimeText>() }._value, "0.0");
+    assert_eq!(
+        unsafe { &*truth.value.cast::<RuntimeText>() }._value,
+        "true"
+    );
+    assert_eq!(
+        unsafe { &*falsehood.value.cast::<RuntimeText>() }._value,
+        "false"
+    );
+
+    let empty = CStr::from_bytes_with_nul(b"\0").expect("valid empty ASCII");
+    let nonempty = CStr::from_bytes_with_nul(b"yes\0").expect("valid ASCII");
+    let mut answer = 0;
+    assert_eq!(
+        unsafe { __faber_rt_v1_ascii_truthy(context, empty.as_ptr(), &mut answer) },
+        STATUS_OK
+    );
+    assert_eq!(answer, 0);
+    assert_eq!(
+        unsafe { __faber_rt_v1_ascii_truthy(context, nonempty.as_ptr(), &mut answer) },
+        STATUS_OK
+    );
+    assert_eq!(answer, 1);
+    assert_eq!(
+        unsafe { __faber_rt_v1_ascii_truthy(context, ptr::null(), &mut answer) },
+        STATUS_INVALID_ARGUMENT
+    );
+
     unsafe { __faber_rt_v1_shutdown(context) };
 }
 
@@ -606,10 +707,12 @@ fn scalar_text_conversion_family_owns_canonical_values() {
     let integer = unsafe { __faber_rt_v1_text_i64(context, -42) };
     let float = unsafe { __faber_rt_v1_text_f64(context, 3.25) };
     let boolean = unsafe { __faber_rt_v1_text_i1(context, 1) };
+    let false_boolean = unsafe { __faber_rt_v1_text_i1(context, 0) };
 
     assert_eq!(integer.status, STATUS_OK);
     assert_eq!(float.status, STATUS_OK);
     assert_eq!(boolean.status, STATUS_OK);
+    assert_eq!(false_boolean.status, STATUS_OK);
     assert_eq!(
         unsafe { &*integer.value.cast::<RuntimeText>() }._value,
         "-42"
@@ -621,6 +724,10 @@ fn scalar_text_conversion_family_owns_canonical_values() {
     assert_eq!(
         unsafe { &*boolean.value.cast::<RuntimeText>() }._value,
         "true"
+    );
+    assert_eq!(
+        unsafe { &*false_boolean.value.cast::<RuntimeText>() }._value,
+        "false"
     );
 
     unsafe { __faber_rt_v1_shutdown(context) };

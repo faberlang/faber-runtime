@@ -9,7 +9,7 @@ use faber::llvm_abi::{
     VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR, VALUE_KIND_U16, VALUE_KIND_U32,
     VALUE_KIND_U64, VALUE_KIND_U8,
 };
-use std::ffi::c_void;
+use std::ffi::{c_char, c_void, CStr};
 use std::panic::{self, AssertUnwindSafe};
 
 fn ffi_ptr_result(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrResultV1 {
@@ -279,4 +279,18 @@ pub unsafe extern "C" fn __faber_rt_v1_text_truthy(
     out: *mut u8,
 ) -> FaberRtStatusV1 {
     query(context, out, || Some(!text_value(text)?.is_empty()))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_ascii_truthy(
+    context: *mut FaberRtContextV1,
+    ascii: *const c_char,
+    out: *mut u8,
+) -> FaberRtStatusV1 {
+    query(context, out, || {
+        if ascii.is_null() {
+            return None;
+        }
+        Some(!unsafe { CStr::from_ptr(ascii) }.to_bytes().is_empty())
+    })
 }
