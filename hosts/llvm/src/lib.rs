@@ -62,7 +62,6 @@ use faber::llvm_abi::{
     VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,
 };
 use faber::{display_bivalens, Valor};
-use format::RuntimeText;
 #[cfg(test)]
 use format::{
     __faber_rt_v1_format_f64, __faber_rt_v1_format_i64, __faber_rt_v1_format_i64_i64,
@@ -70,6 +69,7 @@ use format::{
     __faber_rt_v1_format_text_i64_i1, __faber_rt_v1_format_text_text, __faber_rt_v1_text_f64,
     __faber_rt_v1_text_i1, __faber_rt_v1_text_i64, __faber_rt_v1_text_length,
 };
+use format::{text_value, RuntimeText};
 #[cfg(test)]
 use instans::{
     __faber_rt_v1_instans_from_text, __faber_rt_v1_instans_from_valor,
@@ -338,6 +338,20 @@ fn write_diagnostic(
     })
 }
 
+fn write_text_diagnostic(
+    context: *mut FaberRtContextV1,
+    stderr: bool,
+    value: *const FaberRtSliceV1,
+) -> FaberRtStatusV1 {
+    if value.is_null() {
+        return STATUS_INVALID_ARGUMENT;
+    }
+    let Some(value) = text_value(value) else {
+        return STATUS_INVALID_ARGUMENT;
+    };
+    write_diagnostic(context, stderr, value)
+}
+
 fn unsupported_opaque_diagnostic(context: *mut FaberRtContextV1) -> FaberRtStatusV1 {
     if context.is_null() {
         STATUS_INVALID_ARGUMENT
@@ -352,6 +366,14 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_ptr(
     _value: *const u8,
 ) -> FaberRtStatusV1 {
     unsupported_opaque_diagnostic(context)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_text(
+    context: *mut FaberRtContextV1,
+    value: *const FaberRtSliceV1,
+) -> FaberRtStatusV1 {
+    write_text_diagnostic(context, false, value)
 }
 
 #[no_mangle]
@@ -411,6 +433,14 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_ptr(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_text(
+    context: *mut FaberRtContextV1,
+    value: *const FaberRtSliceV1,
+) -> FaberRtStatusV1 {
+    write_text_diagnostic(context, true, value)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_i64(
     context: *mut FaberRtContextV1,
     value: i64,
@@ -424,6 +454,14 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_ptr(
     _value: *const u8,
 ) -> FaberRtStatusV1 {
     unsupported_opaque_diagnostic(context)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_text(
+    context: *mut FaberRtContextV1,
+    value: *const FaberRtSliceV1,
+) -> FaberRtStatusV1 {
+    write_text_diagnostic(context, false, value)
 }
 
 #[no_mangle]

@@ -211,6 +211,7 @@ pub const STATUS_UNSUPPORTED: FaberRtStatusV1 = FaberRtStatusV1 { code: 4 };
 
 pub const DIAGNOSTIC_SYMBOLS_V1: &[(&str, &str, &str)] = &[
     ("nota", "ptr", "__faber_rt_v1_diagnostic_nota_ptr"),
+    ("nota", "text", "__faber_rt_v1_diagnostic_nota_text"),
     ("nota", "i64", "__faber_rt_v1_diagnostic_nota_i64"),
     ("nota", "i1", "__faber_rt_v1_diagnostic_nota_i1"),
     ("nota", "float", "__faber_rt_v1_diagnostic_nota_f32"),
@@ -218,8 +219,10 @@ pub const DIAGNOSTIC_SYMBOLS_V1: &[(&str, &str, &str)] = &[
     ("nota", "i8", "__faber_rt_v1_diagnostic_nota_i8"),
     ("nota", "i32", "__faber_rt_v1_diagnostic_nota_i32"),
     ("mone", "ptr", "__faber_rt_v1_diagnostic_mone_ptr"),
+    ("mone", "text", "__faber_rt_v1_diagnostic_mone_text"),
     ("mone", "i64", "__faber_rt_v1_diagnostic_mone_i64"),
     ("vide", "ptr", "__faber_rt_v1_diagnostic_vide_ptr"),
+    ("vide", "text", "__faber_rt_v1_diagnostic_vide_text"),
     ("vide", "i64", "__faber_rt_v1_diagnostic_vide_i64"),
 ];
 

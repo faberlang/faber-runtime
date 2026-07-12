@@ -61,9 +61,22 @@ fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
         unsafe { __faber_rt_v1_diagnostic_nota_ptr(context, ptr::null()) },
         STATUS_UNSUPPORTED
     );
+    let text = FaberRtSliceV1::from_static(b"nota text");
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_text(context, &text) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_text(context, ptr::null()) },
+        STATUS_INVALID_ARGUMENT
+    );
     assert_eq!(
         unsafe { __faber_rt_v1_diagnostic_mone_ptr(context, ptr::null()) },
         STATUS_UNSUPPORTED
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_mone_text(context, &text) },
+        STATUS_OK
     );
     assert_eq!(
         unsafe { __faber_rt_v1_diagnostic_mone_i64(context, -64) },
@@ -72,6 +85,10 @@ fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
     assert_eq!(
         unsafe { __faber_rt_v1_diagnostic_vide_ptr(context, ptr::null()) },
         STATUS_UNSUPPORTED
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_vide_text(context, &text) },
+        STATUS_OK
     );
     assert_eq!(
         unsafe { __faber_rt_v1_diagnostic_vide_i64(context, 64) },
