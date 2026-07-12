@@ -2,7 +2,7 @@
 
 use super::array::{read_value, valid_kind, write_value, RuntimeValue};
 use super::RuntimeContext;
-use faber::llvm_abi::{
+use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtStatusV1, FaberRtValueKindV1,
     STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC,
 };

@@ -5,7 +5,7 @@ use super::convert::store_valor;
 use super::format::text_value;
 use super::valor_aggregate::{runtime_value_to_valor, valor_to_runtime_value};
 use super::RuntimeContext;
-use faber::llvm_abi::*;
+use faber::host_abi::*;
 use faber::{FromValor, Instans, Valor};
 use std::collections::BTreeMap;
 use std::ffi::{c_void, CStr};

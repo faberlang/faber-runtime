@@ -45,15 +45,15 @@ use convert::{
     __faber_rt_v1_valor_i64, __faber_rt_v1_valor_nihil, __faber_rt_v1_valor_text,
 };
 #[cfg(not(test))]
-use faber::llvm_abi::FaberRtExitV1;
+use faber::host_abi::FaberRtExitV1;
 #[cfg(test)]
-use faber::llvm_abi::FaberRtPtrResultV1;
-use faber::llvm_abi::{
+use faber::host_abi::FaberRtPtrResultV1;
+use faber::host_abi::{
     FaberRtContextV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT, STATUS_IO_ERROR,
     STATUS_OK, STATUS_PANIC, STATUS_UNSUPPORTED,
 };
 #[cfg(test)]
-use faber::llvm_abi::{
+use faber::host_abi::{
     ARRAY_OPTION_FIRST, ARRAY_OPTION_INDEX, ARRAY_OPTION_LAST, ARRAY_OPTION_REMOVE_FIRST,
     ARRAY_OPTION_REMOVE_LAST, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE, ARRAY_RANGE_TAKE,
     ARRAY_RANGE_TAKE_LAST, INSTANS_PRECISION_MICROS, INSTANS_PRECISION_MILLIS,

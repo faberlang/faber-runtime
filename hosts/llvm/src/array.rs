@@ -2,7 +2,7 @@
 
 use super::option::store_option;
 use super::RuntimeContext;
-use faber::llvm_abi::{
+use faber::host_abi::{
     FaberRtArrayOptionModeV1, FaberRtArrayRangeModeV1, FaberRtContextV1, FaberRtPtrResultV1,
     FaberRtStatusV1, FaberRtValueKindV1, ARRAY_OPTION_FIRST, ARRAY_OPTION_INDEX, ARRAY_OPTION_LAST,
     ARRAY_OPTION_REMOVE_FIRST, ARRAY_OPTION_REMOVE_LAST, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE,

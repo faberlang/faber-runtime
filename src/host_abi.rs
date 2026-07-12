@@ -313,5 +313,5 @@ pub struct FaberRtContextV1 {
 }
 
 #[cfg(test)]
-#[path = "llvm_abi_test.rs"]
+#[path = "host_abi_test.rs"]
 mod tests;

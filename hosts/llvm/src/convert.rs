@@ -2,7 +2,7 @@
 
 use super::format::{store_text, text_value};
 use super::RuntimeContext;
-use faber::llvm_abi::{
+use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT,
     STATUS_OK, STATUS_PANIC,
 };
