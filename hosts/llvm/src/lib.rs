@@ -64,10 +64,11 @@ use faber::llvm_abi::{
 use faber::{display_bivalens, Valor};
 #[cfg(test)]
 use format::{
-    __faber_rt_v1_format_f64, __faber_rt_v1_format_i64, __faber_rt_v1_format_i64_i64,
-    __faber_rt_v1_format_i64_i64_i64, __faber_rt_v1_format_text, __faber_rt_v1_format_text_i64,
-    __faber_rt_v1_format_text_i64_i1, __faber_rt_v1_format_text_text, __faber_rt_v1_text_f64,
-    __faber_rt_v1_text_i1, __faber_rt_v1_text_i64, __faber_rt_v1_text_length,
+    __faber_rt_v1_format_f64, __faber_rt_v1_format_i1, __faber_rt_v1_format_i64,
+    __faber_rt_v1_format_i64_i64, __faber_rt_v1_format_i64_i64_i64, __faber_rt_v1_format_text,
+    __faber_rt_v1_format_text_i64, __faber_rt_v1_format_text_i64_i1,
+    __faber_rt_v1_format_text_text, __faber_rt_v1_text_f64, __faber_rt_v1_text_i1,
+    __faber_rt_v1_text_i64, __faber_rt_v1_text_length,
 };
 use format::{text_value, RuntimeText};
 #[cfg(test)]
@@ -352,6 +353,20 @@ fn write_text_diagnostic(
     write_diagnostic(context, stderr, value)
 }
 
+fn write_ascii_diagnostic(
+    context: *mut FaberRtContextV1,
+    stderr: bool,
+    value: *const u8,
+) -> FaberRtStatusV1 {
+    if value.is_null() {
+        return STATUS_INVALID_ARGUMENT;
+    }
+    let Ok(value) = unsafe { std::ffi::CStr::from_ptr(value.cast()) }.to_str() else {
+        return STATUS_INVALID_ARGUMENT;
+    };
+    write_diagnostic(context, stderr, value)
+}
+
 fn unsupported_opaque_diagnostic(context: *mut FaberRtContextV1) -> FaberRtStatusV1 {
     if context.is_null() {
         STATUS_INVALID_ARGUMENT
@@ -374,6 +389,14 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_text(
     value: *const FaberRtSliceV1,
 ) -> FaberRtStatusV1 {
     write_text_diagnostic(context, false, value)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_ascii(
+    context: *mut FaberRtContextV1,
+    value: *const u8,
+) -> FaberRtStatusV1 {
+    write_ascii_diagnostic(context, false, value)
 }
 
 #[no_mangle]
@@ -441,6 +464,14 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_text(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_ascii(
+    context: *mut FaberRtContextV1,
+    value: *const u8,
+) -> FaberRtStatusV1 {
+    write_ascii_diagnostic(context, true, value)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_i64(
     context: *mut FaberRtContextV1,
     value: i64,
@@ -462,6 +493,14 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_text(
     value: *const FaberRtSliceV1,
 ) -> FaberRtStatusV1 {
     write_text_diagnostic(context, false, value)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_ascii(
+    context: *mut FaberRtContextV1,
+    value: *const u8,
+) -> FaberRtStatusV1 {
+    write_ascii_diagnostic(context, false, value)
 }
 
 #[no_mangle]

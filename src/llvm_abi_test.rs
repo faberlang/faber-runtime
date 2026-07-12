@@ -18,7 +18,7 @@ fn llvm_abi_v1_carriers_have_stable_host_layout() {
 
 #[test]
 fn llvm_abi_v1_diagnostic_family_is_complete_and_unique() {
-    assert_eq!(DIAGNOSTIC_SYMBOLS_V1.len(), 14);
+    assert_eq!(DIAGNOSTIC_SYMBOLS_V1.len(), 17);
     let symbols = DIAGNOSTIC_SYMBOLS_V1
         .iter()
         .map(|(_, _, symbol)| *symbol)
@@ -49,6 +49,7 @@ fn llvm_abi_v1_symbol_namespace_is_versioned() {
         SYMBOL_ASSERT_MESSAGE,
         SYMBOL_FATAL,
         SYMBOL_FATAL_OPAQUE,
+        SYMBOL_FORMAT_I1,
         SYMBOL_FORMAT_I64,
         SYMBOL_FORMAT_I64_I64,
         SYMBOL_FORMAT_I64_I64_I64,

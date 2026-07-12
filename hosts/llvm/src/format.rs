@@ -13,6 +13,20 @@ fn ffi_ptr_result(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrR
     panic::catch_unwind(AssertUnwindSafe(operation))
         .unwrap_or(FaberRtPtrResultV1::failure(STATUS_PANIC))
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_format_i1(
+    context: *mut FaberRtContextV1,
+    template: FaberRtSliceV1,
+    value: u8,
+) -> FaberRtPtrResultV1 {
+    format_scalar_values(
+        context,
+        template,
+        &[display_bivalens(value != 0).to_owned()],
+    )
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_format_i64(
     context: *mut FaberRtContextV1,

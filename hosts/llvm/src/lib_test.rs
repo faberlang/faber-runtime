@@ -71,11 +71,23 @@ fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
         STATUS_INVALID_ARGUMENT
     );
     assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_ascii(context, c"nota ascii".as_ptr().cast()) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_ascii(context, ptr::null()) },
+        STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
         unsafe { __faber_rt_v1_diagnostic_mone_ptr(context, ptr::null()) },
         STATUS_UNSUPPORTED
     );
     assert_eq!(
         unsafe { __faber_rt_v1_diagnostic_mone_text(context, &text) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_mone_ascii(context, c"mone ascii".as_ptr().cast()) },
         STATUS_OK
     );
     assert_eq!(
@@ -88,6 +100,10 @@ fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
     );
     assert_eq!(
         unsafe { __faber_rt_v1_diagnostic_vide_text(context, &text) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_vide_ascii(context, c"vide ascii".as_ptr().cast()) },
         STATUS_OK
     );
     assert_eq!(
@@ -143,6 +159,9 @@ fn scalar_format_family_renders_and_owns_text() {
     let float = unsafe {
         __faber_rt_v1_format_f64(context, FaberRtSliceV1::from_static("x=§".as_bytes()), 1.5)
     };
+    let boolean = unsafe {
+        __faber_rt_v1_format_i1(context, FaberRtSliceV1::from_static("b=§".as_bytes()), 1)
+    };
     let mixed_bool = unsafe {
         __faber_rt_v1_format_text_i64_i1(
             context,
@@ -193,6 +212,7 @@ fn scalar_format_family_renders_and_owns_text() {
     assert_eq!(one.status, STATUS_OK);
     assert_eq!(reordered.status, STATUS_OK);
     assert_eq!(float.status, STATUS_OK);
+    assert_eq!(boolean.status, STATUS_OK);
     assert_eq!(three.status, STATUS_OK);
     assert_eq!(paired.status, STATUS_OK);
     assert_eq!(single.status, STATUS_OK);
@@ -205,6 +225,10 @@ fn scalar_format_family_renders_and_owns_text() {
         FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT)
     );
     assert_eq!(unsafe { &*one.value.cast::<RuntimeText>() }._value, "n=42");
+    assert_eq!(
+        unsafe { &*boolean.value.cast::<RuntimeText>() }._value,
+        "b=verum"
+    );
     assert_eq!(
         unsafe { &*reordered.value.cast::<RuntimeText>() }._value,
         "7/3/§9"
