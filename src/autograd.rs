@@ -13,8 +13,14 @@
 
 use crate::tensor::{tensor_flat_offset, tensor_shape_element_count};
 use crate::Tensor;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 type BinaryForward = fn(&Tensor<f32>, &Tensor<f32>) -> Result<Tensor<f32>, &'static str>;
+
+static NEXT_AUTOGRAD_TAPE_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct AutogradTapeId(u64);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct AutogradNodeId(usize);
@@ -42,6 +48,7 @@ pub(crate) enum AutogradError {
     Tensor(&'static str),
     ShapeMismatch,
     MissingNode,
+    ForeignTapeValue,
     BackwardRequiresScalar,
     Unsupported(UnsupportedAutogradOp),
 }
@@ -49,12 +56,17 @@ pub(crate) enum AutogradError {
 #[derive(Clone, Debug)]
 pub(crate) struct AutogradValue {
     id: AutogradNodeId,
+    tape_id: AutogradTapeId,
     tensor: Tensor<f32>,
 }
 
 impl AutogradValue {
     pub(crate) fn id(&self) -> AutogradNodeId {
         self.id
+    }
+
+    pub(crate) fn tape_id(&self) -> AutogradTapeId {
+        self.tape_id
     }
 
     pub(crate) fn tensor(&self) -> &Tensor<f32> {
@@ -88,15 +100,23 @@ impl AutogradNode {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub(crate) struct AutogradTape {
+    id: AutogradTapeId,
     nodes: Vec<AutogradNode>,
     values: Vec<Tensor<f32>>,
+}
+
+impl Default for AutogradTape {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AutogradTape {
     pub(crate) fn new() -> Self {
         Self {
+            id: next_autograd_tape_id(),
             nodes: Vec::new(),
             values: Vec::new(),
         }
@@ -138,6 +158,8 @@ impl AutogradTape {
         lhs: &AutogradValue,
         rhs: &AutogradValue,
     ) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(lhs)?;
+        self.ensure_member(rhs)?;
         let tensor = lhs
             .tensor
             .matmul(&rhs.tensor)
@@ -146,6 +168,7 @@ impl AutogradTape {
     }
 
     pub(crate) fn summa(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(value)?;
         let tensor =
             Tensor::structa(vec![value.tensor.summa()], &[]).map_err(AutogradError::Tensor)?;
         Ok(self.record(AutogradOp::Summa, vec![value.id], tensor))
@@ -166,10 +189,15 @@ impl AutogradTape {
         self.nodes.get(id.0)
     }
 
+    pub(crate) fn id(&self) -> AutogradTapeId {
+        self.id
+    }
+
     pub(crate) fn backward(
         &self,
         loss: &AutogradValue,
     ) -> Result<AutogradGradients, AutogradError> {
+        self.ensure_member(loss)?;
         let loss_node = self.node(loss.id).ok_or(AutogradError::MissingNode)?;
         if !loss_node.shape.is_empty() {
             return Err(AutogradError::BackwardRequiresScalar);
@@ -274,6 +302,8 @@ impl AutogradTape {
         op: AutogradOp,
         forward: BinaryForward,
     ) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(lhs)?;
+        self.ensure_member(rhs)?;
         let tensor = forward(&lhs.tensor, &rhs.tensor).map_err(AutogradError::Tensor)?;
         Ok(self.record(op, vec![lhs.id, rhs.id], tensor))
     }
@@ -297,6 +327,7 @@ impl AutogradTape {
         });
         AutogradValue {
             id,
+            tape_id: self.id,
             tensor: value_tensor,
         }
     }
@@ -304,6 +335,18 @@ impl AutogradTape {
     fn value(&self, id: AutogradNodeId) -> Result<&Tensor<f32>, AutogradError> {
         self.values.get(id.0).ok_or(AutogradError::MissingNode)
     }
+
+    fn ensure_member(&self, value: &AutogradValue) -> Result<(), AutogradError> {
+        if value.tape_id == self.id {
+            Ok(())
+        } else {
+            Err(AutogradError::ForeignTapeValue)
+        }
+    }
+}
+
+fn next_autograd_tape_id() -> AutogradTapeId {
+    AutogradTapeId(NEXT_AUTOGRAD_TAPE_ID.fetch_add(1, Ordering::Relaxed))
 }
 
 #[derive(Clone, Debug)]
@@ -525,6 +568,86 @@ mod tests {
         assert_eq!(tape.node(x.id()).expect("x node").op(), AutogradOp::Leaf);
         assert_eq!(tape.node(w.id()).expect("w node").shape(), &[2]);
         assert!(tape.node(w.id()).expect("w node").parents().is_empty());
+    }
+
+    #[test]
+    fn autograd_values_are_stamped_with_their_tape_identity() {
+        let mut lhs_tape = AutogradTape::new();
+        let mut rhs_tape = AutogradTape::new();
+
+        let lhs = leaf(&mut lhs_tape, tensor(&[1.0], &[]));
+        let rhs = leaf(&mut rhs_tape, tensor(&[2.0], &[]));
+
+        assert_eq!(lhs.tape_id(), lhs_tape.id());
+        assert_eq!(rhs.tape_id(), rhs_tape.id());
+        assert_ne!(lhs.tape_id(), rhs.tape_id());
+    }
+
+    #[test]
+    fn autograd_rejects_cross_tape_binary_operands_without_recording_node() {
+        let mut lhs_tape = AutogradTape::new();
+        let mut rhs_tape = AutogradTape::new();
+        let lhs = leaf(&mut lhs_tape, tensor(&[1.0, 2.0], &[2]));
+        let rhs = leaf(&mut rhs_tape, tensor(&[3.0, 4.0], &[2]));
+
+        let before = lhs_tape.nodes().len();
+        assert_eq!(
+            lhs_tape.add(&lhs, &rhs).unwrap_err(),
+            AutogradError::ForeignTapeValue
+        );
+        assert_eq!(
+            lhs_tape.sub(&lhs, &rhs).unwrap_err(),
+            AutogradError::ForeignTapeValue
+        );
+        assert_eq!(
+            lhs_tape.mul(&lhs, &rhs).unwrap_err(),
+            AutogradError::ForeignTapeValue
+        );
+        assert_eq!(lhs_tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_rejects_cross_tape_matmul_operand_without_recording_node() {
+        let mut lhs_tape = AutogradTape::new();
+        let mut rhs_tape = AutogradTape::new();
+        let lhs = leaf(&mut lhs_tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+        let rhs = leaf(&mut rhs_tape, tensor(&[5.0, 6.0, 7.0, 8.0], &[2, 2]));
+
+        let before = lhs_tape.nodes().len();
+        assert_eq!(
+            lhs_tape.matmul(&lhs, &rhs).unwrap_err(),
+            AutogradError::ForeignTapeValue
+        );
+        assert_eq!(lhs_tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_rejects_cross_tape_summa_without_recording_node() {
+        let mut local_tape = AutogradTape::new();
+        let mut foreign_tape = AutogradTape::new();
+        let foreign = leaf(&mut foreign_tape, tensor(&[1.0, 2.0], &[2]));
+
+        let before = local_tape.nodes().len();
+        assert_eq!(
+            local_tape.summa(&foreign).unwrap_err(),
+            AutogradError::ForeignTapeValue
+        );
+        assert_eq!(local_tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn backward_rejects_cross_tape_loss_before_node_lookup() {
+        let mut local_tape = AutogradTape::new();
+        let mut foreign_tape = AutogradTape::new();
+        let local = leaf(&mut local_tape, tensor(&[10.0], &[]));
+        let _local_loss = local_tape.summa(&local).expect("local scalar loss");
+        let foreign = leaf(&mut foreign_tape, tensor(&[2.0], &[]));
+        let foreign_loss = foreign_tape.summa(&foreign).expect("foreign scalar loss");
+
+        assert_eq!(
+            local_tape.backward(&foreign_loss).unwrap_err(),
+            AutogradError::ForeignTapeValue
+        );
     }
 
     #[test]
