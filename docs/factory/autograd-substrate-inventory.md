@@ -89,10 +89,12 @@ mismatch behavior.
 
 `AutogradTape::divide(lhs, rhs)` is now the runtime-local quotient VJP proof.
 It records both parents only after the forward checked-finite division succeeds.
-Backward accumulates `upstream/rhs` into `lhs` and
-`-(upstream*lhs)/(rhs*rhs)` into `rhs`, then reduces both gradients through the
-existing broadcast-reduction path. Finite-difference tests cover a division
-square loss with finite non-zero denominators. The next acceptance gate is
+Backward accumulates `upstream/rhs` into `lhs` and computes the `rhs` gradient
+as `-(upstream*(lhs/rhs))/rhs`, avoiding an intermediate `rhs*rhs` overflow
+while preserving checked finite division policy, then reduces both gradients
+through the existing broadcast-reduction path. Finite-difference tests cover a
+division square loss with finite non-zero denominators, and a large finite
+denominator regression covers the overflow boundary. The next acceptance gate is
 compiler/AIR-owned generated-gradient evidence or host ABI design if division
 is ever promoted outside the Rust runtime-local tape.
 

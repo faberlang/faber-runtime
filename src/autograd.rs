@@ -358,17 +358,15 @@ impl AutogradTape {
                             &lhs_shape,
                         )?,
                     )?;
+                    let quotient = lhs_value.divide(rhs_value).map_err(AutogradError::Tensor)?;
                     let numerator = upstream
-                        .multiplica(lhs_value)
-                        .map_err(AutogradError::Tensor)?;
-                    let denominator = rhs_value
-                        .multiplica(rhs_value)
+                        .multiplica(&quotient)
                         .map_err(AutogradError::Tensor)?;
                     gradients.accumulate(
                         rhs,
                         reduce_broadcast_gradient(
                             &scale_tensor(&numerator, -1.0)?
-                                .divide(&denominator)
+                                .divide(rhs_value)
                                 .map_err(AutogradError::Tensor)?,
                             &rhs_shape,
                         )?,
@@ -1101,6 +1099,30 @@ mod tests {
             &[-6.5, -1.0],
             &[2, 1],
         );
+    }
+
+    #[test]
+    fn backward_divide_large_finite_denominator_avoids_rhs_square_overflow() {
+        let mut tape = AutogradTape::new();
+        let lhs = leaf(&mut tape, tensor(&[1.0], &[]));
+        let rhs = leaf(&mut tape, tensor(&[3.0e38], &[]));
+
+        let divided = tape.divide(&lhs, &rhs).expect("finite forward division");
+        assert!(divided.tensor().planata()[0].is_finite());
+        let loss = tape.summa(&divided).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        let lhs_gradient = gradients
+            .gradient(lhs.id())
+            .expect("lhs gradient")
+            .planata()[0];
+        let rhs_gradient = gradients
+            .gradient(rhs.id())
+            .expect("rhs gradient")
+            .planata()[0];
+        assert!(lhs_gradient.is_finite());
+        assert!(rhs_gradient.is_finite());
+        assert_eq!(rhs_gradient, -0.0);
     }
 
     #[test]
