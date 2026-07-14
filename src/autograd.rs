@@ -1,15 +1,19 @@
 //! Internal dense `Tensor<f32>` autograd graph boundary.
 //!
 //! This v0 is deliberately a tape/metadata scaffold, not a PyTorch-equivalent
-//! runtime. It records contiguous/materialized leaf tensors and same-shape
+//! runtime. It records contiguous/materialized leaf tensors and broadcast-aware
 //! `add`, `sub`, `mul`, and `summa` forward operations, then runs a scalar-loss
-//! backward pass for those same operations. It does not implement sessions,
-//! optimizers, host ABI gradient handles, broadcasting, matmul, mutation, or
-//! view semantics.
+//! backward pass for those same operations. Broadcasted binary operations reduce
+//! parent gradients back to each original parent shape. It does not implement
+//! sessions, optimizers, host ABI gradient handles, matmul, mutation, or view
+//! semantics.
 
 #![allow(dead_code)]
 
+use crate::tensor::{tensor_flat_offset, tensor_shape_element_count};
 use crate::Tensor;
+
+type BinaryForward = fn(&Tensor<f32>, &Tensor<f32>) -> Result<Tensor<f32>, &'static str>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct AutogradNodeId(usize);
@@ -25,7 +29,6 @@ pub(crate) enum AutogradOp {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum UnsupportedAutogradOp {
-    Broadcast,
     Matmul,
     Mutation,
     View,
@@ -107,7 +110,7 @@ impl AutogradTape {
         lhs: &AutogradValue,
         rhs: &AutogradValue,
     ) -> Result<AutogradValue, AutogradError> {
-        self.same_shape_binary(lhs, rhs, AutogradOp::Add, Tensor::addita)
+        self.binary(lhs, rhs, AutogradOp::Add, Tensor::addita)
     }
 
     pub(crate) fn sub(
@@ -115,7 +118,7 @@ impl AutogradTape {
         lhs: &AutogradValue,
         rhs: &AutogradValue,
     ) -> Result<AutogradValue, AutogradError> {
-        self.same_shape_binary(lhs, rhs, AutogradOp::Sub, Tensor::subtrahe)
+        self.binary(lhs, rhs, AutogradOp::Sub, Tensor::subtrahe)
     }
 
     pub(crate) fn mul(
@@ -123,7 +126,7 @@ impl AutogradTape {
         lhs: &AutogradValue,
         rhs: &AutogradValue,
     ) -> Result<AutogradValue, AutogradError> {
-        self.same_shape_binary(lhs, rhs, AutogradOp::Mul, Tensor::multiplica)
+        self.binary(lhs, rhs, AutogradOp::Mul, Tensor::multiplica)
     }
 
     pub(crate) fn summa(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
@@ -168,29 +171,44 @@ impl AutogradTape {
                 AutogradOp::Leaf => {}
                 AutogradOp::Add => {
                     let &[lhs, rhs] = parent_pair(node)?;
-                    gradients.accumulate(lhs, upstream.clone())?;
-                    gradients.accumulate(rhs, upstream)?;
+                    let lhs_shape = parent_shape(self, lhs)?;
+                    let rhs_shape = parent_shape(self, rhs)?;
+                    gradients.accumulate(lhs, reduce_broadcast_gradient(&upstream, &lhs_shape)?)?;
+                    gradients.accumulate(rhs, reduce_broadcast_gradient(&upstream, &rhs_shape)?)?;
                 }
                 AutogradOp::Sub => {
                     let &[lhs, rhs] = parent_pair(node)?;
-                    gradients.accumulate(lhs, upstream.clone())?;
-                    gradients.accumulate(rhs, scale_tensor(&upstream, -1.0)?)?;
+                    let lhs_shape = parent_shape(self, lhs)?;
+                    let rhs_shape = parent_shape(self, rhs)?;
+                    gradients.accumulate(lhs, reduce_broadcast_gradient(&upstream, &lhs_shape)?)?;
+                    gradients.accumulate(
+                        rhs,
+                        reduce_broadcast_gradient(&scale_tensor(&upstream, -1.0)?, &rhs_shape)?,
+                    )?;
                 }
                 AutogradOp::Mul => {
                     let &[lhs, rhs] = parent_pair(node)?;
                     let lhs_value = self.value(lhs)?;
                     let rhs_value = self.value(rhs)?;
+                    let lhs_shape = parent_shape(self, lhs)?;
+                    let rhs_shape = parent_shape(self, rhs)?;
                     gradients.accumulate(
                         lhs,
-                        upstream
-                            .multiplica(rhs_value)
-                            .map_err(AutogradError::Tensor)?,
+                        reduce_broadcast_gradient(
+                            &upstream
+                                .multiplica(rhs_value)
+                                .map_err(AutogradError::Tensor)?,
+                            &lhs_shape,
+                        )?,
                     )?;
                     gradients.accumulate(
                         rhs,
-                        upstream
-                            .multiplica(lhs_value)
-                            .map_err(AutogradError::Tensor)?,
+                        reduce_broadcast_gradient(
+                            &upstream
+                                .multiplica(lhs_value)
+                                .map_err(AutogradError::Tensor)?,
+                            &rhs_shape,
+                        )?,
                     )?;
                 }
                 AutogradOp::Summa => {
@@ -214,16 +232,13 @@ impl AutogradTape {
         Ok(gradients)
     }
 
-    fn same_shape_binary(
+    fn binary(
         &mut self,
         lhs: &AutogradValue,
         rhs: &AutogradValue,
         op: AutogradOp,
-        forward: fn(&Tensor<f32>, &Tensor<f32>) -> Result<Tensor<f32>, &'static str>,
+        forward: BinaryForward,
     ) -> Result<AutogradValue, AutogradError> {
-        if lhs.tensor.magnitudines() != rhs.tensor.magnitudines() {
-            return Err(AutogradError::ShapeMismatch);
-        }
         let tensor = forward(&lhs.tensor, &rhs.tensor).map_err(AutogradError::Tensor)?;
         Ok(self.record(op, vec![lhs.id, rhs.id], tensor))
     }
@@ -291,6 +306,102 @@ fn parent_pair(node: &AutogradNode) -> Result<&[AutogradNodeId; 2], AutogradErro
         .as_slice()
         .try_into()
         .map_err(|_| AutogradError::MissingNode)
+}
+
+fn parent_shape(tape: &AutogradTape, id: AutogradNodeId) -> Result<Vec<i64>, AutogradError> {
+    Ok(tape
+        .node(id)
+        .ok_or(AutogradError::MissingNode)?
+        .shape
+        .clone())
+}
+
+fn reduce_broadcast_gradient(
+    upstream: &Tensor<f32>,
+    target_shape: &[i64],
+) -> Result<Tensor<f32>, AutogradError> {
+    let upstream_shape = upstream.magnitudines();
+    if broadcast_shape(target_shape, &upstream_shape)? != upstream_shape {
+        return Err(AutogradError::ShapeMismatch);
+    }
+
+    let target_count =
+        tensor_shape_element_count(target_shape).ok_or(AutogradError::ShapeMismatch)?;
+    let mut data = vec![0.0_f32; target_count];
+
+    for (ordinal, value) in upstream.planata().into_iter().enumerate() {
+        let upstream_index = unravel_index(ordinal, &upstream_shape)?;
+        let target_index = broadcast_parent_index(&upstream_index, target_shape)?;
+        let offset =
+            tensor_flat_offset(target_shape, &target_index).ok_or(AutogradError::ShapeMismatch)?;
+        data[offset] += value;
+    }
+
+    Tensor::structa(data, target_shape).map_err(AutogradError::Tensor)
+}
+
+fn broadcast_shape(lhs: &[i64], rhs: &[i64]) -> Result<Vec<i64>, AutogradError> {
+    let rank = lhs.len().max(rhs.len());
+    let mut shape = Vec::with_capacity(rank);
+    for axis in 0..rank {
+        let lhs_dim = broadcast_dim(lhs, rank, axis);
+        let rhs_dim = broadcast_dim(rhs, rank, axis);
+        let dim = if lhs_dim == rhs_dim {
+            lhs_dim
+        } else if lhs_dim == 1 {
+            rhs_dim
+        } else if rhs_dim == 1 {
+            lhs_dim
+        } else {
+            return Err(AutogradError::ShapeMismatch);
+        };
+        shape.push(dim);
+    }
+    Ok(shape)
+}
+
+fn broadcast_dim(shape: &[i64], rank: usize, axis: usize) -> i64 {
+    let pad = rank - shape.len();
+    if axis < pad {
+        1
+    } else {
+        shape[axis - pad]
+    }
+}
+
+fn unravel_index(mut ordinal: usize, shape: &[i64]) -> Result<Vec<i64>, AutogradError> {
+    if shape.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut index = vec![0; shape.len()];
+    for (axis, dim) in shape.iter().enumerate().rev() {
+        let dim = usize::try_from(*dim).map_err(|_| AutogradError::ShapeMismatch)?;
+        if dim == 0 {
+            return Err(AutogradError::ShapeMismatch);
+        }
+        index[axis] = i64::try_from(ordinal % dim).map_err(|_| AutogradError::ShapeMismatch)?;
+        ordinal /= dim;
+    }
+    Ok(index)
+}
+
+fn broadcast_parent_index(
+    upstream_index: &[i64],
+    target_shape: &[i64],
+) -> Result<Vec<i64>, AutogradError> {
+    if target_shape.len() > upstream_index.len() {
+        return Err(AutogradError::ShapeMismatch);
+    }
+    let pad = upstream_index.len() - target_shape.len();
+    Ok((0..target_shape.len())
+        .map(|axis| {
+            if target_shape[axis] == 1 {
+                0
+            } else {
+                upstream_index[axis + pad]
+            }
+        })
+        .collect())
 }
 
 fn scalar_tensor(value: f32) -> Result<Tensor<f32>, AutogradError> {
@@ -398,15 +509,33 @@ mod tests {
     }
 
     #[test]
-    fn autograd_rejects_broadcast_shape_without_recording_node() {
+    fn autograd_records_broadcast_add_shape() {
         let mut tape = AutogradTape::new();
         let matrix = tape.leaf(tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
         let column = tape.leaf(tensor(&[10.0, 20.0], &[2, 1]));
 
-        let before = tape.nodes().len();
-        let err = tape.add(&matrix, &column).unwrap_err();
+        let shifted = tape.add(&matrix, &column).expect("broadcast add records");
 
-        assert_eq!(err, AutogradError::ShapeMismatch);
+        assert_eq!(shifted.tensor().magnitudines(), vec![2, 2]);
+        assert_eq!(shifted.tensor().planata(), vec![11.0, 12.0, 23.0, 24.0]);
+        let node = tape.node(shifted.id()).expect("add node");
+        assert_eq!(node.op(), AutogradOp::Add);
+        assert_eq!(node.parents(), &[matrix.id(), column.id()]);
+    }
+
+    #[test]
+    fn autograd_rejects_incompatible_broadcast_shape_without_recording_node() {
+        let mut tape = AutogradTape::new();
+        let matrix = tape.leaf(tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+        let vector = tape.leaf(tensor(&[10.0, 20.0, 30.0], &[3]));
+
+        let before = tape.nodes().len();
+        let err = tape.add(&matrix, &vector).unwrap_err();
+
+        assert_eq!(
+            err,
+            AutogradError::Tensor(crate::tensor::ERR_BROADCAST_SHAPE)
+        );
         assert_eq!(tape.nodes().len(), before);
     }
 
@@ -414,11 +543,6 @@ mod tests {
     fn autograd_v0_explicitly_rejects_out_of_scope_operations() {
         let tape = AutogradTape::new();
 
-        assert_eq!(
-            tape.reject_unsupported::<AutogradValue>(UnsupportedAutogradOp::Broadcast)
-                .unwrap_err(),
-            AutogradError::Unsupported(UnsupportedAutogradOp::Broadcast)
-        );
         assert_eq!(
             tape.reject_unsupported::<AutogradValue>(UnsupportedAutogradOp::Matmul)
                 .unwrap_err(),
@@ -523,6 +647,101 @@ mod tests {
             gradients.gradient(w.id()).expect("w gradient"),
             &expected_w,
             &[3],
+        );
+    }
+
+    #[test]
+    fn backward_matches_broadcast_bias_oracle_gradient_reduction() {
+        let mut tape = AutogradTape::new();
+        let x_values = [0.5_f32, -1.0, 2.0, 4.0];
+        let bias_values = [0.25_f32, -0.75];
+        let target_values = [1.0_f32, -2.0, 0.5, 3.0];
+        let x = tape.leaf(tensor(&x_values, &[2, 2]));
+        let bias = tape.leaf(tensor(&bias_values, &[2, 1]));
+        let target = tape.leaf(tensor(&target_values, &[2, 2]));
+
+        let prediction = tape.add(&x, &bias).expect("row bias broadcasts");
+        let residual = tape.sub(&prediction, &target).expect("prediction - target");
+        let squared = tape.mul(&residual, &residual).expect("residual squared");
+        let loss = tape.summa(&squared).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        let residuals: Vec<f32> = x_values
+            .chunks_exact(2)
+            .zip(bias_values.iter())
+            .flat_map(|(row, bias)| row.iter().map(move |x| x + bias))
+            .zip(target_values.iter())
+            .map(|(prediction, target)| prediction - target)
+            .collect();
+        let expected_x: Vec<f32> = residuals.iter().map(|residual| 2.0 * residual).collect();
+        let expected_bias: Vec<f32> = residuals
+            .chunks_exact(2)
+            .map(|row| row.iter().map(|residual| 2.0 * residual).sum::<f32>())
+            .collect();
+
+        assert_tensor_close(
+            gradients.gradient(x.id()).expect("x gradient"),
+            &expected_x,
+            &[2, 2],
+        );
+        assert_tensor_close(
+            gradients.gradient(bias.id()).expect("bias gradient"),
+            &expected_bias,
+            &[2, 1],
+        );
+    }
+
+    #[test]
+    fn backward_reduces_broadcast_mul_with_opposite_operand() {
+        let mut tape = AutogradTape::new();
+        let x = tape.leaf(tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+        let scale = tape.leaf(tensor(&[10.0, -2.0], &[2, 1]));
+
+        let product = tape.mul(&x, &scale).expect("row scale broadcasts");
+        let loss = tape.summa(&product).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(x.id()).expect("x gradient"),
+            &[10.0, 10.0, -2.0, -2.0],
+            &[2, 2],
+        );
+        assert_tensor_close(
+            gradients.gradient(scale.id()).expect("scale gradient"),
+            &[3.0, 7.0],
+            &[2, 1],
+        );
+    }
+
+    #[test]
+    fn backward_reduces_broadcast_sub_with_rhs_negative_sign() {
+        let mut tape = AutogradTape::new();
+        let x = tape.leaf(tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+        let bias = tape.leaf(tensor(&[10.0, 20.0], &[2, 1]));
+
+        let residual = tape.sub(&x, &bias).expect("row bias broadcasts");
+        let loss = tape.summa(&residual).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(x.id()).expect("x gradient"),
+            &[1.0, 1.0, 1.0, 1.0],
+            &[2, 2],
+        );
+        assert_tensor_close(
+            gradients.gradient(bias.id()).expect("bias gradient"),
+            &[-2.0, -2.0],
+            &[2, 1],
+        );
+    }
+
+    #[test]
+    fn broadcast_gradient_reduction_rejects_unsupported_shape_mismatch() {
+        let upstream = tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+
+        assert_eq!(
+            reduce_broadcast_gradient(&upstream, &[2, 3]).unwrap_err(),
+            AutogradError::ShapeMismatch
         );
     }
 
