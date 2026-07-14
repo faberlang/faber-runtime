@@ -956,6 +956,30 @@ mod tests {
     }
 
     #[test]
+    fn backward_zero_scala_branch_does_not_mask_repeated_parent_gradient() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[2.0, -3.0], &[2]));
+        let weights = leaf(&mut tape, tensor(&[5.0, 7.0], &[2]));
+
+        let zero_scaled = tape.scala(&value, 0.0).expect("zero scala records");
+        let direct = tape.mul(&value, &weights).expect("direct repeated use");
+        let combined = tape.add(&zero_scaled, &direct).expect("same-shape add");
+        let loss = tape.summa(&combined).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(value.id()).expect("value gradient"),
+            &[5.0, 7.0],
+            &[2],
+        );
+        assert_tensor_close(
+            gradients.gradient(weights.id()).expect("weights gradient"),
+            &[2.0, -3.0],
+            &[2],
+        );
+    }
+
+    #[test]
     fn autograd_tape_owned_scala_rejects_cross_tape_parent_without_recording_node() {
         let mut local_tape = AutogradTape::new();
         let mut foreign_tape = AutogradTape::new();
