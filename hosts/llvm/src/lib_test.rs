@@ -2006,6 +2006,255 @@ fn tensor_arithmetic_family_adds_matmuls_and_reduces() {
     unsafe { __faber_rt_v1_shutdown(context) };
 }
 
+fn push_host_tensor_value(
+    context: *mut FaberRtContextV1,
+    array: *mut c_void,
+    kind: FaberRtValueKindV1,
+    value: i64,
+) {
+    match kind {
+        VALUE_KIND_F32 => {
+            let value = value as f32;
+            assert_eq!(
+                unsafe {
+                    __faber_rt_v1_array_push(
+                        context,
+                        array,
+                        kind,
+                        std::ptr::from_ref(&value).cast(),
+                    )
+                },
+                STATUS_OK
+            );
+        }
+        VALUE_KIND_F64 => {
+            let value = value as f64;
+            assert_eq!(
+                unsafe {
+                    __faber_rt_v1_array_push(
+                        context,
+                        array,
+                        kind,
+                        std::ptr::from_ref(&value).cast(),
+                    )
+                },
+                STATUS_OK
+            );
+        }
+        VALUE_KIND_I32 => {
+            let value = value as i32;
+            assert_eq!(
+                unsafe {
+                    __faber_rt_v1_array_push(
+                        context,
+                        array,
+                        kind,
+                        std::ptr::from_ref(&value).cast(),
+                    )
+                },
+                STATUS_OK
+            );
+        }
+        VALUE_KIND_I64 => {
+            assert_eq!(
+                unsafe {
+                    __faber_rt_v1_array_push(
+                        context,
+                        array,
+                        kind,
+                        std::ptr::from_ref(&value).cast(),
+                    )
+                },
+                STATUS_OK
+            );
+        }
+        _ => panic!("unsupported test tensor kind {kind}"),
+    }
+}
+
+fn read_host_tensor_sum(
+    context: *mut FaberRtContextV1,
+    tensor: *mut c_void,
+    kind: FaberRtValueKindV1,
+) -> i64 {
+    match kind {
+        VALUE_KIND_F32 => {
+            let mut total = 0.0_f32;
+            assert_eq!(
+                unsafe {
+                    __faber_rt_v1_tensor_sum(
+                        context,
+                        tensor,
+                        kind,
+                        std::ptr::from_mut(&mut total).cast(),
+                    )
+                },
+                STATUS_OK
+            );
+            total as i64
+        }
+        VALUE_KIND_F64 => {
+            let mut total = 0.0_f64;
+            assert_eq!(
+                unsafe {
+                    __faber_rt_v1_tensor_sum(
+                        context,
+                        tensor,
+                        kind,
+                        std::ptr::from_mut(&mut total).cast(),
+                    )
+                },
+                STATUS_OK
+            );
+            total as i64
+        }
+        VALUE_KIND_I32 => {
+            let mut total = 0_i32;
+            assert_eq!(
+                unsafe {
+                    __faber_rt_v1_tensor_sum(
+                        context,
+                        tensor,
+                        kind,
+                        std::ptr::from_mut(&mut total).cast(),
+                    )
+                },
+                STATUS_OK
+            );
+            total.into()
+        }
+        VALUE_KIND_I64 => {
+            let mut total = 0_i64;
+            assert_eq!(
+                unsafe {
+                    __faber_rt_v1_tensor_sum(
+                        context,
+                        tensor,
+                        kind,
+                        std::ptr::from_mut(&mut total).cast(),
+                    )
+                },
+                STATUS_OK
+            );
+            total
+        }
+        _ => panic!("unsupported test tensor kind {kind}"),
+    }
+}
+
+fn host_tensor_shape(context: *mut FaberRtContextV1, dims: &[i64]) -> FaberRtPtrResultV1 {
+    let shape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    assert_eq!(shape.status, STATUS_OK);
+    for dim in dims {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    shape.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(dim).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    shape
+}
+
+fn host_tensor_from_i64_values(
+    context: *mut FaberRtContextV1,
+    kind: FaberRtValueKindV1,
+    values: &[i64],
+    dims: &[i64],
+) -> FaberRtPtrResultV1 {
+    let flat = unsafe { __faber_rt_v1_array_new(context, kind) };
+    assert_eq!(flat.status, STATUS_OK);
+    for value in values {
+        push_host_tensor_value(context, flat.value, kind, *value);
+    }
+    let shape = host_tensor_shape(context, dims);
+    unsafe { __faber_rt_v1_tensor_from_flat(context, kind, flat.value, shape.value) }
+}
+
+#[test]
+fn tensor_host_arithmetic_boundary_supports_f32_f64_i32_i64() {
+    let mut context = std::ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        STATUS_OK
+    );
+
+    for kind in [
+        VALUE_KIND_F32,
+        VALUE_KIND_F64,
+        VALUE_KIND_I32,
+        VALUE_KIND_I64,
+    ] {
+        let left = host_tensor_from_i64_values(context, kind, &[1, 2, 3], &[3]);
+        let right = host_tensor_from_i64_values(context, kind, &[10, 20, 30], &[3]);
+        assert_eq!(left.status, STATUS_OK);
+        assert_eq!(right.status, STATUS_OK);
+
+        let sum = unsafe { __faber_rt_v1_tensor_add(context, left.value, right.value) };
+        assert_eq!(sum.status, STATUS_OK);
+        assert_eq!(read_host_tensor_sum(context, sum.value, kind), 66);
+
+        let diff = unsafe { __faber_rt_v1_tensor_sub(context, sum.value, right.value) };
+        assert_eq!(diff.status, STATUS_OK);
+        assert_eq!(read_host_tensor_sum(context, diff.value, kind), 6);
+
+        let product = unsafe { __faber_rt_v1_tensor_mul(context, diff.value, left.value) };
+        assert_eq!(product.status, STATUS_OK);
+        assert_eq!(read_host_tensor_sum(context, product.value, kind), 14);
+    }
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn tensor_host_rejects_kinds_without_arithmetic_dispatch_at_admission() {
+    let mut context = std::ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        STATUS_OK
+    );
+    let shape = host_tensor_shape(context, &[1]);
+    let one_i16 = 1_i16;
+    let one_u32 = 1_u32;
+    let one_f16_bits = 0x3c00_u16;
+    let one_i1 = 1_u8;
+
+    for (kind, value) in [
+        (VALUE_KIND_I1, std::ptr::from_ref(&one_i1).cast()),
+        (VALUE_KIND_I16, std::ptr::from_ref(&one_i16).cast()),
+        (VALUE_KIND_U32, std::ptr::from_ref(&one_u32).cast()),
+        (VALUE_KIND_F16, std::ptr::from_ref(&one_f16_bits).cast()),
+    ] {
+        let flat = unsafe { __faber_rt_v1_array_new(context, kind) };
+        assert_eq!(flat.status, STATUS_OK);
+        assert_eq!(
+            unsafe { __faber_rt_v1_array_push(context, flat.value, kind, value) },
+            STATUS_OK
+        );
+
+        assert_eq!(
+            unsafe { __faber_rt_v1_tensor_new(context, kind) }.status,
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            unsafe { __faber_rt_v1_tensor_from_flat(context, kind, flat.value, shape.value) }
+                .status,
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            unsafe { __faber_rt_v1_tensor_create(context, kind, value, shape.value) }.status,
+            STATUS_INVALID_ARGUMENT
+        );
+    }
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
 #[test]
 fn tensor_host_add_broadcasts_zero_extent_without_panic() {
     let mut context = std::ptr::null_mut();

@@ -4,9 +4,7 @@
 //! `sectio` materialize so the link surface stays honest without exposing Rust
 //! layout. Element-width conversion and sparse remain residual families.
 
-use super::array::{
-    find_array, read_value, store_array, valid_kind, write_value, RuntimeArray, RuntimeValue,
-};
+use super::array::{find_array, read_value, store_array, write_value, RuntimeArray, RuntimeValue};
 use super::option::store_option;
 use super::RuntimeContext;
 use faber::host_abi::{
@@ -41,31 +39,25 @@ fn runtime(context: *mut FaberRtContextV1) -> Option<&'static mut RuntimeContext
     (!context.is_null()).then(|| unsafe { &mut *context.cast::<RuntimeContext>() })
 }
 
+/// Element kinds admitted by the LLVM host tensor ABI.
+///
+/// Keep this set aligned with `apply_binary` and `tensor_sum_value`: callers
+/// should not be able to construct a tensor kind that fails only at the first
+/// arithmetic or reduction boundary.
 fn tensor_kind(kind: FaberRtValueKindV1) -> bool {
-    valid_kind(kind)
-        && !matches!(
-            kind,
-            faber::host_abi::VALUE_KIND_TEXT
-                | faber::host_abi::VALUE_KIND_VALOR
-                | faber::host_abi::VALUE_KIND_OPTION_I64
-                | faber::host_abi::VALUE_KIND_INSTANS
-                | faber::host_abi::VALUE_KIND_ASCII
-                | faber::host_abi::VALUE_KIND_PTR
-        )
+    matches!(
+        kind,
+        faber::host_abi::VALUE_KIND_F32
+            | faber::host_abi::VALUE_KIND_F64
+            | faber::host_abi::VALUE_KIND_I32
+            | faber::host_abi::VALUE_KIND_I64
+    )
 }
 
 fn default_value(kind: FaberRtValueKindV1) -> Option<RuntimeValue> {
     Some(match kind {
-        faber::host_abi::VALUE_KIND_I1 => RuntimeValue::I1(0),
-        faber::host_abi::VALUE_KIND_I8 => RuntimeValue::I8(0),
-        faber::host_abi::VALUE_KIND_I16 => RuntimeValue::I16(0),
         faber::host_abi::VALUE_KIND_I32 => RuntimeValue::I32(0),
         faber::host_abi::VALUE_KIND_I64 => RuntimeValue::I64(0),
-        faber::host_abi::VALUE_KIND_U8 => RuntimeValue::U8(0),
-        faber::host_abi::VALUE_KIND_U16 => RuntimeValue::U16(0),
-        faber::host_abi::VALUE_KIND_U32 => RuntimeValue::U32(0),
-        faber::host_abi::VALUE_KIND_U64 => RuntimeValue::U64(0),
-        faber::host_abi::VALUE_KIND_F16 => RuntimeValue::F16(0),
         faber::host_abi::VALUE_KIND_F32 => RuntimeValue::F32(0.0),
         faber::host_abi::VALUE_KIND_F64 => RuntimeValue::F64(0.0),
         _ => return None,

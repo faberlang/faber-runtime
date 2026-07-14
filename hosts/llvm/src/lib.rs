@@ -54,9 +54,9 @@ use faber::host_abi::{
 };
 #[cfg(test)]
 use faber::host_abi::{
-    ARRAY_OPTION_FIRST, ARRAY_OPTION_INDEX, ARRAY_OPTION_LAST, ARRAY_OPTION_REMOVE_FIRST,
-    ARRAY_OPTION_REMOVE_LAST, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE, ARRAY_RANGE_TAKE,
-    ARRAY_RANGE_TAKE_LAST, INSTANS_PRECISION_MICROS, INSTANS_PRECISION_MILLIS,
+    FaberRtValueKindV1, ARRAY_OPTION_FIRST, ARRAY_OPTION_INDEX, ARRAY_OPTION_LAST,
+    ARRAY_OPTION_REMOVE_FIRST, ARRAY_OPTION_REMOVE_LAST, ARRAY_RANGE_DROP_FIRST, ARRAY_RANGE_SLICE,
+    ARRAY_RANGE_TAKE, ARRAY_RANGE_TAKE_LAST, INSTANS_PRECISION_MICROS, INSTANS_PRECISION_MILLIS,
     INSTANS_PRECISION_SECONDS, VALUE_KIND_ASCII, VALUE_KIND_F16, VALUE_KIND_F32, VALUE_KIND_F64,
     VALUE_KIND_I1, VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR,
     VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,
@@ -101,10 +101,10 @@ use regex_rt::{
     __faber_rt_v1_regex_from_ascii, __faber_rt_v1_regex_from_text, __faber_rt_v1_regex_get_text,
 };
 use sparsa::RuntimeSparse;
+#[cfg(test)]
 use sparsa::{
     __faber_rt_v1_sparse_densify, __faber_rt_v1_sparse_from_tensor, __faber_rt_v1_sparse_get,
-    __faber_rt_v1_sparse_new, __faber_rt_v1_sparse_nonzero, __faber_rt_v1_sparse_rank,
-    __faber_rt_v1_sparse_set,
+    __faber_rt_v1_sparse_new, __faber_rt_v1_sparse_nonzero, __faber_rt_v1_sparse_set,
 };
 use std::ffi::{c_char, c_int};
 use std::fmt::Display;
@@ -112,6 +112,7 @@ use std::io::{self, Write};
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
 use tensor::RuntimeTensor;
+#[cfg(test)]
 use tensor::{
     __faber_rt_v1_tensor_add, __faber_rt_v1_tensor_convert, __faber_rt_v1_tensor_create,
     __faber_rt_v1_tensor_fill, __faber_rt_v1_tensor_flatten, __faber_rt_v1_tensor_from_flat,
