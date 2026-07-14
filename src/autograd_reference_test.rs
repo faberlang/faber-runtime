@@ -78,6 +78,69 @@ fn broadcast_bias_loss(params: &[f32]) -> f32 {
         .summa()
 }
 
+fn broadcast_bias_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(&params[0..4], &[2, 2]));
+    let bias = leaf(&mut tape, tensor(&params[4..6], &[2, 1]));
+    let target = leaf(&mut tape, tensor(&[1.0, -2.0, 0.5, 3.0], &[2, 2]));
+
+    let prediction = tape.add(&x, &bias).expect("row bias broadcasts");
+    let residual = tape.sub(&prediction, &target).expect("prediction - target");
+    let squared = tape.mul(&residual, &residual).expect("residual squared");
+    let loss = tape.summa(&squared).expect("scalar loss");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    let mut actual = Vec::with_capacity(params.len());
+    actual.extend(gradients.gradient(x.id()).expect("x gradient").planata());
+    actual.extend(
+        gradients
+            .gradient(bias.id())
+            .expect("bias gradient")
+            .planata(),
+    );
+    actual
+}
+
+fn broadcast_scale_loss(params: &[f32]) -> f32 {
+    let x = Tensor::structa(params[0..4].to_vec(), &[2, 2]).expect("x tensor");
+    let scale = Tensor::structa(params[4..6].to_vec(), &[2, 1]).expect("scale tensor");
+    let target = Tensor::structa(vec![1.0, -2.0, 0.5, 3.0], &[2, 2]).expect("target tensor");
+
+    let prediction = x
+        .multiplica(&scale)
+        .expect("row scale broadcasts across columns");
+    let residual = prediction
+        .subtrahe(&target)
+        .expect("same-shape elementwise subtract");
+    residual
+        .multiplica(&residual)
+        .expect("same-shape square")
+        .summa()
+}
+
+fn broadcast_scale_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(&params[0..4], &[2, 2]));
+    let scale = leaf(&mut tape, tensor(&params[4..6], &[2, 1]));
+    let target = leaf(&mut tape, tensor(&[1.0, -2.0, 0.5, 3.0], &[2, 2]));
+
+    let prediction = tape.mul(&x, &scale).expect("row scale broadcasts");
+    let residual = tape.sub(&prediction, &target).expect("prediction - target");
+    let squared = tape.mul(&residual, &residual).expect("residual squared");
+    let loss = tape.summa(&squared).expect("scalar loss");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    let mut actual = Vec::with_capacity(params.len());
+    actual.extend(gradients.gradient(x.id()).expect("x gradient").planata());
+    actual.extend(
+        gradients
+            .gradient(scale.id())
+            .expect("scale gradient")
+            .planata(),
+    );
+    actual
+}
+
 fn linear_training_step_loss(params: &[f32]) -> f32 {
     let input = Tensor::structa(params[0..4].to_vec(), &[2, 2]).expect("input tensor");
     let weight = Tensor::structa(params[4..8].to_vec(), &[2, 2]).expect("weight tensor");
@@ -246,6 +309,24 @@ fn finite_difference_reference_checks_broadcast_bias_gradient_reduction() {
     );
 
     assert_gradient_close(&gradient, &expected);
+}
+
+#[test]
+fn autograd_matches_finite_difference_broadcast_add_gradient_reduction() {
+    let params = vec![0.5_f32, -1.0, 2.0, 4.0, 0.25, -0.75];
+    let reference = finite_difference_gradient(&params, broadcast_bias_loss);
+    let actual = broadcast_bias_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
+#[test]
+fn autograd_matches_finite_difference_broadcast_mul_gradient_reduction() {
+    let params = vec![0.5_f32, -1.0, 1.2, -0.7, 0.6, -0.4];
+    let reference = finite_difference_gradient(&params, broadcast_scale_loss);
+    let actual = broadcast_scale_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
 }
 
 #[test]
