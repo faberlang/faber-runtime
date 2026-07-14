@@ -17,7 +17,7 @@ behavior, session integration, optimizer support, or host ABI gradient handles.
 | Sparse bridge | `Sparsa<T>` stores non-default entries, reads absent entries as default, removes entries on default writes, and densifies to `Tensor<T>`. It has no sparse arithmetic kernels. | `src/sparsa.rs`; `src/sparsa_test.rs` |
 | Packed numeric bridge | `PackedU4Block` records toy U4 layout facts, validates metadata, dequantizes to `Vec<f32>`, and materializes as rank-1 `Tensor<f32>`. The only tensor integration row is reference materialization into elementwise add. | `src/packed_numeric.rs`; `src/packed_numeric_test.rs::packed_u4_materialized_tensor_feeds_elementwise_add` |
 | Autograd scaffold | The Rust runtime has an internal dense `Tensor<f32>` tape with node ids, parent edges, saved forward tensors, gradient accumulation, duplicate-parent accumulation, scalar-loss backward, broadcast reductions for add/sub/mul, rank-2 matmul VJP, and leaf rejection for `sectio` views. | `src/autograd.rs`; `src/autograd.rs::tests::backward_matches_rank2_matmul_sum_vjp`; `src/autograd.rs::tests::autograd_rejects_sectio_view_leaf_until_scatter_add_policy_exists` |
-| Finite-difference oracle | Test-only central-difference checks cover rank-0 scalar `x * x + x`, the exact rung-3 scalar target `loss(x, weight, target) = (x * weight - target)^2` with `x=2.0`, `weight=3.0`, `target=4.0`, `loss=4.0`, and `d_weight ~= 8.0`, same-shape vector and broadcast-bias losses, plus a dense linear training-step loss `summa((XW + b - target)^2)` that compares autograd gradients for input, weight, and bias against CPU finite differences. A test-only `LinearTrainingSession` oracle applies one manual `param -= learning_rate * grad` update to weight and bias only, keeps input frozen, compares updated parameters against the finite-difference session step, and checks the local loss decreases. | `src/autograd_reference_test.rs` |
+| Finite-difference oracle | Test-only central-difference checks cover rank-0 scalar `x * x + x`, the exact rung-3 scalar target `loss(x, weight, target) = (x * weight - target)^2` with `x=2.0`, `weight=3.0`, `target=4.0`, `loss=4.0`, and `d_weight ~= 8.0`, same-shape vector and broadcast-bias losses, plus a dense linear training-step loss `summa((XW + b - target)^2)` that compares autograd gradients for input, weight, and bias against CPU finite differences. A test-only `LinearTrainingSession` oracle applies manual `param -= learning_rate * grad` updates to weight and bias only, keeps input frozen, compares updated parameters against the finite-difference session step, and checks a two-step loss trace matches the finite-difference trace while strictly decreasing. | `src/autograd_reference_test.rs` |
 | ABI symbols | The host ABI names tensor creation, shape, get/set, fill, flatten, materialize, slice, add/sub/mul, matmul, sum, mean, conversion, and sparse new/get/set/nonzero/rank/densify/from-tensor symbols. | `src/host_abi.rs`; `hosts/llvm/src/lib.rs` |
 
 ## Autograd-Relevant Remaining Blockers
@@ -55,9 +55,9 @@ host ABI until the Rust-level invariant is broader:
    mutation after graph capture, no sparse tensors, and no packed tensors.
 3. Prove scalar-loss cases with local unit tests and finite-difference oracles
    before broadening generated-gradient claims. The current next-rung evidence
-   is a dense linear training step plus one test-only session/update boundary
-   for a manual weight/bias parameter update, not a production session,
-   optimizer, or `torch.nn` parity claim.
+   is a dense linear training step plus a test-only session/update boundary
+   with a two-step manual weight/bias loss trace, not a production session,
+   optimizer, training loop, or `torch.nn` parity claim.
 4. Reuse local finite-difference tests by copying `planata()` values,
    perturbing one input element at a time, rebuilding tensors with `structa`,
    and comparing proof gradients against the oracle.

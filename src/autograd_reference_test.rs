@@ -30,6 +30,18 @@ fn assert_gradient_close(actual: &[f32], expected: &[f32]) {
     }
 }
 
+fn assert_strictly_decreasing(trace: &[f32]) {
+    assert!(trace.len() >= 2);
+    for window in trace.windows(2) {
+        assert!(
+            window[1] < window[0],
+            "loss trace should decrease, got {} then {}",
+            window[0],
+            window[1]
+        );
+    }
+}
+
 fn rank_zero_loss(params: &[f32]) -> f32 {
     let x = Tensor::structa(vec![params[0]], &[]).expect("rank-zero scalar tensor");
     let x_squared = x.multiplica(&x).expect("same-shape scalar multiply");
@@ -154,6 +166,26 @@ impl LinearTrainingSession {
         let gradient = finite_difference_gradient(&self.params, linear_training_step_loss);
         self.params = apply_linear_parameter_update(&self.params, &gradient, self.learning_rate);
     }
+
+    fn autograd_loss_trace(&mut self, steps: usize) -> Vec<f32> {
+        let mut trace = Vec::with_capacity(steps + 1);
+        trace.push(self.loss());
+        for _ in 0..steps {
+            self.autograd_step();
+            trace.push(self.loss());
+        }
+        trace
+    }
+
+    fn finite_difference_loss_trace(&mut self, steps: usize) -> Vec<f32> {
+        let mut trace = Vec::with_capacity(steps + 1);
+        trace.push(self.loss());
+        for _ in 0..steps {
+            self.finite_difference_step();
+            trace.push(self.loss());
+        }
+        trace
+    }
 }
 
 fn rung3_scalar_loss(params: &[f32]) -> f32 {
@@ -242,6 +274,22 @@ fn autograd_parameter_update_matches_finite_difference_linear_oracle() {
         autograd.loss() < initial_loss,
         "manual weight/bias update should lower the local training loss"
     );
+}
+
+#[test]
+fn autograd_two_step_loss_trace_matches_finite_difference_session_oracle() {
+    let params = vec![0.5_f32, -1.0, 2.0, 0.75, 1.25, -0.5, 0.8, 1.1, 0.2, -0.3];
+    let learning_rate = 0.01;
+    let mut reference = LinearTrainingSession::new(params.clone(), learning_rate);
+    let mut autograd = LinearTrainingSession::new(params.clone(), learning_rate);
+
+    let reference_trace = reference.finite_difference_loss_trace(2);
+    let autograd_trace = autograd.autograd_loss_trace(2);
+
+    assert_gradient_close(&autograd_trace, &reference_trace);
+    assert_strictly_decreasing(&autograd_trace);
+    assert_gradient_close(&autograd.params, &reference.params);
+    assert_eq!(&autograd.params[0..4], &params[0..4]);
 }
 
 #[test]
