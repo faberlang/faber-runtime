@@ -183,6 +183,55 @@ fn addita_rejects_broadcast_shape_mismatch() {
 }
 
 #[test]
+fn addita_broadcasts_zero_extent_with_size_one_axis_to_empty_result() {
+    let empty = Tensor::<f32>::structa(Vec::new(), &[0, 3]).unwrap();
+    let row = Tensor::structa(vec![1.0f32, 2.0, 3.0], &[1, 3]).unwrap();
+
+    let result = empty
+        .addita(&row)
+        .expect("zero/one broadcast is compatible");
+
+    assert_eq!(result.magnitudines(), vec![0, 3]);
+    assert_eq!(result.planata(), Vec::<f32>::new());
+}
+
+#[test]
+fn subtrahe_broadcasts_zero_extent_with_size_one_axis_to_empty_result() {
+    let row = Tensor::structa(vec![1.0f32, 2.0, 3.0], &[1, 3]).unwrap();
+    let empty = Tensor::<f32>::structa(Vec::new(), &[0, 3]).unwrap();
+
+    let result = row
+        .subtrahe(&empty)
+        .expect("one/zero broadcast is compatible");
+
+    assert_eq!(result.magnitudines(), vec![0, 3]);
+    assert_eq!(result.planata(), Vec::<f32>::new());
+}
+
+#[test]
+fn multiplica_broadcasts_zero_extent_with_size_one_axis_to_empty_result() {
+    let empty = Tensor::<f32>::structa(Vec::new(), &[2, 0, 3]).unwrap();
+    let lane = Tensor::structa(vec![1.0f32, 2.0, 3.0], &[1, 1, 3]).unwrap();
+
+    let result = empty
+        .multiplica(&lane)
+        .expect("zero/one broadcast is compatible");
+
+    assert_eq!(result.magnitudines(), vec![2, 0, 3]);
+    assert_eq!(result.planata(), Vec::<f32>::new());
+}
+
+#[test]
+fn zero_extent_broadcast_rejects_non_one_mismatch_for_each_arithmetic_op() {
+    let empty = Tensor::<f32>::structa(Vec::new(), &[0, 3]).unwrap();
+    let rows = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+
+    assert_eq!(empty.addita(&rows).unwrap_err(), ERR_BROADCAST_SHAPE);
+    assert_eq!(empty.subtrahe(&rows).unwrap_err(), ERR_BROADCAST_SHAPE);
+    assert_eq!(empty.multiplica(&rows).unwrap_err(), ERR_BROADCAST_SHAPE);
+}
+
+#[test]
 fn subtrahe_and_multiplica_are_elementwise() {
     let a = Tensor::structa(vec![10.0f32, 20.0, 30.0], &[3]).unwrap();
     let b = Tensor::structa(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();

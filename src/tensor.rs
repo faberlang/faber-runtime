@@ -312,10 +312,16 @@ fn broadcast_shape(lhs: &[usize], rhs: &[usize]) -> Result<Vec<usize>, &'static 
     for axis in 0..rank {
         let lhs_dim = broadcast_dim(lhs, rank, axis);
         let rhs_dim = broadcast_dim(rhs, rank, axis);
-        if !(lhs_dim == rhs_dim || lhs_dim == 1 || rhs_dim == 1) {
+        let dim = if lhs_dim == rhs_dim {
+            lhs_dim
+        } else if lhs_dim == 1 {
+            rhs_dim
+        } else if rhs_dim == 1 {
+            lhs_dim
+        } else {
             return Err(ERR_BROADCAST_SHAPE);
-        }
-        shape.push(lhs_dim.max(rhs_dim));
+        };
+        shape.push(dim);
     }
     Ok(shape)
 }

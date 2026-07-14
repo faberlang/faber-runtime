@@ -2007,6 +2007,81 @@ fn tensor_arithmetic_family_adds_matmuls_and_reduces() {
 }
 
 #[test]
+fn tensor_host_add_broadcasts_zero_extent_without_panic() {
+    let mut context = std::ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        STATUS_OK
+    );
+
+    let empty_shape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for dim in [0_i64, 3_i64] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    empty_shape.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&dim).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let empty_flat = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_F32) };
+    let empty = unsafe {
+        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_F32, empty_flat.value, empty_shape.value)
+    };
+    assert_eq!(empty.status, STATUS_OK);
+
+    let row_shape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    for dim in [1_i64, 3_i64] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    row_shape.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&dim).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let row_flat = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_F32) };
+    for value in [1.0_f32, 2.0, 3.0] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    row_flat.value,
+                    VALUE_KIND_F32,
+                    std::ptr::from_ref(&value).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let row = unsafe {
+        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_F32, row_flat.value, row_shape.value)
+    };
+    assert_eq!(row.status, STATUS_OK);
+
+    let sum = unsafe { __faber_rt_v1_tensor_add(context, empty.value, row.value) };
+    assert_eq!(sum.status, STATUS_OK);
+    let flat = unsafe { __faber_rt_v1_tensor_flatten(context, sum.value) };
+    assert_eq!(flat.status, STATUS_OK);
+    let mut flat_len = -1_i64;
+    assert_eq!(
+        unsafe { __faber_rt_v1_array_length(context, flat.value, &mut flat_len) },
+        STATUS_OK
+    );
+    assert_eq!(flat_len, 0);
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
 fn tensor_convert_widens_and_narrows_element_kinds() {
     let mut context = std::ptr::null_mut();
     assert_eq!(
