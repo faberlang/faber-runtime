@@ -1,3 +1,4 @@
+use crate::autograd::{AutogradTape, AutogradValue};
 use crate::Tensor;
 
 const FINITE_DIFFERENCE_EPSILON: f32 = 1.0e-3;
@@ -65,6 +66,23 @@ fn broadcast_bias_loss(params: &[f32]) -> f32 {
         .summa()
 }
 
+fn linear_training_step_loss(params: &[f32]) -> f32 {
+    let input = Tensor::structa(params[0..4].to_vec(), &[2, 2]).expect("input tensor");
+    let weight = Tensor::structa(params[4..8].to_vec(), &[2, 2]).expect("weight tensor");
+    let bias = Tensor::structa(params[8..10].to_vec(), &[1, 2]).expect("bias tensor");
+    let target = Tensor::structa(vec![0.25, -1.0, 1.5, 0.75], &[2, 2]).expect("target tensor");
+
+    let prediction = input.matmul(&weight).expect("rank-2 linear matmul");
+    let shifted = prediction.addita(&bias).expect("batch bias broadcasts");
+    let residual = shifted
+        .subtrahe(&target)
+        .expect("same-shape elementwise subtract");
+    residual
+        .multiplica(&residual)
+        .expect("same-shape square")
+        .summa()
+}
+
 fn rung3_scalar_loss(params: &[f32]) -> f32 {
     let x = Tensor::structa(vec![params[0]], &[]).expect("rank-zero x tensor");
     let weight = Tensor::structa(vec![params[1]], &[]).expect("rank-zero weight tensor");
@@ -78,6 +96,15 @@ fn rung3_scalar_loss(params: &[f32]) -> f32 {
         .multiplica(&residual)
         .expect("same-shape scalar square")
         .summa()
+}
+
+fn tensor(values: &[f32], shape: &[i64]) -> Tensor<f32> {
+    Tensor::structa(values.to_vec(), shape).expect("test tensor shape matches")
+}
+
+fn leaf(tape: &mut AutogradTape, tensor: Tensor<f32>) -> AutogradValue {
+    tape.leaf(tensor)
+        .expect("materialized tensor is differentiable")
 }
 
 #[test]
@@ -114,6 +141,47 @@ fn finite_difference_reference_checks_broadcast_bias_gradient_reduction() {
     );
 
     assert_gradient_close(&gradient, &expected);
+}
+
+#[test]
+fn autograd_matches_finite_difference_linear_training_step_gradients() {
+    let params = vec![0.5_f32, -1.0, 2.0, 0.75, 1.25, -0.5, 0.8, 1.1, 0.2, -0.3];
+    let reference = finite_difference_gradient(&params, linear_training_step_loss);
+
+    let mut tape = AutogradTape::new();
+    let input = leaf(&mut tape, tensor(&params[0..4], &[2, 2]));
+    let weight = leaf(&mut tape, tensor(&params[4..8], &[2, 2]));
+    let bias = leaf(&mut tape, tensor(&params[8..10], &[1, 2]));
+    let target = leaf(&mut tape, tensor(&[0.25, -1.0, 1.5, 0.75], &[2, 2]));
+
+    let prediction = tape.matmul(&input, &weight).expect("linear matmul");
+    let shifted = tape.add(&prediction, &bias).expect("batch bias broadcasts");
+    let residual = tape.sub(&shifted, &target).expect("prediction - target");
+    let squared = tape.mul(&residual, &residual).expect("residual squared");
+    let loss = tape.summa(&squared).expect("scalar loss");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    let mut actual = Vec::with_capacity(params.len());
+    actual.extend(
+        gradients
+            .gradient(input.id())
+            .expect("input gradient")
+            .planata(),
+    );
+    actual.extend(
+        gradients
+            .gradient(weight.id())
+            .expect("weight gradient")
+            .planata(),
+    );
+    actual.extend(
+        gradients
+            .gradient(bias.id())
+            .expect("bias gradient")
+            .planata(),
+    );
+
+    assert_gradient_close(&actual, &reference);
 }
 
 #[test]
