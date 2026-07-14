@@ -36,6 +36,9 @@ pub const ERR_PERMUTE_NEGATIVE_AXIS: &str = "tensor permute axis must be non-neg
 pub const ERR_PERMUTE_AXIS_OUT_OF_RANGE: &str = "tensor permute axis out of range";
 pub const ERR_PERMUTE_DUPLICATE_AXIS: &str = "tensor permute axis must appear exactly once";
 pub const ERR_MEDIA_EMPTY: &str = "tensor media (mean) requires at least one element";
+pub const ERR_DIVIDE_NON_FINITE_INPUT: &str = "tensor division input must be finite";
+pub const ERR_DIVIDE_ZERO_DENOMINATOR: &str = "tensor division denominator must be non-zero";
+pub const ERR_DIVIDE_NON_FINITE_RESULT: &str = "tensor division result must be finite";
 
 pub fn tensor_dim_non_negative(value: i64) -> bool {
     value >= 0
@@ -491,6 +494,33 @@ impl Tensor<f32> {
         )
     }
 
+    /// Elementwise checked division after NumPy-style broadcast unification.
+    pub fn divide(&self, other: &Tensor<f32>) -> Result<Tensor<f32>, &'static str> {
+        let shape = broadcast_shape(&self.shape, &other.shape)?;
+        let count = checked_allocation_count::<f32>(&shape)?;
+        let mut data = Vec::with_capacity(count);
+        for ordinal in 0..count {
+            let index = unravel_index(ordinal, &shape);
+            let lhs_index = broadcast_index(&index, &self.shape);
+            let rhs_index = broadcast_index(&index, &other.shape);
+            data.push(checked_divide_f32(
+                self.value_at_logical(&lhs_index),
+                other.value_at_logical(&rhs_index),
+            )?);
+        }
+        Ok(Tensor::from_contiguous(data, shape))
+    }
+
+    /// Elementwise checked reciprocal preserving tensor shape.
+    pub fn reciproca(&self) -> Result<Tensor<f32>, &'static str> {
+        let data = self
+            .planata()
+            .into_iter()
+            .map(|value| checked_divide_f32(1.0, value))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Tensor::from_contiguous(data, self.shape.clone()))
+    }
+
     /// Mean of all elements as an f32 scalar.
     pub fn media(&self) -> Result<f32, &'static str> {
         let count = self.element_count();
@@ -499,6 +529,20 @@ impl Tensor<f32> {
         }
         Ok(self.summa() / count as f32)
     }
+}
+
+fn checked_divide_f32(numerator: f32, denominator: f32) -> Result<f32, &'static str> {
+    if !numerator.is_finite() || !denominator.is_finite() {
+        return Err(ERR_DIVIDE_NON_FINITE_INPUT);
+    }
+    if denominator == 0.0 {
+        return Err(ERR_DIVIDE_ZERO_DENOMINATOR);
+    }
+    let result = numerator / denominator;
+    if !result.is_finite() {
+        return Err(ERR_DIVIDE_NON_FINITE_RESULT);
+    }
+    Ok(result)
 }
 
 // WHY: matmul needs both `Add` and `Mul` trait bounds since the contraction

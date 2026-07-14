@@ -1,6 +1,7 @@
 use super::{
     tensor_flat_offset, tensor_shape_element_count, tensor_shape_has_element_count, Tensor,
-    ERR_BROADCAST_SHAPE, ERR_ELEMENT_COUNT_OVERFLOW, ERR_MATMUL_ARGUMENT_RANK,
+    ERR_BROADCAST_SHAPE, ERR_DIVIDE_NON_FINITE_INPUT, ERR_DIVIDE_NON_FINITE_RESULT,
+    ERR_DIVIDE_ZERO_DENOMINATOR, ERR_ELEMENT_COUNT_OVERFLOW, ERR_MATMUL_ARGUMENT_RANK,
     ERR_MATMUL_INNER_DIMENSION, ERR_MATMUL_RECEIVER_RANK, ERR_MEDIA_EMPTY,
     ERR_PERMUTE_AXIS_OUT_OF_RANGE, ERR_PERMUTE_DUPLICATE_AXIS, ERR_PERMUTE_NEGATIVE_AXIS,
     ERR_PERMUTE_RANK, ERR_TRANSPOSE_RANK,
@@ -277,6 +278,65 @@ fn scala_scales_f32_elements_and_preserves_shape() {
 
     assert_eq!(scaled.magnitudines(), vec![2, 2]);
     assert_eq!(scaled.planata(), vec![0.5, -1.0, 1.75, 2.0]);
+}
+
+#[test]
+fn divide_broadcasts_finite_f32_tensors() {
+    let lhs = Tensor::structa(vec![8.0f32, 18.0, -24.0, 40.0], &[2, 2]).unwrap();
+    let rhs = Tensor::structa(vec![2.0f32, -4.0], &[2, 1]).unwrap();
+
+    let divided = lhs.divide(&rhs).expect("finite broadcast division");
+
+    assert_eq!(divided.magnitudines(), vec![2, 2]);
+    assert_eq!(divided.planata(), vec![4.0, 9.0, 6.0, -10.0]);
+}
+
+#[test]
+fn reciproca_preserves_shape_and_checks_denominators() {
+    let tensor = Tensor::structa(vec![2.0f32, -4.0, 0.25, 8.0], &[2, 2]).unwrap();
+
+    let reciprocal = tensor.reciproca().expect("finite reciprocal");
+
+    assert_eq!(reciprocal.magnitudines(), vec![2, 2]);
+    assert_eq!(reciprocal.planata(), vec![0.5, -0.25, 4.0, 0.125]);
+
+    let zero = Tensor::structa(vec![1.0f32, 0.0], &[2]).unwrap();
+    assert_eq!(zero.reciproca().unwrap_err(), ERR_DIVIDE_ZERO_DENOMINATOR);
+}
+
+#[test]
+fn divide_rejects_zero_denominator_without_materializing_infinity() {
+    let lhs = Tensor::structa(vec![1.0f32, -2.0], &[2]).unwrap();
+    let rhs = Tensor::structa(vec![1.0f32, -0.0], &[2]).unwrap();
+
+    assert_eq!(lhs.divide(&rhs).unwrap_err(), ERR_DIVIDE_ZERO_DENOMINATOR);
+}
+
+#[test]
+fn divide_rejects_non_finite_inputs_before_dividing() {
+    let lhs = Tensor::structa(vec![1.0f32, f32::INFINITY], &[2]).unwrap();
+    let rhs = Tensor::structa(vec![1.0f32, 2.0], &[2]).unwrap();
+    assert_eq!(lhs.divide(&rhs).unwrap_err(), ERR_DIVIDE_NON_FINITE_INPUT);
+
+    let lhs = Tensor::structa(vec![1.0f32], &[]).unwrap();
+    let rhs = Tensor::structa(vec![f32::NAN], &[]).unwrap();
+    assert_eq!(lhs.divide(&rhs).unwrap_err(), ERR_DIVIDE_NON_FINITE_INPUT);
+}
+
+#[test]
+fn divide_rejects_non_finite_results() {
+    let lhs = Tensor::structa(vec![f32::MAX], &[]).unwrap();
+    let rhs = Tensor::structa(vec![f32::MIN_POSITIVE], &[]).unwrap();
+
+    assert_eq!(lhs.divide(&rhs).unwrap_err(), ERR_DIVIDE_NON_FINITE_RESULT);
+}
+
+#[test]
+fn divide_rejects_broadcast_shape_mismatch() {
+    let lhs = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+    let rhs = Tensor::structa(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
+
+    assert_eq!(lhs.divide(&rhs).unwrap_err(), ERR_BROADCAST_SHAPE);
 }
 
 #[test]

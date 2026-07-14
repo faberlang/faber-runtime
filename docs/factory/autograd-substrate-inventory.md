@@ -10,7 +10,7 @@ behavior, session integration, optimizer support, or host ABI gradient handles.
 | --- | --- | --- |
 | Dense carrier | `Tensor<T>` stores homogeneous numeric data behind runtime shape metadata, row-major strides, and an offset. It is `Clone`, `Send`, and `Sync` when the element type is. | `src/tensor.rs`; `src/tensor_test.rs::tensor_is_send_sync_when_elements_are` |
 | Shape and indexing | Rank, shape, element count, construction from flat data, reshape, flat offset calculation, get, set, and fill are implemented with explicit negative-dimension, negative-index, out-of-bounds, mismatch, and overflow checks. | `src/tensor.rs`; `src/tensor_test.rs`; `hosts/llvm/src/tensor.rs` |
-| Elementwise arithmetic | Dense tensors support broadcast-compatible add, subtract, multiply, and f32 scalar scaling. Broadcast mismatches fail closed with `ERR_BROADCAST_SHAPE`. | `Tensor::addita`, `Tensor::subtrahe`, `Tensor::multiplica`, `Tensor<f32>::scala`; `src/tensor_test.rs::addita_broadcasts_size_one_dimension`; `src/tensor_test.rs::scala_scales_f32_elements_and_preserves_shape` |
+| Elementwise arithmetic | Dense tensors support broadcast-compatible add, subtract, multiply, checked finite f32 division, and f32 scalar scaling. Broadcast mismatches fail closed with `ERR_BROADCAST_SHAPE`. Division rejects non-finite inputs, exact zero denominators, and non-finite results before any autograd VJP claim. | `Tensor::addita`, `Tensor::subtrahe`, `Tensor::multiplica`, `Tensor<f32>::divide`, `Tensor<f32>::reciproca`, `Tensor<f32>::scala`; `src/tensor_test.rs::addita_broadcasts_size_one_dimension`; `src/tensor_test.rs::divide_broadcasts_finite_f32_tensors`; `src/tensor_test.rs::reciproca_preserves_shape_and_checks_denominators`; `src/tensor_test.rs::scala_scales_f32_elements_and_preserves_shape` |
 | Matmul and permutation | Dense tensors support rank-2 matrix multiply with receiver rank, argument rank, and inner-dimension errors. `Tensor::transpose_rank2` is the bounded materializing transpose primitive used by the Rust autograd scaffold's rank-2 matmul VJP. `Tensor::permute` materializes arbitrary axis order with dedicated rank, negative-axis, out-of-range-axis, and duplicate-axis diagnostics. Neither transpose nor permutation is exposed through the host ABI. | `Tensor::matmul`; `Tensor::transpose_rank2`; `Tensor::permute`; `src/tensor_test.rs::matmul_rectangular`; `src/tensor_test.rs::transpose_rank2_materializes_rows_as_columns`; `src/tensor_test.rs::permute_materializes_general_axis_order`; `src/host_abi_test.rs::host_abi_v1_does_not_expose_tensor_permute_or_transpose_symbols`; `src/autograd.rs::tests::backward_matches_rank2_matmul_sum_vjp` |
 | Reductions | The Rust carrier exposes `summa` as an element-type sum and `Tensor<f32>::media` as a non-empty f32 mean. The LLVM host ABI also exposes `__faber_rt_v1_tensor_sum` and float-only `__faber_rt_v1_tensor_mean`; integer mean is rejected until conversion support is honest for that path. | `src/tensor.rs`; `src/tensor_test.rs::media_averages_f32_elements_and_rejects_empty_tensor`; `hosts/llvm/src/tensor.rs`; `hosts/llvm/src/lib_test.rs::tensor_arithmetic_family_adds_matmuls_and_reduces` |
 | Views and materialization | Rust `sectio` returns an axis-0 view sharing the same `Arc<Mutex<Vec<T>>>`; parent and slice mutations alias. `materialize` copies logical data and breaks that alias. The LLVM host ABI materializes slices rather than exposing Rust view layout. | `src/tensor_test.rs::sectio_returns_axis_zero_view`; `src/tensor_test.rs::materialize_breaks_sectio_alias`; `hosts/llvm/src/tensor.rs` |
@@ -34,9 +34,10 @@ runtime:
   only inside the Rust autograd scaffold with `Tensor::transpose_rank2` for
   `dA = dY * B^T` and `dB = A^T * dY`; tape-owned `permute` is still
   runtime-local and not generated-gradient behavior.
-- No generic elementwise division API in the public `Tensor<T>` carrier.
-  `Tensor<f32>::scala` is covered by the internal tape-owned scalar-scale VJP,
-  and `Tensor<f32>::media` covers non-empty f32 mean.
+- Checked finite division exists only for dense `Tensor<f32>` forward values.
+  There is still no tape-owned division VJP. `Tensor<f32>::scala` is covered by
+  the internal tape-owned scalar-scale VJP, and `Tensor<f32>::media` covers
+  non-empty f32 mean.
 - No dedicated elementwise unary numeric primitives such as neg/exp/log/sin in
   `Tensor<T>` yet. The current unary autograd proof uses `forma` because the
   underlying tensor reshape operation already exists and has a local VJP.
@@ -61,41 +62,36 @@ claims.
 
 | Priority | Gap | Current substrate | Smallest acceptance gate | Explicit non-claim |
 | --- | --- | --- | --- | --- |
-| 1 | Elementwise division / reciprocal scaling | `Tensor<f32>::scala` covers scalar multiplication, but there is no generic tensor division API or tape-owned division VJP. | Add checked `Tensor<f32>` division policy first (including divide-by-zero/finite-result stance), then tape-owned backward tests against finite differences for mean-square or linear residual normalization. | No broad arithmetic parity and no generated-gradient division rule until compiler/AIR owns an oracle. |
+| 1 | Elementwise division / reciprocal scaling | `Tensor<f32>::divide` and `Tensor<f32>::reciproca` enforce checked finite forward division. `Tensor<f32>::scala` covers scalar multiplication, but there is no tape-owned division VJP. | Add tape-owned division/reciprocal backward tests against finite differences for mean-square or linear residual normalization, preserving zero/non-finite fail-closed behavior. | No broad arithmetic parity and no generated-gradient division rule until compiler/AIR owns an oracle. |
 | 2 | Numeric unary primitives | `Tensor::forma` is the current unary proof because reshape already exists; no `neg`, `exp`, `log`, `sin`, or similar elementwise numeric Tensor operations exist. | Pick one primitive with a local derivative and a clear domain policy, starting with `neg` if the goal is shape-preserving linearity or `exp` only after non-finite behavior is specified; prove tensor forward plus tape VJP against finite differences. | No math-library surface, activation library, or PyTorch unary parity. |
 | 3 | Training-loss reductions beyond scalar `summa` / non-empty f32 `media` | `summa` and `media` are covered for scalar-loss backward; current session oracle uses mean-squared loss. | Add one named reduction only if the Tensor forward API exists and its scalar seed rule is local; otherwise keep using `media((prediction-target)^2)` as the reference loss. | No optimizer/session API and no reduction host ABI gradient handle. |
 | 4 | Higher-rank matmul / batched linear algebra | Rank-2 `Tensor::matmul` plus `transpose_rank2` support the current dense linear oracle. `Tensor::permute` is materialized and tape-owned only. | Do not widen until shape policy, broadcast semantics, and AIR/generated-gradient ownership are named; first gate should be a design/test packet, not code. | No broader matmul, device execution, or generated-gradient claim. |
 
-## Division And Reciprocal Policy Gate
+## Division And Reciprocal Forward Gate
 
-Division is not implemented yet. The selected policy for the next internal
-dense `Tensor<f32>` forward primitive is checked finite division, not IEEE
+Division is implemented only as an internal dense `Tensor<f32>` forward
+primitive. The selected policy is checked finite division, not IEEE
 pass-through of `NaN`, `inf`, or `-inf` values.
 
-The next implementation should start with scalar reciprocal or scalar division
-unless tensor/tensor denominator broadcast policy is implemented in the same
-packet. Inputs must be finite before division. An exact zero denominator is an
-error, and the implementation must not materialize positive or negative
-infinity for that case. A non-finite result, including overflow to infinity or
-any `NaN`, is also an error. Scalar reciprocal and scalar division preserve the
-receiver shape. If full tensor/tensor division is added, it must use the same
-broadcast unification as add/sub/mul and keep `ERR_BROADCAST_SHAPE` for
-incompatible operand shapes.
+`Tensor<f32>::divide` uses the same broadcast unification as add/sub/mul and
+keeps `ERR_BROADCAST_SHAPE` for incompatible operand shapes.
+`Tensor<f32>::reciproca` computes elementwise `1.0 / x` while preserving the
+receiver shape. Inputs must be finite before division. An exact zero
+denominator is an error, and the implementation must not materialize positive
+or negative infinity for that case. A non-finite result, including overflow to
+infinity or any `NaN`, is also an error.
 
-Autograd support remains blocked until the forward Tensor policy is enforced by
-tests. The next acceptance gate is:
+Forward tests enforce finite result, zero denominator rejection, non-finite
+input rejection, non-finite result rejection, shape preservation, and broadcast
+mismatch behavior. Autograd support remains blocked. The next acceptance gate
+is:
 
-1. Add named `Tensor<f32>` diagnostics for zero denominator and non-finite
-   division input/result.
-2. Add focused forward tests for finite scalar division or reciprocal, zero
-   denominator rejection, non-finite input rejection, non-finite result
-   rejection, shape preservation, and broadcast mismatch if tensor/tensor
-   division is included.
-3. Only after those forward checks pass, add a tape-owned operation and
-   finite-difference proof for the same primitive. Scalar division by a finite
-   non-zero constant should scale upstream gradients by the reciprocal
-   constant. Reciprocal-style `c / x` must prove the local derivative
-   `-c / (x * x)` before being admitted.
+1. Add a tape-owned operation and finite-difference proof for the same
+   primitive.
+2. Scalar division by a finite non-zero constant should scale upstream
+   gradients by the reciprocal constant.
+3. Reciprocal-style `c / x` must prove the local derivative `-c / (x * x)`
+   before being admitted.
 
 This gate does not add a public optimizer/session API, host ABI gradient
 handle, generated-gradient rule, sparse or packed division rule, or
