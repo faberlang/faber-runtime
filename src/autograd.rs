@@ -1090,4 +1090,33 @@ mod tests {
         assert_eq!(value.tensor().magnitudines(), vec![1, 2]);
         assert_eq!(tape.nodes().len(), 1);
     }
+
+    #[test]
+    fn autograd_materialized_sectio_snapshot_ignores_parent_alias_mutation() {
+        let mut tape = AutogradTape::new();
+        let mut base = tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+        let slice = leaf(
+            &mut tape,
+            base.sectio(0, 1).expect("valid view").materialize(),
+        );
+        let weight = leaf(&mut tape, tensor(&[5.0, 7.0], &[1, 2]));
+
+        let product = tape.mul(&slice, &weight).expect("same-shape product");
+        let loss = tape.summa(&product).expect("scalar loss");
+        base.ponde(&[0, 0], 100.0).expect("parent write succeeds");
+        base.ponde(&[0, 1], 200.0).expect("parent write succeeds");
+
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(slice.id()).expect("slice gradient"),
+            &[5.0, 7.0],
+            &[1, 2],
+        );
+        assert_tensor_close(
+            gradients.gradient(weight.id()).expect("weight gradient"),
+            &[1.0, 2.0],
+            &[1, 2],
+        );
+    }
 }

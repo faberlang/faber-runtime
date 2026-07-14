@@ -16,7 +16,7 @@ behavior, session integration, optimizer support, or host ABI gradient handles.
 | Views and materialization | Rust `sectio` returns an axis-0 view sharing the same `Arc<Mutex<Vec<T>>>`; parent and slice mutations alias. `materialize` copies logical data and breaks that alias. The LLVM host ABI materializes slices rather than exposing Rust view layout. | `src/tensor_test.rs::sectio_returns_axis_zero_view`; `src/tensor_test.rs::materialize_breaks_sectio_alias`; `hosts/llvm/src/tensor.rs` |
 | Sparse bridge | `Sparsa<T>` stores non-default entries, reads absent entries as default, removes entries on default writes, and densifies to `Tensor<T>`. It has no sparse arithmetic kernels. | `src/sparsa.rs`; `src/sparsa_test.rs` |
 | Packed numeric bridge | `PackedU4Block` records toy U4 layout facts, validates metadata, dequantizes to `Vec<f32>`, and materializes as rank-1 `Tensor<f32>`. The only tensor integration row is reference materialization into elementwise add. | `src/packed_numeric.rs`; `src/packed_numeric_test.rs::packed_u4_materialized_tensor_feeds_elementwise_add` |
-| Autograd scaffold | The Rust runtime has an internal dense `Tensor<f32>` tape with node ids, parent edges, saved forward tensors, gradient accumulation, duplicate-parent accumulation, scalar-loss backward, broadcast reductions for add/sub/mul, rank-2 matmul VJP, and leaf rejection for `sectio` views. | `src/autograd.rs`; `src/autograd.rs::tests::backward_matches_rank2_matmul_sum_vjp`; `src/autograd.rs::tests::autograd_rejects_sectio_view_leaf_until_scatter_add_policy_exists` |
+| Autograd scaffold | The Rust runtime has an internal dense `Tensor<f32>` tape with node ids, parent edges, saved forward tensors, gradient accumulation, duplicate-parent accumulation, scalar-loss backward, broadcast reductions for add/sub/mul, rank-2 matmul VJP, and fail-closed leaf rejection for aliased `sectio` views. Materialized `sectio` copies are accepted and snapshotted like other leaves. | `src/autograd.rs`; `src/autograd.rs::tests::backward_matches_rank2_matmul_sum_vjp`; `src/autograd.rs::tests::autograd_rejects_sectio_view_leaf_until_scatter_add_policy_exists`; `src/autograd.rs::tests::autograd_materialized_sectio_snapshot_ignores_parent_alias_mutation` |
 | Finite-difference oracle | Test-only central-difference checks cover rank-0 scalar `x * x + x`, the exact rung-3 scalar target `loss(x, weight, target) = (x * weight - target)^2` with `x=2.0`, `weight=3.0`, `target=4.0`, `loss=4.0`, and `d_weight ~= 8.0`, same-shape vector and broadcast-bias losses, plus a dense linear training-step loss `summa((XW + b - target)^2)` that compares autograd gradients for input, weight, and bias against CPU finite differences. A test-only `LinearTrainingSession` oracle applies manual `param -= learning_rate * grad` updates to weight and bias only, keeps input frozen, compares updated parameters against the finite-difference session step, and checks a two-step loss trace matches the finite-difference trace while strictly decreasing. | `src/autograd_reference_test.rs` |
 | ABI symbols | The host ABI names tensor creation, shape, get/set, fill, flatten, materialize, slice, add/sub/mul, matmul, sum, mean, conversion, and sparse new/get/set/nonzero/rank/densify/from-tensor symbols. | `src/host_abi.rs`; `hosts/llvm/src/lib.rs` |
 
@@ -34,10 +34,10 @@ runtime:
 - No elementwise division or scalar scaling API in the public `Tensor<T>`
   carrier; LLVM float mean handles division internally, but this is not a
   reusable tensor primitive.
-- No alias policy for gradients through Rust `sectio` views. The existing view
-  aliasing is intentional for mutation, but a gradient proof must decide whether
-  views scatter-add into the parent gradient or whether the first proof forbids
-  aliased inputs.
+- No scatter-add gradient policy for Rust `sectio` views. The current proof
+  policy is intentionally fail-closed: raw aliased views are rejected at the
+  autograd leaf boundary, while `sectio(...).materialize()` is allowed because
+  it breaks storage aliasing and is snapshotted when recorded.
 - No AIR/compiler-owned gradient-check harness yet. The repo has a
   runtime-local finite-difference oracle for dense `Tensor<f32>` seed subsets
   only; it is not generated-gradient behavior.
@@ -49,10 +49,12 @@ runtime:
 The honest proof boundary stays inside dense `Tensor<f32>` and avoids the LLVM
 host ABI until the Rust-level invariant is broader:
 
-1. Use only contiguous, materialized tensors created with `Tensor::structa`.
+1. Use only contiguous, materialized tensors created with `Tensor::structa` or
+   by explicitly calling `materialize()` on a `sectio` view.
 2. Restrict the proof graph to materialized dense elementwise add/sub/mul,
-   broadcast add/sub/mul, rank-2 matmul, and `summa`, with no `sectio`, no
-   mutation after graph capture, no sparse tensors, and no packed tensors.
+   broadcast add/sub/mul, rank-2 matmul, and `summa`, with no raw aliased
+   `sectio` leaves, no mutation after graph capture, no sparse tensors, and no
+   packed tensors.
 3. Prove scalar-loss cases with local unit tests and finite-difference oracles
    before broadening generated-gradient claims. The current next-rung evidence
    is a dense linear training step plus a test-only session/update boundary
