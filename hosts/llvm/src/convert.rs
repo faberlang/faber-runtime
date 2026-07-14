@@ -167,8 +167,8 @@ pub unsafe extern "C" fn __faber_rt_v1_valor_get_ascii(
         let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
         let mut bytes = extracted.into_bytes();
         bytes.push(0);
-        let bytes = bytes.into_boxed_slice();
-        let pointer = bytes.as_ptr().cast_mut().cast::<c_void>();
+        let bytes = super::StableBox::from_box(bytes.into_boxed_slice());
+        let pointer = bytes.as_ref().as_ptr().cast_mut().cast::<c_void>();
         runtime.ascii.push(bytes);
         FaberRtPtrResultV1::success(pointer)
     }));
@@ -196,8 +196,8 @@ pub(super) fn store_valor(context: *mut FaberRtContextV1, value: Valor) -> Faber
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         }
         let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
-        let mut value = Box::new(value);
-        let handle = std::ptr::from_mut(value.as_mut()).cast::<c_void>();
+        let value = super::StableBox::new(value);
+        let handle = value.handle();
         runtime.valors.push(value);
         FaberRtPtrResultV1::success(handle)
     }))

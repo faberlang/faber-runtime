@@ -197,11 +197,11 @@ pub unsafe extern "C" fn __faber_rt_v1_text_split(
             values.push(RuntimeValue::Ptr(result.value));
         }
         let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
-        let mut array = Box::new(RuntimeArray {
+        let array = super::StableBox::new(RuntimeArray {
             kind: VALUE_KIND_PTR,
             values,
         });
-        let handle = std::ptr::from_mut(array.as_mut()).cast::<c_void>();
+        let handle = array.handle();
         runtime.arrays.push(array);
         FaberRtPtrResultV1::success(handle)
     })

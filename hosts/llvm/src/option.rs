@@ -131,8 +131,8 @@ pub(super) fn store_option(
     kind: FaberRtValueKindV1,
     value: Option<RuntimeValue>,
 ) -> FaberRtPtrResultV1 {
-    let mut option = Box::new(RuntimeOption { kind, value });
-    let handle = std::ptr::from_mut(option.as_mut()).cast::<c_void>();
+    let option = super::StableBox::new(RuntimeOption { kind, value });
+    let handle = option.handle();
     runtime.options.push(option);
     FaberRtPtrResultV1::success(handle)
 }
@@ -142,7 +142,7 @@ fn find_option(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&Runtime
         .options
         .iter()
         .find(|option| std::ptr::eq(option.as_ref(), handle.cast_const().cast::<RuntimeOption>()))
-        .map(Box::as_ref)
+        .map(super::StableBox::as_ref)
 }
 
 unsafe fn runtime_mut<'a>(context: *mut FaberRtContextV1) -> Option<&'a mut RuntimeContext> {

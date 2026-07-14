@@ -21,8 +21,8 @@ fn runtime(context: *mut FaberRtContextV1) -> Option<&'static mut RuntimeContext
 }
 
 fn store_regex(runtime: &mut RuntimeContext, value: Regex) -> FaberRtPtrResultV1 {
-    let mut boxed = Box::new(value);
-    let handle = std::ptr::from_mut(boxed.as_mut()).cast::<c_void>();
+    let boxed = super::StableBox::new(value);
+    let handle = boxed.handle();
     runtime.regexes.push(boxed);
     FaberRtPtrResultV1::success(handle)
 }
@@ -32,7 +32,7 @@ fn find_regex(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&Regex> {
         .regexes
         .iter()
         .find(|value| std::ptr::eq(value.as_ref(), handle.cast()))
-        .map(Box::as_ref)
+        .map(super::StableBox::as_ref)
 }
 
 /// `textus ↦ regex` — preserve pattern text without engine validation.

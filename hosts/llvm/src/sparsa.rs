@@ -65,8 +65,8 @@ fn runtime(context: *mut FaberRtContextV1) -> Option<&'static mut RuntimeContext
 }
 
 fn store_sparse(runtime: &mut RuntimeContext, value: RuntimeSparse) -> FaberRtPtrResultV1 {
-    let mut boxed = Box::new(value);
-    let handle = std::ptr::from_mut(boxed.as_mut()).cast::<c_void>();
+    let boxed = super::StableBox::new(value);
+    let handle = boxed.handle();
     runtime.sparses.push(boxed);
     FaberRtPtrResultV1::success(handle)
 }
@@ -76,7 +76,7 @@ fn find_sparse(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&Runtime
         .sparses
         .iter()
         .find(|value| std::ptr::eq(value.as_ref(), handle.cast()))
-        .map(Box::as_ref)
+        .map(super::StableBox::as_ref)
 }
 
 fn find_sparse_mut(
@@ -87,7 +87,7 @@ fn find_sparse_mut(
         .sparses
         .iter_mut()
         .find(|value| std::ptr::eq(value.as_ref(), handle.cast()))
-        .map(Box::as_mut)
+        .map(super::StableBox::as_mut)
 }
 
 fn shape_from_array(array: &super::array::RuntimeArray) -> Option<Vec<i64>> {

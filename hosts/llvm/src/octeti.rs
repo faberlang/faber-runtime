@@ -132,7 +132,7 @@ fn decode(context: *mut FaberRtContextV1, handle: *mut c_void, ascii: bool) -> F
         owned.push(0);
         let owned = owned.into_boxed_slice();
         let pointer = owned.as_ptr().cast_mut().cast();
-        runtime.ascii.push(owned);
+        runtime.ascii.push(super::StableBox::from_box(owned));
         FaberRtPtrResultV1::success(pointer)
     } else {
         store_text(context, String::from_utf8_lossy(bytes).into_owned())

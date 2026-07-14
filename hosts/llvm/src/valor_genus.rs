@@ -190,23 +190,23 @@ fn genus_valor_to_value(
             }
             let mut bytes = extracted.into_bytes();
             bytes.push(0);
-            let bytes = bytes.into_boxed_slice();
-            let handle = bytes.as_ptr().cast_mut().cast();
+            let bytes = super::StableBox::from_box(bytes.into_boxed_slice());
+            let handle = bytes.as_ref().as_ptr().cast_mut().cast();
             runtime.ascii.push(bytes);
             Some(RuntimeValue::Ptr(handle))
         }
         VALUE_KIND_OPTION_I64 => match valor {
             Valor::Nihil => Some(RuntimeValue::Ptr(std::ptr::null_mut())),
             _ => {
-                let mut value = Box::new(i64::from_valor(valor)?);
-                let handle = std::ptr::from_mut(value.as_mut()).cast();
+                let value = super::StableBox::new(i64::from_valor(valor)?);
+                let handle = value.handle();
                 runtime.numeric_boxes.push(value);
                 Some(RuntimeValue::Ptr(handle))
             }
         },
         VALUE_KIND_INSTANS => {
-            let mut value = Box::new(Instans::from_valor(valor)?);
-            let handle = std::ptr::from_mut(value.as_mut()).cast();
+            let value = super::StableBox::new(Instans::from_valor(valor)?);
+            let handle = value.handle();
             runtime.instants.push(value);
             Some(RuntimeValue::Ptr(handle))
         }

@@ -30,8 +30,8 @@ fn runtime(context: *mut FaberRtContextV1) -> Option<&'static mut RuntimeContext
 }
 
 fn store_interval(runtime: &mut RuntimeContext, value: Intervallum<i64>) -> FaberRtPtrResultV1 {
-    let mut boxed = Box::new(value);
-    let handle = std::ptr::from_mut(boxed.as_mut()).cast::<c_void>();
+    let boxed = super::StableBox::new(value);
+    let handle = boxed.handle();
     runtime.intervals.push(boxed);
     FaberRtPtrResultV1::success(handle)
 }
@@ -41,7 +41,7 @@ fn find_interval(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&Inter
         .intervals
         .iter()
         .find(|value| std::ptr::eq(value.as_ref(), handle.cast()))
-        .map(Box::as_ref)
+        .map(super::StableBox::as_ref)
 }
 
 fn kind_from_flag(inclusive: i32) -> Option<IntervallumKind> {

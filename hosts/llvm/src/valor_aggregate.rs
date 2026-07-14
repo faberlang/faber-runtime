@@ -50,8 +50,8 @@ pub unsafe extern "C" fn __faber_rt_v1_octeti_new(
 }
 
 pub(super) fn store_octeti(runtime: &mut RuntimeContext, bytes: Vec<u8>) -> FaberRtPtrResultV1 {
-    let mut bytes = Box::new(bytes);
-    let handle = std::ptr::from_mut(bytes.as_mut()).cast::<c_void>();
+    let bytes = super::StableBox::new(bytes);
+    let handle = bytes.handle();
     runtime.octeti.push(bytes);
     FaberRtPtrResultV1::success(handle)
 }
@@ -61,7 +61,7 @@ pub(super) fn find_octeti(runtime: &RuntimeContext, handle: *mut c_void) -> Opti
         .octeti
         .iter()
         .find(|bytes| std::ptr::eq(bytes.as_ref(), handle.cast()))
-        .map(AsRef::as_ref)
+        .map(super::StableBox::as_ref)
 }
 
 #[no_mangle]

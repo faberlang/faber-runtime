@@ -28,8 +28,8 @@ fn precision(value: FaberRtInstansPrecisionV1) -> Option<InstansPraecisio> {
 }
 
 fn store(runtime: &mut RuntimeContext, value: Instans) -> FaberRtPtrResultV1 {
-    let mut value = Box::new(value);
-    let handle = std::ptr::from_mut(value.as_mut()).cast::<c_void>();
+    let value = super::StableBox::new(value);
+    let handle = value.handle();
     runtime.instants.push(value);
     FaberRtPtrResultV1::success(handle)
 }

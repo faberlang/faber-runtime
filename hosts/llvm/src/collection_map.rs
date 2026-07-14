@@ -620,12 +620,12 @@ pub(super) fn store_map(
     value_kind: FaberRtValueKindV1,
     entries: Vec<(RuntimeValue, RuntimeValue)>,
 ) -> FaberRtPtrResultV1 {
-    let mut map = Box::new(RuntimeMap {
+    let map = super::StableBox::new(RuntimeMap {
         key_kind,
         value_kind,
         entries,
     });
-    let handle = std::ptr::from_mut(map.as_mut()).cast::<c_void>();
+    let handle = map.handle();
     runtime.maps.push(map);
     FaberRtPtrResultV1::success(handle)
 }
@@ -635,8 +635,8 @@ fn store_set(
     kind: FaberRtValueKindV1,
     values: Vec<RuntimeValue>,
 ) -> FaberRtPtrResultV1 {
-    let mut set = Box::new(RuntimeSet { kind, values });
-    let handle = std::ptr::from_mut(set.as_mut()).cast::<c_void>();
+    let set = super::StableBox::new(RuntimeSet { kind, values });
+    let handle = set.handle();
     runtime.sets.push(set);
     FaberRtPtrResultV1::success(handle)
 }
@@ -646,28 +646,28 @@ pub(super) fn find_map(runtime: &RuntimeContext, handle: *mut c_void) -> Option<
         .maps
         .iter()
         .find(|map| std::ptr::eq(map.as_ref(), handle.cast_const().cast()))
-        .map(Box::as_ref)
+        .map(super::StableBox::as_ref)
 }
 fn find_map_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&mut RuntimeMap> {
     runtime
         .maps
         .iter_mut()
         .find(|map| std::ptr::eq(map.as_ref(), handle.cast_const().cast()))
-        .map(Box::as_mut)
+        .map(super::StableBox::as_mut)
 }
 fn find_set(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeSet> {
     runtime
         .sets
         .iter()
         .find(|set| std::ptr::eq(set.as_ref(), handle.cast_const().cast()))
-        .map(Box::as_ref)
+        .map(super::StableBox::as_ref)
 }
 fn find_set_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&mut RuntimeSet> {
     runtime
         .sets
         .iter_mut()
         .find(|set| std::ptr::eq(set.as_ref(), handle.cast_const().cast()))
-        .map(Box::as_mut)
+        .map(super::StableBox::as_mut)
 }
 unsafe fn runtime_mut<'a>(context: *mut FaberRtContextV1) -> Option<&'a mut RuntimeContext> {
     (!context.is_null()).then(|| unsafe { &mut *context.cast::<RuntimeContext>() })

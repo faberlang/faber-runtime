@@ -109,7 +109,9 @@ use sparsa::{
 use std::ffi::{c_char, c_int};
 use std::fmt::Display;
 use std::io::{self, Write};
+use std::ops::{Deref, DerefMut};
 use std::panic::{self, AssertUnwindSafe};
+use std::pin::Pin;
 use std::ptr;
 use tensor::RuntimeTensor;
 #[cfg(test)]
@@ -139,22 +141,74 @@ use valor_aggregate::{
 #[cfg(test)]
 use valor_genus::{__faber_rt_v1_valor_genus, __faber_rt_v1_valor_get_genus};
 
+/// Owns a pinned heap allocation whose address is exported as an opaque ABI handle.
+///
+/// The host returns pointers into these allocations, so the allocation must not move
+/// when the owning context's vectors grow.
+struct StableBox<T: ?Sized> {
+    value: Pin<Box<T>>,
+}
+
+impl<T> StableBox<T> {
+    fn new(value: T) -> Self {
+        Self {
+            value: Box::pin(value),
+        }
+    }
+}
+
+impl<T: ?Sized> StableBox<T> {
+    fn from_box(value: Box<T>) -> Self {
+        Self {
+            value: Pin::from(value),
+        }
+    }
+
+    fn as_ref(&self) -> &T {
+        self.value.as_ref().get_ref()
+    }
+
+    fn handle(&self) -> *mut std::ffi::c_void {
+        std::ptr::from_ref(self.as_ref()).cast_mut().cast()
+    }
+}
+
+impl<T: ?Sized + Unpin> StableBox<T> {
+    fn as_mut(&mut self) -> &mut T {
+        self.value.as_mut().get_mut()
+    }
+}
+
+impl<T: ?Sized> Deref for StableBox<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+
+impl<T: ?Sized + Unpin> DerefMut for StableBox<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_mut()
+    }
+}
+
 struct RuntimeContext {
     _arguments: Vec<Vec<u8>>,
-    texts: Vec<Box<RuntimeText>>,
-    valors: Vec<Box<Valor>>,
-    ascii: Vec<Box<[u8]>>,
-    octeti: Vec<Box<Vec<u8>>>,
-    numeric_boxes: Vec<Box<i64>>,
-    instants: Vec<Box<faber::Instans>>,
-    arrays: Vec<Box<RuntimeArray>>,
-    options: Vec<Box<RuntimeOption>>,
-    maps: Vec<Box<RuntimeMap>>,
-    sets: Vec<Box<RuntimeSet>>,
-    tensors: Vec<Box<RuntimeTensor>>,
-    sparses: Vec<Box<RuntimeSparse>>,
-    regexes: Vec<Box<faber::Regex>>,
-    intervals: Vec<Box<faber::Intervallum<i64>>>,
+    texts: Vec<StableBox<RuntimeText>>,
+    valors: Vec<StableBox<Valor>>,
+    ascii: Vec<StableBox<[u8]>>,
+    octeti: Vec<StableBox<Vec<u8>>>,
+    numeric_boxes: Vec<StableBox<i64>>,
+    instants: Vec<StableBox<faber::Instans>>,
+    arrays: Vec<StableBox<RuntimeArray>>,
+    options: Vec<StableBox<RuntimeOption>>,
+    maps: Vec<StableBox<RuntimeMap>>,
+    sets: Vec<StableBox<RuntimeSet>>,
+    tensors: Vec<StableBox<RuntimeTensor>>,
+    sparses: Vec<StableBox<RuntimeSparse>>,
+    regexes: Vec<StableBox<faber::Regex>>,
+    intervals: Vec<StableBox<faber::Intervallum<i64>>>,
 }
 
 /// Initialize one process-lifetime LLVM host context.
@@ -376,6 +430,11 @@ fn unsupported_opaque_diagnostic(context: *mut FaberRtContextV1) -> FaberRtStatu
     }
 }
 
+/// Report an unsupported opaque `nota` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `_value` is ignored.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_ptr(
     context: *mut FaberRtContextV1,
@@ -384,6 +443,12 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_ptr(
     unsupported_opaque_diagnostic(context)
 }
 
+/// Report a text `nota` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `value` must point to a
+/// readable [`FaberRtSliceV1`], with readable data for its length.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_text(
     context: *mut FaberRtContextV1,
@@ -392,6 +457,12 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_text(
     write_text_diagnostic(context, false, value)
 }
 
+/// Report an ASCII `nota` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `value` must point to a
+/// valid NUL-terminated C string.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_ascii(
     context: *mut FaberRtContextV1,
@@ -400,6 +471,11 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_ascii(
     write_ascii_diagnostic(context, false, value)
 }
 
+/// Report an integer `nota` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i64(
     context: *mut FaberRtContextV1,
@@ -408,6 +484,11 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i64(
     write_diagnostic(context, false, value)
 }
 
+/// Report a boolean `nota` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i1(
     context: *mut FaberRtContextV1,
@@ -416,6 +497,11 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i1(
     write_diagnostic(context, false, display_bivalens(value != 0))
 }
 
+/// Report an f32 `nota` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_f32(
     context: *mut FaberRtContextV1,
@@ -424,6 +510,11 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_f32(
     write_diagnostic(context, false, display_fractus(value))
 }
 
+/// Report an f64 `nota` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_f64(
     context: *mut FaberRtContextV1,
@@ -432,6 +523,11 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_f64(
     write_diagnostic(context, false, display_fractus(value))
 }
 
+/// Report an i8 `nota` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i8(
     context: *mut FaberRtContextV1,
@@ -440,6 +536,11 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i8(
     write_diagnostic(context, false, value)
 }
 
+/// Report an i32 `nota` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i32(
     context: *mut FaberRtContextV1,
@@ -448,6 +549,11 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i32(
     write_diagnostic(context, false, value)
 }
 
+/// Report an unsupported opaque `mone` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `_value` is ignored.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_ptr(
     context: *mut FaberRtContextV1,
@@ -456,6 +562,12 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_ptr(
     unsupported_opaque_diagnostic(context)
 }
 
+/// Report a text `mone` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `value` must point to a
+/// readable [`FaberRtSliceV1`], with readable data for its length.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_text(
     context: *mut FaberRtContextV1,
@@ -464,6 +576,12 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_text(
     write_text_diagnostic(context, true, value)
 }
 
+/// Report an ASCII `mone` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `value` must point to a
+/// valid NUL-terminated C string.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_ascii(
     context: *mut FaberRtContextV1,
@@ -472,6 +590,11 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_ascii(
     write_ascii_diagnostic(context, true, value)
 }
 
+/// Report an integer `mone` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_i64(
     context: *mut FaberRtContextV1,
@@ -480,6 +603,11 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_i64(
     write_diagnostic(context, true, value)
 }
 
+/// Report an unsupported opaque `vide` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `_value` is ignored.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_ptr(
     context: *mut FaberRtContextV1,
@@ -488,6 +616,12 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_ptr(
     unsupported_opaque_diagnostic(context)
 }
 
+/// Report a text `vide` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `value` must point to a
+/// readable [`FaberRtSliceV1`], with readable data for its length.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_text(
     context: *mut FaberRtContextV1,
@@ -496,6 +630,12 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_text(
     write_text_diagnostic(context, false, value)
 }
 
+/// Report an ASCII `vide` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `value` must point to a
+/// valid NUL-terminated C string.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_ascii(
     context: *mut FaberRtContextV1,
@@ -504,6 +644,11 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_ascii(
     write_ascii_diagnostic(context, false, value)
 }
 
+/// Report an integer `vide` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_i64(
     context: *mut FaberRtContextV1,

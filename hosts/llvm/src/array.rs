@@ -58,8 +58,8 @@ pub(super) fn store_array(
     kind: FaberRtValueKindV1,
     values: Vec<RuntimeValue>,
 ) -> FaberRtPtrResultV1 {
-    let mut array = Box::new(RuntimeArray { kind, values });
-    let handle = std::ptr::from_mut(array.as_mut()).cast::<c_void>();
+    let array = super::StableBox::new(RuntimeArray { kind, values });
+    let handle = array.handle();
     runtime.arrays.push(array);
     FaberRtPtrResultV1::success(handle)
 }
@@ -388,7 +388,7 @@ pub(super) fn find_array(runtime: &RuntimeContext, handle: *mut c_void) -> Optio
         .arrays
         .iter()
         .find(|array| std::ptr::eq(array.as_ref(), handle.cast_const().cast::<RuntimeArray>()))
-        .map(Box::as_ref)
+        .map(super::StableBox::as_ref)
 }
 
 fn find_array_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&mut RuntimeArray> {
@@ -396,7 +396,7 @@ fn find_array_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&
         .arrays
         .iter_mut()
         .find(|array| std::ptr::eq(array.as_ref(), handle.cast_const().cast::<RuntimeArray>()))
-        .map(Box::as_mut)
+        .map(super::StableBox::as_mut)
 }
 
 fn find_array_index(runtime: &RuntimeContext, handle: *mut c_void) -> Option<usize> {

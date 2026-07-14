@@ -70,8 +70,8 @@ pub(super) fn store_tensor(
     shape: Vec<i64>,
     data: Vec<RuntimeValue>,
 ) -> FaberRtPtrResultV1 {
-    let mut tensor = Box::new(RuntimeTensor { kind, shape, data });
-    let handle = std::ptr::from_mut(tensor.as_mut()).cast::<c_void>();
+    let tensor = super::StableBox::new(RuntimeTensor { kind, shape, data });
+    let handle = tensor.handle();
     runtime.tensors.push(tensor);
     FaberRtPtrResultV1::success(handle)
 }
@@ -81,7 +81,7 @@ pub(super) fn find_tensor(runtime: &RuntimeContext, handle: *mut c_void) -> Opti
         .tensors
         .iter()
         .find(|tensor| std::ptr::eq(tensor.as_ref(), handle.cast()))
-        .map(Box::as_ref)
+        .map(super::StableBox::as_ref)
 }
 
 fn find_tensor_mut(
@@ -92,7 +92,7 @@ fn find_tensor_mut(
         .tensors
         .iter_mut()
         .find(|tensor| std::ptr::eq(tensor.as_ref(), handle.cast()))
-        .map(Box::as_mut)
+        .map(super::StableBox::as_mut)
 }
 
 fn shape_from_array(array: &RuntimeArray) -> Option<Vec<i64>> {

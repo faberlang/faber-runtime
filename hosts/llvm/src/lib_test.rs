@@ -470,8 +470,8 @@ fn scalar_text_conversion_family_preserves_rust_conversion_spellings() {
         "false"
     );
 
-    let empty = CStr::from_bytes_with_nul(b"\0").expect("valid empty ASCII");
-    let nonempty = CStr::from_bytes_with_nul(b"yes\0").expect("valid ASCII");
+    let empty = c"";
+    let nonempty = c"yes";
     let mut answer = 0;
     assert_eq!(
         unsafe { __faber_rt_v1_ascii_truthy(context, empty.as_ptr(), &mut answer) },

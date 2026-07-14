@@ -6,7 +6,6 @@ use faber::host_abi::{
     STATUS_OK, STATUS_PANIC,
 };
 use faber::{display_bivalens, display_fractus};
-use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 
 fn ffi_ptr_result(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrResultV1 {
@@ -261,11 +260,11 @@ pub(super) fn store_text(context: *mut FaberRtContextV1, value: String) -> Faber
         data: value.as_ptr(),
         len: value.len() as u64,
     };
-    let mut text = Box::new(RuntimeText {
+    let text = super::StableBox::new(RuntimeText {
         slice,
         _value: value,
     });
-    let handle = std::ptr::from_mut(text.as_mut()).cast::<c_void>();
+    let handle = text.handle();
     runtime.texts.push(text);
     FaberRtPtrResultV1::success(handle)
 }
