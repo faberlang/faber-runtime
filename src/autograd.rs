@@ -1392,6 +1392,90 @@ mod tests {
     }
 
     #[test]
+    fn backward_reduces_scalar_broadcast_after_permute() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]));
+        let scalar = leaf(&mut tape, tensor(&[10.0], &[]));
+
+        let permuted = tape.permute(&value, &[1, 0]).expect("permute records");
+        let shifted = tape.add(&permuted, &scalar).expect("scalar broadcasts");
+        let loss = tape.summa(&shifted).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(value.id()).expect("value gradient"),
+            &[1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            &[2, 3],
+        );
+        assert_tensor_close(
+            gradients.gradient(scalar.id()).expect("scalar gradient"),
+            &[6.0],
+            &[],
+        );
+    }
+
+    #[test]
+    fn backward_reduces_vector_broadcast_mul_after_permute() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]));
+        let scale = leaf(&mut tape, tensor(&[10.0, 20.0], &[2]));
+
+        let permuted = tape.permute(&value, &[1, 0]).expect("permute records");
+        let product = tape.mul(&permuted, &scale).expect("vector broadcasts");
+        let loss = tape.summa(&product).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(value.id()).expect("value gradient"),
+            &[10.0, 10.0, 10.0, 20.0, 20.0, 20.0],
+            &[2, 3],
+        );
+        assert_tensor_close(
+            gradients.gradient(scale.id()).expect("scale gradient"),
+            &[6.0, 15.0],
+            &[2],
+        );
+    }
+
+    #[test]
+    fn backward_reduces_tensor_broadcast_sub_after_permute() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]));
+        let bias = leaf(&mut tape, tensor(&[10.0, 20.0, 30.0], &[3, 1]));
+
+        let permuted = tape.permute(&value, &[1, 0]).expect("permute records");
+        let residual = tape.sub(&permuted, &bias).expect("column broadcasts");
+        let loss = tape.summa(&residual).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(value.id()).expect("value gradient"),
+            &[1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            &[2, 3],
+        );
+        assert_tensor_close(
+            gradients.gradient(bias.id()).expect("bias gradient"),
+            &[-2.0, -2.0, -2.0],
+            &[3, 1],
+        );
+    }
+
+    #[test]
+    fn autograd_rejects_incompatible_broadcast_after_permute_without_recording_node() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]));
+        let incompatible = leaf(&mut tape, tensor(&[10.0, 20.0, 30.0, 40.0], &[4]));
+        let permuted = tape.permute(&value, &[1, 0]).expect("permute records");
+
+        let before = tape.nodes().len();
+        assert_eq!(
+            tape.add(&permuted, &incompatible).unwrap_err(),
+            AutogradError::Tensor(crate::tensor::ERR_BROADCAST_SHAPE)
+        );
+        assert_eq!(tape.nodes().len(), before);
+    }
+
+    #[test]
     fn broadcast_gradient_reduction_rejects_unsupported_shape_mismatch() {
         let upstream = tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
 
