@@ -1508,9 +1508,23 @@ fn processus_exsequi_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
         .arg(&command)
         .output()
     {
-        Ok(output) => item_done_frames(Valor::Textus(
+        Ok(output) if output.status.success() => item_done_frames(Valor::Textus(
             String::from_utf8_lossy(&output.stdout).into_owned(),
         )),
+        Ok(output) => {
+            let status = output.status.code().map_or_else(
+                || "terminated without exit code".to_owned(),
+                |code| format!("exit status {code}"),
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.is_empty() {
+                error_frames(format!("processus:exsequi failed with {status}"))
+            } else {
+                error_frames(format!(
+                    "processus:exsequi failed with {status}: stderr: {stderr}"
+                ))
+            }
+        }
         Err(err) => error_frames(format!("processus.exsequi failed: {err}")),
     }
 }

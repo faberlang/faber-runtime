@@ -1062,6 +1062,39 @@ fn processus_exsequi_route_materializes_stdout() {
 }
 
 #[test]
+fn processus_exsequi_route_rejects_nonzero_exit() {
+    let mut sermo = frame::sermo_open("processus:exsequi");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus("exit 7".into()));
+
+    let frame = frame::sermo_recv(&mut sermo).expect("nonzero exit terminal");
+
+    assert_eq!(frame.status, FrameStatus::Error);
+    assert!(matches!(
+        frame.data,
+        Valor::Textus(message)
+            if message.contains("processus:exsequi failed")
+                && message.contains("exit status 7")
+                && !message.contains("stderr:")
+    ));
+}
+
+#[test]
+fn processus_exsequi_route_reports_stderr_on_nonzero_exit() {
+    let mut sermo = frame::sermo_open("processus:exsequi");
+    frame::sermo_set_opener(
+        &mut sermo,
+        Valor::Textus("printf runtime-process-error >&2; exit 7".into()),
+    );
+
+    let error = frame::try_sermo_materialize_textus(&mut sermo)
+        .expect_err("nonzero exit with stderr must fail");
+
+    assert_eq!(error.issue, "frame_materialization_terminal_error");
+    assert!(error.message.contains("exit status 7"));
+    assert!(error.message.contains("runtime-process-error"));
+}
+
+#[test]
 fn processus_captura_route_materializes_status_stdout_and_stderr() {
     let mut sermo = frame::sermo_open("processus:captura");
     frame::sermo_set_opener(
