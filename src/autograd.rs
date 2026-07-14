@@ -2,12 +2,12 @@
 //!
 //! This v0 is deliberately a tape/metadata scaffold, not a PyTorch-equivalent
 //! runtime. It records contiguous/materialized leaf tensors and broadcast-aware
-//! `add`, `sub`, `mul`, and `summa` forward operations, then runs a scalar-loss
-//! backward pass for those same operations. Broadcasted binary operations reduce
-//! parent gradients back to each original parent shape. `Tensor::sectio` views
-//! are rejected at the leaf boundary until scatter-add view gradients exist. It
-//! does not implement sessions, optimizers, host ABI gradient handles, matmul,
-//! or mutation semantics.
+//! `add`, `sub`, `mul`, rank-2 `matmul`, and `summa` forward operations, then
+//! runs a scalar-loss backward pass for those same operations. Broadcasted binary
+//! operations reduce parent gradients back to each original parent shape.
+//! `Tensor::sectio` views are rejected at the leaf boundary until scatter-add
+//! view gradients exist. It does not implement sessions, optimizers, host ABI
+//! gradient handles, or mutation semantics.
 
 #![allow(dead_code)]
 
@@ -25,12 +25,12 @@ pub(crate) enum AutogradOp {
     Add,
     Sub,
     Mul,
+    Matmul,
     Summa,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum UnsupportedAutogradOp {
-    Matmul,
     Mutation,
     View,
     HostAbi,
@@ -133,6 +133,18 @@ impl AutogradTape {
         self.binary(lhs, rhs, AutogradOp::Mul, Tensor::multiplica)
     }
 
+    pub(crate) fn matmul(
+        &mut self,
+        lhs: &AutogradValue,
+        rhs: &AutogradValue,
+    ) -> Result<AutogradValue, AutogradError> {
+        let tensor = lhs
+            .tensor
+            .matmul(&rhs.tensor)
+            .map_err(AutogradError::Tensor)?;
+        Ok(self.record(AutogradOp::Matmul, vec![lhs.id, rhs.id], tensor))
+    }
+
     pub(crate) fn summa(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
         let tensor =
             Tensor::structa(vec![value.tensor.summa()], &[]).map_err(AutogradError::Tensor)?;
@@ -213,6 +225,25 @@ impl AutogradTape {
                                 .map_err(AutogradError::Tensor)?,
                             &rhs_shape,
                         )?,
+                    )?;
+                }
+                AutogradOp::Matmul => {
+                    let &[lhs, rhs] = parent_pair(node)?;
+                    let lhs_value = self.value(lhs)?;
+                    let rhs_value = self.value(rhs)?;
+                    let rhs_transposed = transpose_rank2(rhs_value)?;
+                    let lhs_transposed = transpose_rank2(lhs_value)?;
+                    gradients.accumulate(
+                        lhs,
+                        upstream
+                            .matmul(&rhs_transposed)
+                            .map_err(AutogradError::Tensor)?,
+                    )?;
+                    gradients.accumulate(
+                        rhs,
+                        lhs_transposed
+                            .matmul(&upstream)
+                            .map_err(AutogradError::Tensor)?,
                     )?;
                 }
                 AutogradOp::Summa => {
@@ -432,6 +463,24 @@ fn scale_tensor(tensor: &Tensor<f32>, scalar: f32) -> Result<Tensor<f32>, Autogr
     Tensor::structa(data, &tensor.magnitudines()).map_err(AutogradError::Tensor)
 }
 
+fn transpose_rank2(tensor: &Tensor<f32>) -> Result<Tensor<f32>, AutogradError> {
+    let shape = tensor.magnitudines();
+    let [rows, cols]: [i64; 2] = shape
+        .as_slice()
+        .try_into()
+        .map_err(|_| AutogradError::Tensor(crate::tensor::ERR_MATMUL_RECEIVER_RANK))?;
+    let rows = usize::try_from(rows).map_err(|_| AutogradError::ShapeMismatch)?;
+    let cols = usize::try_from(cols).map_err(|_| AutogradError::ShapeMismatch)?;
+    let data = tensor.planata();
+    let mut transposed = Vec::with_capacity(data.len());
+    for col in 0..cols {
+        for row in 0..rows {
+            transposed.push(data[row * cols + col]);
+        }
+    }
+    Tensor::structa(transposed, &[shape[1], shape[0]]).map_err(AutogradError::Tensor)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -549,14 +598,41 @@ mod tests {
     }
 
     #[test]
+    fn autograd_records_rank2_matmul_op_tags_parent_edges_and_forward_values() {
+        let mut tape = AutogradTape::new();
+        let lhs = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]));
+        let rhs = leaf(
+            &mut tape,
+            tensor(&[7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[3, 2]),
+        );
+
+        let product = tape.matmul(&lhs, &rhs).expect("rank-2 matmul records");
+
+        assert_eq!(product.tensor().magnitudines(), vec![2, 2]);
+        assert_eq!(product.tensor().planata(), vec![58.0, 64.0, 139.0, 154.0]);
+        let node = tape.node(product.id()).expect("matmul node");
+        assert_eq!(node.op(), AutogradOp::Matmul);
+        assert_eq!(node.parents(), &[lhs.id(), rhs.id()]);
+    }
+
+    #[test]
+    fn autograd_matmul_rejects_invalid_shapes_without_recording_node() {
+        let mut tape = AutogradTape::new();
+        let lhs = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]));
+        let rhs = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+
+        let before = tape.nodes().len();
+        assert_eq!(
+            tape.matmul(&lhs, &rhs).unwrap_err(),
+            AutogradError::Tensor(crate::tensor::ERR_MATMUL_INNER_DIMENSION)
+        );
+        assert_eq!(tape.nodes().len(), before);
+    }
+
+    #[test]
     fn autograd_v0_explicitly_rejects_out_of_scope_operations() {
         let tape = AutogradTape::new();
 
-        assert_eq!(
-            tape.reject_unsupported::<AutogradValue>(UnsupportedAutogradOp::Matmul)
-                .unwrap_err(),
-            AutogradError::Unsupported(UnsupportedAutogradOp::Matmul)
-        );
         assert_eq!(
             tape.reject_unsupported::<()>(UnsupportedAutogradOp::Mutation),
             Err(AutogradError::Unsupported(UnsupportedAutogradOp::Mutation))
@@ -572,6 +648,47 @@ mod tests {
         assert_eq!(
             tape.reject_unsupported::<()>(UnsupportedAutogradOp::Session),
             Err(AutogradError::Unsupported(UnsupportedAutogradOp::Session))
+        );
+    }
+
+    #[test]
+    fn backward_matches_rank2_matmul_sum_vjp() {
+        let mut tape = AutogradTape::new();
+        let lhs = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]));
+        let rhs = leaf(
+            &mut tape,
+            tensor(&[7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[3, 2]),
+        );
+
+        let product = tape.matmul(&lhs, &rhs).expect("rank-2 product");
+        let loss = tape.summa(&product).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(lhs.id()).expect("lhs gradient"),
+            &[15.0, 19.0, 23.0, 15.0, 19.0, 23.0],
+            &[2, 3],
+        );
+        assert_tensor_close(
+            gradients.gradient(rhs.id()).expect("rhs gradient"),
+            &[5.0, 5.0, 7.0, 7.0, 9.0, 9.0],
+            &[3, 2],
+        );
+    }
+
+    #[test]
+    fn backward_accumulates_duplicate_parent_for_rank2_matmul() {
+        let mut tape = AutogradTape::new();
+        let x = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+
+        let square = tape.matmul(&x, &x).expect("square matrix product");
+        let loss = tape.summa(&square).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(x.id()).expect("x gradient"),
+            &[7.0, 11.0, 9.0, 13.0],
+            &[2, 2],
         );
     }
 
