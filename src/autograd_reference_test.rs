@@ -127,6 +127,35 @@ fn apply_linear_parameter_update(params: &[f32], gradient: &[f32], learning_rate
     updated
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct LinearTrainingSession {
+    params: Vec<f32>,
+    learning_rate: f32,
+}
+
+impl LinearTrainingSession {
+    fn new(params: Vec<f32>, learning_rate: f32) -> Self {
+        Self {
+            params,
+            learning_rate,
+        }
+    }
+
+    fn loss(&self) -> f32 {
+        linear_training_step_loss(&self.params)
+    }
+
+    fn autograd_step(&mut self) {
+        let gradient = linear_training_step_autograd_gradient(&self.params);
+        self.params = apply_linear_parameter_update(&self.params, &gradient, self.learning_rate);
+    }
+
+    fn finite_difference_step(&mut self) {
+        let gradient = finite_difference_gradient(&self.params, linear_training_step_loss);
+        self.params = apply_linear_parameter_update(&self.params, &gradient, self.learning_rate);
+    }
+}
+
 fn rung3_scalar_loss(params: &[f32]) -> f32 {
     let x = Tensor::structa(vec![params[0]], &[]).expect("rank-zero x tensor");
     let weight = Tensor::structa(vec![params[1]], &[]).expect("rank-zero weight tensor");
@@ -200,18 +229,17 @@ fn autograd_matches_finite_difference_linear_training_step_gradients() {
 fn autograd_parameter_update_matches_finite_difference_linear_oracle() {
     let params = vec![0.5_f32, -1.0, 2.0, 0.75, 1.25, -0.5, 0.8, 1.1, 0.2, -0.3];
     let learning_rate = 0.01;
-    let reference_gradient = finite_difference_gradient(&params, linear_training_step_loss);
-    let autograd_gradient = linear_training_step_autograd_gradient(&params);
+    let mut reference = LinearTrainingSession::new(params.clone(), learning_rate);
+    let mut autograd = LinearTrainingSession::new(params.clone(), learning_rate);
+    let initial_loss = autograd.loss();
 
-    let reference_updated =
-        apply_linear_parameter_update(&params, &reference_gradient, learning_rate);
-    let autograd_updated =
-        apply_linear_parameter_update(&params, &autograd_gradient, learning_rate);
+    reference.finite_difference_step();
+    autograd.autograd_step();
 
-    assert_gradient_close(&autograd_updated, &reference_updated);
-    assert_eq!(&autograd_updated[0..4], &params[0..4]);
+    assert_gradient_close(&autograd.params, &reference.params);
+    assert_eq!(&autograd.params[0..4], &params[0..4]);
     assert!(
-        linear_training_step_loss(&autograd_updated) < linear_training_step_loss(&params),
+        autograd.loss() < initial_loss,
         "manual weight/bias update should lower the local training loss"
     );
 }
