@@ -4,9 +4,10 @@
 //! runtime. It records contiguous/materialized leaf tensors and broadcast-aware
 //! `add`, `sub`, `mul`, and `summa` forward operations, then runs a scalar-loss
 //! backward pass for those same operations. Broadcasted binary operations reduce
-//! parent gradients back to each original parent shape. It does not implement
-//! sessions, optimizers, host ABI gradient handles, matmul, mutation, or view
-//! semantics.
+//! parent gradients back to each original parent shape. `Tensor::sectio` views
+//! are rejected at the leaf boundary until scatter-add view gradients exist. It
+//! does not implement sessions, optimizers, host ABI gradient handles, matmul,
+//! or mutation semantics.
 
 #![allow(dead_code)]
 
@@ -101,8 +102,11 @@ impl AutogradTape {
         }
     }
 
-    pub(crate) fn leaf(&mut self, tensor: Tensor<f32>) -> AutogradValue {
-        self.record(AutogradOp::Leaf, Vec::new(), tensor)
+    pub(crate) fn leaf(&mut self, tensor: Tensor<f32>) -> Result<AutogradValue, AutogradError> {
+        if tensor.is_view() {
+            return Err(AutogradError::Unsupported(UnsupportedAutogradOp::View));
+        }
+        Ok(self.record(AutogradOp::Leaf, Vec::new(), tensor))
     }
 
     pub(crate) fn add(
@@ -436,6 +440,11 @@ mod tests {
         Tensor::structa(values.to_vec(), shape).expect("test tensor shape matches")
     }
 
+    fn leaf(tape: &mut AutogradTape, tensor: Tensor<f32>) -> AutogradValue {
+        tape.leaf(tensor)
+            .expect("materialized tensor is differentiable")
+    }
+
     fn assert_tensor_close(actual: &Tensor<f32>, expected: &[f32], shape: &[i64]) {
         assert_eq!(actual.magnitudines(), shape);
         assert_eq!(actual.planata().len(), expected.len());
@@ -453,8 +462,8 @@ mod tests {
     fn autograd_leaf_ids_are_stable_and_record_shape() {
         let mut tape = AutogradTape::new();
 
-        let x = tape.leaf(tensor(&[1.0, 2.0], &[2]));
-        let w = tape.leaf(tensor(&[3.0, 4.0], &[2]));
+        let x = leaf(&mut tape, tensor(&[1.0, 2.0], &[2]));
+        let w = leaf(&mut tape, tensor(&[3.0, 4.0], &[2]));
 
         assert_eq!(x.id(), AutogradNodeId(0));
         assert_eq!(w.id(), AutogradNodeId(1));
@@ -467,8 +476,8 @@ mod tests {
     #[test]
     fn autograd_records_same_shape_op_tags_parent_edges_and_forward_values() {
         let mut tape = AutogradTape::new();
-        let x = tape.leaf(tensor(&[1.0, 2.0], &[2]));
-        let w = tape.leaf(tensor(&[3.0, 4.0], &[2]));
+        let x = leaf(&mut tape, tensor(&[1.0, 2.0], &[2]));
+        let w = leaf(&mut tape, tensor(&[3.0, 4.0], &[2]));
 
         let product = tape.mul(&x, &w).expect("same-shape mul records");
         let shifted = tape.add(&product, &x).expect("same-shape add records");
@@ -495,8 +504,8 @@ mod tests {
     #[test]
     fn autograd_records_subtraction_parent_order() {
         let mut tape = AutogradTape::new();
-        let prediction = tape.leaf(tensor(&[4.0, 8.0], &[2]));
-        let target = tape.leaf(tensor(&[1.0, 3.0], &[2]));
+        let prediction = leaf(&mut tape, tensor(&[4.0, 8.0], &[2]));
+        let target = leaf(&mut tape, tensor(&[1.0, 3.0], &[2]));
 
         let residual = tape
             .sub(&prediction, &target)
@@ -511,8 +520,8 @@ mod tests {
     #[test]
     fn autograd_records_broadcast_add_shape() {
         let mut tape = AutogradTape::new();
-        let matrix = tape.leaf(tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
-        let column = tape.leaf(tensor(&[10.0, 20.0], &[2, 1]));
+        let matrix = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+        let column = leaf(&mut tape, tensor(&[10.0, 20.0], &[2, 1]));
 
         let shifted = tape.add(&matrix, &column).expect("broadcast add records");
 
@@ -526,8 +535,8 @@ mod tests {
     #[test]
     fn autograd_rejects_incompatible_broadcast_shape_without_recording_node() {
         let mut tape = AutogradTape::new();
-        let matrix = tape.leaf(tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
-        let vector = tape.leaf(tensor(&[10.0, 20.0, 30.0], &[3]));
+        let matrix = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+        let vector = leaf(&mut tape, tensor(&[10.0, 20.0, 30.0], &[3]));
 
         let before = tape.nodes().len();
         let err = tape.add(&matrix, &vector).unwrap_err();
@@ -569,7 +578,7 @@ mod tests {
     #[test]
     fn backward_accumulates_duplicate_parent_for_rank_zero_square_plus_self() {
         let mut tape = AutogradTape::new();
-        let x = tape.leaf(tensor(&[1.75], &[]));
+        let x = leaf(&mut tape, tensor(&[1.75], &[]));
         let square = tape.mul(&x, &x).expect("same-shape square");
         let shifted = tape.add(&square, &x).expect("same-shape add");
         let loss = tape.summa(&shifted).expect("scalar sum");
@@ -586,9 +595,9 @@ mod tests {
     #[test]
     fn backward_matches_rung3_scalar_weight_gradient() {
         let mut tape = AutogradTape::new();
-        let x = tape.leaf(tensor(&[2.0], &[]));
-        let weight = tape.leaf(tensor(&[3.0], &[]));
-        let target = tape.leaf(tensor(&[4.0], &[]));
+        let x = leaf(&mut tape, tensor(&[2.0], &[]));
+        let weight = leaf(&mut tape, tensor(&[3.0], &[]));
+        let target = leaf(&mut tape, tensor(&[4.0], &[]));
 
         let prediction = tape.mul(&x, &weight).expect("x * weight");
         let residual = tape.sub(&prediction, &target).expect("prediction - target");
@@ -611,9 +620,9 @@ mod tests {
         let x_values = [0.5_f32, -1.0, 2.0];
         let w_values = [3.0_f32, -0.25, 0.75];
         let target_values = [1.0_f32, -2.0, 0.5];
-        let x = tape.leaf(tensor(&x_values, &[3]));
-        let w = tape.leaf(tensor(&w_values, &[3]));
-        let target = tape.leaf(tensor(&target_values, &[3]));
+        let x = leaf(&mut tape, tensor(&x_values, &[3]));
+        let w = leaf(&mut tape, tensor(&w_values, &[3]));
+        let target = leaf(&mut tape, tensor(&target_values, &[3]));
 
         let prediction = tape.mul(&x, &w).expect("x * w");
         let residual = tape.sub(&prediction, &target).expect("prediction - target");
@@ -656,9 +665,9 @@ mod tests {
         let x_values = [0.5_f32, -1.0, 2.0, 4.0];
         let bias_values = [0.25_f32, -0.75];
         let target_values = [1.0_f32, -2.0, 0.5, 3.0];
-        let x = tape.leaf(tensor(&x_values, &[2, 2]));
-        let bias = tape.leaf(tensor(&bias_values, &[2, 1]));
-        let target = tape.leaf(tensor(&target_values, &[2, 2]));
+        let x = leaf(&mut tape, tensor(&x_values, &[2, 2]));
+        let bias = leaf(&mut tape, tensor(&bias_values, &[2, 1]));
+        let target = leaf(&mut tape, tensor(&target_values, &[2, 2]));
 
         let prediction = tape.add(&x, &bias).expect("row bias broadcasts");
         let residual = tape.sub(&prediction, &target).expect("prediction - target");
@@ -694,8 +703,8 @@ mod tests {
     #[test]
     fn backward_reduces_broadcast_mul_with_opposite_operand() {
         let mut tape = AutogradTape::new();
-        let x = tape.leaf(tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
-        let scale = tape.leaf(tensor(&[10.0, -2.0], &[2, 1]));
+        let x = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+        let scale = leaf(&mut tape, tensor(&[10.0, -2.0], &[2, 1]));
 
         let product = tape.mul(&x, &scale).expect("row scale broadcasts");
         let loss = tape.summa(&product).expect("scalar loss");
@@ -716,8 +725,8 @@ mod tests {
     #[test]
     fn backward_reduces_broadcast_sub_with_rhs_negative_sign() {
         let mut tape = AutogradTape::new();
-        let x = tape.leaf(tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
-        let bias = tape.leaf(tensor(&[10.0, 20.0], &[2, 1]));
+        let x = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+        let bias = leaf(&mut tape, tensor(&[10.0, 20.0], &[2, 1]));
 
         let residual = tape.sub(&x, &bias).expect("row bias broadcasts");
         let loss = tape.summa(&residual).expect("scalar loss");
@@ -748,13 +757,38 @@ mod tests {
     #[test]
     fn backward_rejects_non_scalar_output_seed() {
         let mut tape = AutogradTape::new();
-        let x = tape.leaf(tensor(&[1.0, 2.0], &[2]));
-        let w = tape.leaf(tensor(&[3.0, 4.0], &[2]));
+        let x = leaf(&mut tape, tensor(&[1.0, 2.0], &[2]));
+        let w = leaf(&mut tape, tensor(&[3.0, 4.0], &[2]));
         let product = tape.mul(&x, &w).expect("same-shape product");
 
         assert_eq!(
             tape.backward(&product).unwrap_err(),
             AutogradError::BackwardRequiresScalar
         );
+    }
+
+    #[test]
+    fn autograd_rejects_sectio_view_leaf_until_scatter_add_policy_exists() {
+        let mut tape = AutogradTape::new();
+        let base = tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+        let view = base.sectio(0, 1).expect("valid view");
+
+        assert_eq!(
+            tape.leaf(view).unwrap_err(),
+            AutogradError::Unsupported(UnsupportedAutogradOp::View)
+        );
+        assert!(tape.nodes().is_empty());
+    }
+
+    #[test]
+    fn autograd_accepts_materialized_copy_of_sectio_view() {
+        let mut tape = AutogradTape::new();
+        let base = tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+        let materialized = base.sectio(0, 1).expect("valid view").materialize();
+
+        let value = tape.leaf(materialized).expect("materialized copy is leaf");
+
+        assert_eq!(value.tensor().magnitudines(), vec![1, 2]);
+        assert_eq!(tape.nodes().len(), 1);
     }
 }
