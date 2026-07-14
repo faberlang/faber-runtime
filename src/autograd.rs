@@ -2,8 +2,8 @@
 //!
 //! This v0 is deliberately a tape/metadata scaffold, not a PyTorch-equivalent
 //! runtime. It records contiguous/materialized leaf tensors and broadcast-aware
-//! `add`, `sub`, `mul`, rank-2 `matmul`, `forma`, materialized `permute`,
-//! axis-0 `sectio`, `summa`, and `media` forward operations, then runs a
+//! `add`, `sub`, `mul`, rank-2 `matmul`, tape-owned scalar `scala`, `forma`,
+//! materialized `permute`, axis-0 `sectio`, `summa`, and `media` forward operations, then runs a
 //! scalar-loss backward pass for those same operations. Broadcasted binary
 //! operations reduce parent gradients back to each original parent shape. Raw
 //! `Tensor::sectio` views are rejected at the leaf boundary; tape-owned
@@ -34,6 +34,7 @@ pub(crate) enum AutogradOp {
     Sub,
     Mul,
     Matmul,
+    Scala { factor: u32 },
     Forma,
     Permute { axes: Vec<i64> },
     Sectio { start: i64 },
@@ -171,6 +172,22 @@ impl AutogradTape {
             .matmul(&rhs.tensor)
             .map_err(AutogradError::Tensor)?;
         Ok(self.record(AutogradOp::Matmul, vec![lhs.id, rhs.id], tensor))
+    }
+
+    pub(crate) fn scala(
+        &mut self,
+        value: &AutogradValue,
+        factor: f32,
+    ) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(value)?;
+        let tensor = value.tensor.scala(factor);
+        Ok(self.record(
+            AutogradOp::Scala {
+                factor: factor.to_bits(),
+            },
+            vec![value.id],
+            tensor,
+        ))
     }
 
     pub(crate) fn forma(
@@ -330,6 +347,12 @@ impl AutogradTape {
                             .matmul(&upstream)
                             .map_err(AutogradError::Tensor)?,
                     )?;
+                }
+                AutogradOp::Scala { factor } => {
+                    let &[parent] = node.parents.as_slice() else {
+                        return Err(AutogradError::MissingNode);
+                    };
+                    gradients.accumulate(parent, upstream.scala(f32::from_bits(factor)))?;
                 }
                 AutogradOp::Forma => {
                     let &[parent] = node.parents.as_slice() else {
@@ -888,6 +911,62 @@ mod tests {
         let node = tape.node(product.id()).expect("matmul node");
         assert_eq!(node.op(), AutogradOp::Matmul);
         assert_eq!(node.parents(), &[lhs.id(), rhs.id()]);
+    }
+
+    #[test]
+    fn autograd_tape_owned_scala_records_parent_edge_factor_and_forward_value() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, -2.0, 3.5, 4.0], &[2, 2]));
+
+        let scaled = tape.scala(&value, -0.5).expect("scala records");
+
+        assert_eq!(scaled.tensor().magnitudines(), vec![2, 2]);
+        assert_eq!(scaled.tensor().planata(), vec![-0.5, 1.0, -1.75, -2.0]);
+        let node = tape.node(scaled.id()).expect("scala node");
+        assert_eq!(
+            node.op(),
+            AutogradOp::Scala {
+                factor: (-0.5_f32).to_bits()
+            }
+        );
+        assert_eq!(node.parents(), &[value.id()]);
+    }
+
+    #[test]
+    fn backward_scales_tape_owned_scala_gradient_by_factor() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, -2.0, 3.0], &[3]));
+        let weights = leaf(&mut tape, tensor(&[5.0, 7.0, 11.0], &[3]));
+
+        let scaled = tape.scala(&value, 0.25).expect("scala records");
+        let product = tape.mul(&scaled, &weights).expect("same-shape product");
+        let loss = tape.summa(&product).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(value.id()).expect("value gradient"),
+            &[1.25, 1.75, 2.75],
+            &[3],
+        );
+        assert_tensor_close(
+            gradients.gradient(weights.id()).expect("weights gradient"),
+            &[0.25, -0.5, 0.75],
+            &[3],
+        );
+    }
+
+    #[test]
+    fn autograd_tape_owned_scala_rejects_cross_tape_parent_without_recording_node() {
+        let mut local_tape = AutogradTape::new();
+        let mut foreign_tape = AutogradTape::new();
+        let foreign = leaf(&mut foreign_tape, tensor(&[1.0, 2.0], &[2]));
+
+        let before = local_tape.nodes().len();
+        assert_eq!(
+            local_tape.scala(&foreign, 2.0).unwrap_err(),
+            AutogradError::ForeignTapeValue
+        );
+        assert_eq!(local_tape.nodes().len(), before);
     }
 
     #[test]

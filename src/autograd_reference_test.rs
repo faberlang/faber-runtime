@@ -72,11 +72,30 @@ fn mean_square_loss(params: &[f32]) -> f32 {
     squared.media().expect("non-empty mean")
 }
 
+fn scaled_mean_square_loss(params: &[f32]) -> f32 {
+    let x = Tensor::structa(params.to_vec(), &[2, 2]).expect("x tensor");
+    let scaled = x.scala(0.25);
+    let squared = scaled.multiplica(&scaled).expect("same-shape square");
+    squared.media().expect("non-empty mean")
+}
+
 fn mean_square_autograd_gradient(params: &[f32]) -> Vec<f32> {
     let mut tape = AutogradTape::new();
     let x = leaf(&mut tape, tensor(params, &[2, 2]));
 
     let squared = tape.mul(&x, &x).expect("same-shape square");
+    let loss = tape.media(&squared).expect("mean loss");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    gradients.gradient(x.id()).expect("x gradient").planata()
+}
+
+fn scaled_mean_square_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(params, &[2, 2]));
+
+    let scaled = tape.scala(&x, 0.25).expect("scala records");
+    let squared = tape.mul(&scaled, &scaled).expect("same-shape square");
     let loss = tape.media(&squared).expect("mean loss");
     let gradients = tape.backward(&loss).expect("backward succeeds");
 
@@ -377,6 +396,15 @@ fn autograd_matches_finite_difference_mean_square_gradient() {
     let params = vec![0.5_f32, -1.0, 2.0, -0.75];
     let reference = finite_difference_gradient(&params, mean_square_loss);
     let actual = mean_square_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
+#[test]
+fn autograd_matches_finite_difference_scaled_mean_square_gradient() {
+    let params = vec![0.5_f32, -1.0, 2.0, -0.75];
+    let reference = finite_difference_gradient(&params, scaled_mean_square_loss);
+    let actual = scaled_mean_square_autograd_gradient(&params);
 
     assert_gradient_close(&actual, &reference);
 }
