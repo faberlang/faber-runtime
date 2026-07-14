@@ -2,9 +2,10 @@
 //!
 //! This v0 is deliberately a tape/metadata scaffold, not a PyTorch-equivalent
 //! runtime. It records contiguous/materialized leaf tensors and same-shape
-//! `add`, `sub`, `mul`, and `summa` forward operations. It does not implement
-//! backward, sessions, optimizers, host ABI gradient handles, broadcasting,
-//! matmul, mutation, or view semantics.
+//! `add`, `sub`, `mul`, and `summa` forward operations, then runs a scalar-loss
+//! backward pass for those same operations. It does not implement sessions,
+//! optimizers, host ABI gradient handles, broadcasting, matmul, mutation, or
+//! view semantics.
 
 #![allow(dead_code)]
 
@@ -28,7 +29,6 @@ pub(crate) enum UnsupportedAutogradOp {
     Matmul,
     Mutation,
     View,
-    Backward,
     HostAbi,
     Session,
 }
@@ -37,6 +37,8 @@ pub(crate) enum UnsupportedAutogradOp {
 pub(crate) enum AutogradError {
     Tensor(&'static str),
     ShapeMismatch,
+    MissingNode,
+    BackwardRequiresScalar,
     Unsupported(UnsupportedAutogradOp),
 }
 
@@ -85,11 +87,15 @@ impl AutogradNode {
 #[derive(Default, Debug)]
 pub(crate) struct AutogradTape {
     nodes: Vec<AutogradNode>,
+    values: Vec<Tensor<f32>>,
 }
 
 impl AutogradTape {
     pub(crate) fn new() -> Self {
-        Self { nodes: Vec::new() }
+        Self {
+            nodes: Vec::new(),
+            values: Vec::new(),
+        }
     }
 
     pub(crate) fn leaf(&mut self, tensor: Tensor<f32>) -> AutogradValue {
@@ -141,6 +147,73 @@ impl AutogradTape {
         self.nodes.get(id.0)
     }
 
+    pub(crate) fn backward(
+        &self,
+        loss: &AutogradValue,
+    ) -> Result<AutogradGradients, AutogradError> {
+        let loss_node = self.node(loss.id).ok_or(AutogradError::MissingNode)?;
+        if !loss_node.shape.is_empty() {
+            return Err(AutogradError::BackwardRequiresScalar);
+        }
+
+        let mut gradients = AutogradGradients::new(self.nodes.len());
+        gradients.accumulate(loss.id, scalar_tensor(1.0)?)?;
+
+        for node in self.nodes.iter().rev() {
+            let Some(upstream) = gradients.gradient(node.id).cloned() else {
+                continue;
+            };
+
+            match node.op {
+                AutogradOp::Leaf => {}
+                AutogradOp::Add => {
+                    let &[lhs, rhs] = parent_pair(node)?;
+                    gradients.accumulate(lhs, upstream.clone())?;
+                    gradients.accumulate(rhs, upstream)?;
+                }
+                AutogradOp::Sub => {
+                    let &[lhs, rhs] = parent_pair(node)?;
+                    gradients.accumulate(lhs, upstream.clone())?;
+                    gradients.accumulate(rhs, scale_tensor(&upstream, -1.0)?)?;
+                }
+                AutogradOp::Mul => {
+                    let &[lhs, rhs] = parent_pair(node)?;
+                    let lhs_value = self.value(lhs)?;
+                    let rhs_value = self.value(rhs)?;
+                    gradients.accumulate(
+                        lhs,
+                        upstream
+                            .multiplica(rhs_value)
+                            .map_err(AutogradError::Tensor)?,
+                    )?;
+                    gradients.accumulate(
+                        rhs,
+                        upstream
+                            .multiplica(lhs_value)
+                            .map_err(AutogradError::Tensor)?,
+                    )?;
+                }
+                AutogradOp::Summa => {
+                    let &[parent] = node.parents.as_slice() else {
+                        return Err(AutogradError::MissingNode);
+                    };
+                    let scalar = rank_zero_scalar(&upstream)?;
+                    let parent_shape = self
+                        .node(parent)
+                        .ok_or(AutogradError::MissingNode)?
+                        .shape
+                        .clone();
+                    gradients.accumulate(
+                        parent,
+                        Tensor::crea(&parent_shape, scalar).map_err(AutogradError::Tensor)?,
+                    )?;
+                }
+            }
+        }
+
+        Ok(gradients)
+    }
+
     fn same_shape_binary(
         &mut self,
         lhs: &AutogradValue,
@@ -163,6 +236,7 @@ impl AutogradTape {
     ) -> AutogradValue {
         let id = AutogradNodeId(self.nodes.len());
         let shape = tensor.magnitudines();
+        self.values.push(tensor.clone());
         self.nodes.push(AutogradNode {
             id,
             op,
@@ -171,6 +245,76 @@ impl AutogradTape {
         });
         AutogradValue { id, tensor }
     }
+
+    fn value(&self, id: AutogradNodeId) -> Result<&Tensor<f32>, AutogradError> {
+        self.values.get(id.0).ok_or(AutogradError::MissingNode)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct AutogradGradients {
+    gradients: Vec<Option<Tensor<f32>>>,
+}
+
+impl AutogradGradients {
+    fn new(len: usize) -> Self {
+        Self {
+            gradients: vec![None; len],
+        }
+    }
+
+    pub(crate) fn gradient(&self, id: AutogradNodeId) -> Option<&Tensor<f32>> {
+        self.gradients.get(id.0).and_then(Option::as_ref)
+    }
+
+    fn accumulate(
+        &mut self,
+        id: AutogradNodeId,
+        gradient: Tensor<f32>,
+    ) -> Result<(), AutogradError> {
+        let slot = self
+            .gradients
+            .get_mut(id.0)
+            .ok_or(AutogradError::MissingNode)?;
+        match slot {
+            Some(existing) => {
+                *existing = existing.addita(&gradient).map_err(AutogradError::Tensor)?;
+            }
+            None => *slot = Some(gradient),
+        }
+        Ok(())
+    }
+}
+
+fn parent_pair(node: &AutogradNode) -> Result<&[AutogradNodeId; 2], AutogradError> {
+    node.parents
+        .as_slice()
+        .try_into()
+        .map_err(|_| AutogradError::MissingNode)
+}
+
+fn scalar_tensor(value: f32) -> Result<Tensor<f32>, AutogradError> {
+    Tensor::structa(vec![value], &[]).map_err(AutogradError::Tensor)
+}
+
+fn rank_zero_scalar(tensor: &Tensor<f32>) -> Result<f32, AutogradError> {
+    if !tensor.magnitudines().is_empty() {
+        return Err(AutogradError::BackwardRequiresScalar);
+    }
+    tensor
+        .planata()
+        .into_iter()
+        .next()
+        .ok_or(AutogradError::BackwardRequiresScalar)
+}
+
+fn scale_tensor(tensor: &Tensor<f32>, scalar: f32) -> Result<Tensor<f32>, AutogradError> {
+    let data = tensor
+        .planata()
+        .into_iter()
+        .map(|value| value * scalar)
+        .collect();
+    Tensor::structa(data, &tensor.magnitudines()).map_err(AutogradError::Tensor)
 }
 
 #[cfg(test)]
@@ -179,6 +323,19 @@ mod tests {
 
     fn tensor(values: &[f32], shape: &[i64]) -> Tensor<f32> {
         Tensor::structa(values.to_vec(), shape).expect("test tensor shape matches")
+    }
+
+    fn assert_tensor_close(actual: &Tensor<f32>, expected: &[f32], shape: &[i64]) {
+        assert_eq!(actual.magnitudines(), shape);
+        assert_eq!(actual.planata().len(), expected.len());
+        for (index, (actual, expected)) in actual.planata().iter().zip(expected.iter()).enumerate()
+        {
+            let delta = (actual - expected).abs();
+            assert!(
+                delta <= 1.0e-5,
+                "gradient[{index}] expected {expected}, got {actual}, delta {delta}"
+            );
+        }
     }
 
     #[test]
@@ -276,16 +433,109 @@ mod tests {
             Err(AutogradError::Unsupported(UnsupportedAutogradOp::View))
         );
         assert_eq!(
-            tape.reject_unsupported::<()>(UnsupportedAutogradOp::Backward),
-            Err(AutogradError::Unsupported(UnsupportedAutogradOp::Backward))
-        );
-        assert_eq!(
             tape.reject_unsupported::<()>(UnsupportedAutogradOp::HostAbi),
             Err(AutogradError::Unsupported(UnsupportedAutogradOp::HostAbi))
         );
         assert_eq!(
             tape.reject_unsupported::<()>(UnsupportedAutogradOp::Session),
             Err(AutogradError::Unsupported(UnsupportedAutogradOp::Session))
+        );
+    }
+
+    #[test]
+    fn backward_accumulates_duplicate_parent_for_rank_zero_square_plus_self() {
+        let mut tape = AutogradTape::new();
+        let x = tape.leaf(tensor(&[1.75], &[]));
+        let square = tape.mul(&x, &x).expect("same-shape square");
+        let shifted = tape.add(&square, &x).expect("same-shape add");
+        let loss = tape.summa(&shifted).expect("scalar sum");
+
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(x.id()).expect("x gradient"),
+            &[2.0 * 1.75 + 1.0],
+            &[],
+        );
+    }
+
+    #[test]
+    fn backward_matches_rung3_scalar_weight_gradient() {
+        let mut tape = AutogradTape::new();
+        let x = tape.leaf(tensor(&[2.0], &[]));
+        let weight = tape.leaf(tensor(&[3.0], &[]));
+        let target = tape.leaf(tensor(&[4.0], &[]));
+
+        let prediction = tape.mul(&x, &weight).expect("x * weight");
+        let residual = tape.sub(&prediction, &target).expect("prediction - target");
+        let squared = tape.mul(&residual, &residual).expect("residual squared");
+        let loss = tape.summa(&squared).expect("scalar loss");
+
+        assert_eq!(loss.tensor().planata(), vec![4.0]);
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(weight.id()).expect("weight gradient"),
+            &[8.0],
+            &[],
+        );
+    }
+
+    #[test]
+    fn backward_matches_same_shape_vector_loss_gradients() {
+        let mut tape = AutogradTape::new();
+        let x_values = [0.5_f32, -1.0, 2.0];
+        let w_values = [3.0_f32, -0.25, 0.75];
+        let target_values = [1.0_f32, -2.0, 0.5];
+        let x = tape.leaf(tensor(&x_values, &[3]));
+        let w = tape.leaf(tensor(&w_values, &[3]));
+        let target = tape.leaf(tensor(&target_values, &[3]));
+
+        let prediction = tape.mul(&x, &w).expect("x * w");
+        let residual = tape.sub(&prediction, &target).expect("prediction - target");
+        let squared = tape.mul(&residual, &residual).expect("residual squared");
+        let loss = tape.summa(&squared).expect("vector loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        let residuals: Vec<f32> = x_values
+            .iter()
+            .zip(w_values.iter())
+            .zip(target_values.iter())
+            .map(|((x, w), target)| x * w - target)
+            .collect();
+        let expected_x: Vec<f32> = residuals
+            .iter()
+            .zip(w_values.iter())
+            .map(|(residual, w)| 2.0 * residual * w)
+            .collect();
+        let expected_w: Vec<f32> = residuals
+            .iter()
+            .zip(x_values.iter())
+            .map(|(residual, x)| 2.0 * residual * x)
+            .collect();
+
+        assert_tensor_close(
+            gradients.gradient(x.id()).expect("x gradient"),
+            &expected_x,
+            &[3],
+        );
+        assert_tensor_close(
+            gradients.gradient(w.id()).expect("w gradient"),
+            &expected_w,
+            &[3],
+        );
+    }
+
+    #[test]
+    fn backward_rejects_non_scalar_output_seed() {
+        let mut tape = AutogradTape::new();
+        let x = tape.leaf(tensor(&[1.0, 2.0], &[2]));
+        let w = tape.leaf(tensor(&[3.0, 4.0], &[2]));
+        let product = tape.mul(&x, &w).expect("same-shape product");
+
+        assert_eq!(
+            tape.backward(&product).unwrap_err(),
+            AutogradError::BackwardRequiresScalar
         );
     }
 }
