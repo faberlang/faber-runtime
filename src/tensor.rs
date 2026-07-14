@@ -30,6 +30,7 @@ pub const ERR_BROADCAST_SHAPE: &str = "tensor broadcast shape mismatch";
 pub const ERR_MATMUL_RECEIVER_RANK: &str = "tensor matmul requires rank-2 tensor receiver";
 pub const ERR_MATMUL_ARGUMENT_RANK: &str = "tensor matmul requires rank-2 tensor argument";
 pub const ERR_MATMUL_INNER_DIMENSION: &str = "tensor matmul inner dimension mismatch";
+pub const ERR_TRANSPOSE_RANK: &str = "tensor transpose requires rank-2 tensor";
 pub const ERR_MEDIA_EMPTY: &str = "tensor media (mean) requires at least one element";
 
 pub fn tensor_dim_non_negative(value: i64) -> bool {
@@ -218,6 +219,23 @@ impl<T: Clone + Default> Tensor<T> {
 
     pub fn materialize(&self) -> Self {
         Self::from_contiguous(self.planata(), self.shape.clone())
+    }
+
+    /// Materialized rank-2 transpose. General axis permutation is not exposed yet.
+    pub fn transpose_rank2(&self) -> Result<Self, &'static str> {
+        if self.shape.len() != 2 {
+            return Err(ERR_TRANSPOSE_RANK);
+        }
+        let rows = self.shape[0];
+        let cols = self.shape[1];
+        let count = checked_allocation_count::<T>(&[cols, rows])?;
+        let mut data = Vec::with_capacity(count);
+        for col in 0..cols {
+            for row in 0..rows {
+                data.push(self.value_at_logical(&[row, col]));
+            }
+        }
+        Ok(Self::from_contiguous(data, vec![cols, rows]))
     }
 
     pub(crate) fn is_view(&self) -> bool {

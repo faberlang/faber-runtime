@@ -1,7 +1,7 @@
 use super::{
     tensor_flat_offset, tensor_shape_element_count, tensor_shape_has_element_count, Tensor,
     ERR_BROADCAST_SHAPE, ERR_ELEMENT_COUNT_OVERFLOW, ERR_MATMUL_ARGUMENT_RANK,
-    ERR_MATMUL_INNER_DIMENSION, ERR_MATMUL_RECEIVER_RANK, ERR_MEDIA_EMPTY,
+    ERR_MATMUL_INNER_DIMENSION, ERR_MATMUL_RECEIVER_RANK, ERR_MEDIA_EMPTY, ERR_TRANSPOSE_RANK,
 };
 
 #[test]
@@ -284,6 +284,35 @@ fn media_averages_f32_elements_and_rejects_empty_tensor() {
 
     assert_eq!(tensor.media().unwrap(), 2.5);
     assert_eq!(empty.media().unwrap_err(), ERR_MEDIA_EMPTY);
+}
+
+#[test]
+fn transpose_rank2_materializes_rows_as_columns() {
+    let tensor = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+
+    let transposed = tensor.transpose_rank2().expect("rank-2 transpose");
+
+    assert_eq!(transposed.magnitudines(), vec![3, 2]);
+    assert_eq!(transposed.planata(), vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+}
+
+#[test]
+fn transpose_rank2_materializes_views_without_aliasing() {
+    let mut tensor = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap();
+    let view = tensor.sectio(1, 3).expect("axis-0 view");
+    let transposed = view.transpose_rank2().expect("rank-2 view transpose");
+
+    tensor.ponde(&[1, 0], 99.0).unwrap();
+
+    assert_eq!(transposed.magnitudines(), vec![2, 2]);
+    assert_eq!(transposed.planata(), vec![3.0, 5.0, 4.0, 6.0]);
+}
+
+#[test]
+fn transpose_rank2_rejects_non_rank2_tensor() {
+    let tensor = Tensor::structa(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
+
+    assert_eq!(tensor.transpose_rank2().unwrap_err(), ERR_TRANSPOSE_RANK);
 }
 
 #[test]

@@ -11,7 +11,7 @@ behavior, session integration, optimizer support, or host ABI gradient handles.
 | Dense carrier | `Tensor<T>` stores homogeneous numeric data behind runtime shape metadata, row-major strides, and an offset. It is `Clone`, `Send`, and `Sync` when the element type is. | `src/tensor.rs`; `src/tensor_test.rs::tensor_is_send_sync_when_elements_are` |
 | Shape and indexing | Rank, shape, element count, construction from flat data, reshape, flat offset calculation, get, set, and fill are implemented with explicit negative-dimension, negative-index, out-of-bounds, mismatch, and overflow checks. | `src/tensor.rs`; `src/tensor_test.rs`; `hosts/llvm/src/tensor.rs` |
 | Elementwise arithmetic | Dense tensors support broadcast-compatible add, subtract, and multiply. Broadcast mismatches fail closed with `ERR_BROADCAST_SHAPE`. | `Tensor::addita`, `Tensor::subtrahe`, `Tensor::multiplica`; `src/tensor_test.rs::addita_broadcasts_size_one_dimension` |
-| Matmul | Dense tensors support rank-2 matrix multiply with receiver rank, argument rank, and inner-dimension errors. The Rust autograd scaffold records rank-2 matmul and computes its dense VJP with a private transpose helper; this is not a public transpose/permutation primitive. | `Tensor::matmul`; `src/tensor_test.rs::matmul_rectangular`; `src/autograd.rs::tests::backward_matches_rank2_matmul_sum_vjp` |
+| Matmul | Dense tensors support rank-2 matrix multiply with receiver rank, argument rank, and inner-dimension errors. `Tensor::transpose_rank2` is now the bounded materializing transpose primitive used by the Rust autograd scaffold's rank-2 matmul VJP. This is not a general axis-permutation primitive and is not exposed through the host ABI. | `Tensor::matmul`; `Tensor::transpose_rank2`; `src/tensor_test.rs::matmul_rectangular`; `src/tensor_test.rs::transpose_rank2_materializes_rows_as_columns`; `src/autograd.rs::tests::backward_matches_rank2_matmul_sum_vjp` |
 | Reductions | The Rust carrier exposes `summa` as an element-type sum and `Tensor<f32>::media` as a non-empty f32 mean. The LLVM host ABI also exposes `__faber_rt_v1_tensor_sum` and float-only `__faber_rt_v1_tensor_mean`; integer mean is rejected until conversion support is honest for that path. | `src/tensor.rs`; `src/tensor_test.rs::media_averages_f32_elements_and_rejects_empty_tensor`; `hosts/llvm/src/tensor.rs`; `hosts/llvm/src/lib_test.rs::tensor_arithmetic_family_adds_matmuls_and_reduces` |
 | Views and materialization | Rust `sectio` returns an axis-0 view sharing the same `Arc<Mutex<Vec<T>>>`; parent and slice mutations alias. `materialize` copies logical data and breaks that alias. The LLVM host ABI materializes slices rather than exposing Rust view layout. | `src/tensor_test.rs::sectio_returns_axis_zero_view`; `src/tensor_test.rs::materialize_breaks_sectio_alias`; `hosts/llvm/src/tensor.rs` |
 | Sparse bridge | `Sparsa<T>` stores non-default entries, reads absent entries as default, removes entries on default writes, and densifies to `Tensor<T>`. It has no sparse arithmetic kernels. | `src/sparsa.rs`; `src/sparsa_test.rs` |
@@ -30,9 +30,9 @@ runtime:
   host ABI gradient handles.
 - No public optimizer or session API. The only training/session boundary is the
   test-only `TestOnlySgdSession` oracle in `src/autograd_reference_test.rs`.
-- No public transpose or permutation primitive. Rank-2 matmul gradients are
-  covered only inside the Rust autograd scaffold with a private dense transpose
-  helper for `dA = dY * B^T` and `dB = A^T * dY`.
+- No general permutation primitive and no host ABI transpose/permutation symbol.
+  Rank-2 matmul gradients are covered only inside the Rust autograd scaffold
+  with `Tensor::transpose_rank2` for `dA = dY * B^T` and `dB = A^T * dY`.
 - No generic elementwise division API in the public `Tensor<T>` carrier.
   `Tensor<f32>::scala` exists for scalar scaling, and `Tensor<f32>::media`
   covers non-empty f32 mean.
@@ -72,10 +72,27 @@ host ABI until the Rust-level invariant is broader:
    perturbing one input element at a time, rebuilding tensors with `structa`,
    and comparing proof gradients against the oracle.
 
-After that passes, the next promotion should decide whether to expose a public
-transpose primitive before broadening matmul beyond the internal rank-2 dense
+After that passes, the next promotion should decide whether general axis
+permutation is needed before broadening matmul beyond the internal rank-2 dense
 scaffold. Numeric unary primitives such as neg/exp/log/sin can follow once
 their Tensor-level operations exist.
+
+## Transpose And Permutation Policy
+
+The current decision is to expose only a bounded, materializing
+`Tensor::transpose_rank2` primitive. The matmul VJP already required a rank-2
+transpose, and the implementation is fully shaped by existing `Tensor` layout
+helpers: logical view-aware reads, row-major materialization, checked result
+allocation, and rank metadata. This removes the private autograd-only transpose
+loop without introducing a second semantics for the same operation.
+
+General permutation remains intentionally absent. A real `permute` primitive
+needs axis validation, duplicate-axis diagnostics, shape/stride policy, view
+versus materialized semantics, host ABI naming, and backward scatter behavior
+before it can support broader generated-gradient claims. The new primitive
+therefore proves only rank-2 transpose materialization for dense tensors and
+keeps AutogradTape, optimizer/session APIs, sparse/packed tensors, device
+execution, and PyTorch equivalence out of scope.
 
 ## Raw And Tape-Owned `sectio` View Gradient Policy
 

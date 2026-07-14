@@ -627,21 +627,7 @@ fn scale_tensor(tensor: &Tensor<f32>, scalar: f32) -> Result<Tensor<f32>, Autogr
 }
 
 fn transpose_rank2(tensor: &Tensor<f32>) -> Result<Tensor<f32>, AutogradError> {
-    let shape = tensor.magnitudines();
-    let [rows, cols]: [i64; 2] = shape
-        .as_slice()
-        .try_into()
-        .map_err(|_| AutogradError::Tensor(crate::tensor::ERR_MATMUL_RECEIVER_RANK))?;
-    let rows = usize::try_from(rows).map_err(|_| AutogradError::ShapeMismatch)?;
-    let cols = usize::try_from(cols).map_err(|_| AutogradError::ShapeMismatch)?;
-    let data = tensor.planata();
-    let mut transposed = Vec::with_capacity(data.len());
-    for col in 0..cols {
-        for row in 0..rows {
-            transposed.push(data[row * cols + col]);
-        }
-    }
-    Tensor::structa(transposed, &[shape[1], shape[0]]).map_err(AutogradError::Tensor)
+    tensor.transpose_rank2().map_err(AutogradError::Tensor)
 }
 
 #[cfg(test)]
