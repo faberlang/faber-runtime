@@ -1,7 +1,9 @@
 use super::{
     tensor_flat_offset, tensor_shape_element_count, tensor_shape_has_element_count, Tensor,
     ERR_BROADCAST_SHAPE, ERR_ELEMENT_COUNT_OVERFLOW, ERR_MATMUL_ARGUMENT_RANK,
-    ERR_MATMUL_INNER_DIMENSION, ERR_MATMUL_RECEIVER_RANK, ERR_MEDIA_EMPTY, ERR_TRANSPOSE_RANK,
+    ERR_MATMUL_INNER_DIMENSION, ERR_MATMUL_RECEIVER_RANK, ERR_MEDIA_EMPTY,
+    ERR_PERMUTE_AXIS_OUT_OF_RANGE, ERR_PERMUTE_DUPLICATE_AXIS, ERR_PERMUTE_NEGATIVE_AXIS,
+    ERR_PERMUTE_RANK, ERR_TRANSPOSE_RANK,
 };
 
 #[test]
@@ -313,6 +315,85 @@ fn transpose_rank2_rejects_non_rank2_tensor() {
     let tensor = Tensor::structa(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
 
     assert_eq!(tensor.transpose_rank2().unwrap_err(), ERR_TRANSPOSE_RANK);
+}
+
+#[test]
+fn permute_materializes_general_axis_order() {
+    let tensor = Tensor::structa((0..24).collect::<Vec<i32>>(), &[2, 3, 4]).unwrap();
+
+    let permuted = tensor.permute(&[2, 0, 1]).expect("valid axis order");
+
+    assert_eq!(permuted.magnitudines(), vec![4, 2, 3]);
+    assert_eq!(
+        permuted.planata(),
+        vec![0, 4, 8, 12, 16, 20, 1, 5, 9, 13, 17, 21, 2, 6, 10, 14, 18, 22, 3, 7, 11, 15, 19, 23]
+    );
+}
+
+#[test]
+fn permute_materializes_views_without_aliasing() {
+    let mut tensor = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]).unwrap();
+    let view = tensor.sectio(1, 3).expect("axis-0 view");
+    let permuted = view.permute(&[1, 0]).expect("rank-2 view permute");
+
+    tensor.ponde(&[1, 0], 99.0).unwrap();
+
+    assert_eq!(permuted.magnitudines(), vec![2, 2]);
+    assert_eq!(permuted.planata(), vec![3.0, 5.0, 4.0, 6.0]);
+}
+
+#[test]
+fn permute_accepts_rank_zero_empty_axis_list() {
+    let tensor = Tensor::structa(vec![42_i32], &[]).unwrap();
+
+    let permuted = tensor.permute(&[]).expect("rank-0 identity permute");
+
+    assert_eq!(permuted.magnitudines(), Vec::<i64>::new());
+    assert_eq!(permuted.planata(), vec![42]);
+}
+
+#[test]
+fn permute_rejects_rank_mismatch_and_missing_axis() {
+    let tensor = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+
+    assert_eq!(tensor.permute(&[0]).unwrap_err(), ERR_PERMUTE_RANK);
+}
+
+#[test]
+fn permute_rejects_negative_axis() {
+    let tensor = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+
+    assert_eq!(
+        tensor.permute(&[0, -1]).unwrap_err(),
+        ERR_PERMUTE_NEGATIVE_AXIS
+    );
+}
+
+#[test]
+fn permute_rejects_axis_out_of_range() {
+    let tensor = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+
+    assert_eq!(
+        tensor.permute(&[0, 2]).unwrap_err(),
+        ERR_PERMUTE_AXIS_OUT_OF_RANGE
+    );
+}
+
+#[test]
+fn permute_rejects_duplicate_axis() {
+    let tensor = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+
+    assert_eq!(
+        tensor.permute(&[0, 0]).unwrap_err(),
+        ERR_PERMUTE_DUPLICATE_AXIS
+    );
+}
+
+#[test]
+fn permute_rejects_rank_zero_non_empty_axis_list() {
+    let tensor = Tensor::structa(vec![42_i32], &[]).unwrap();
+
+    assert_eq!(tensor.permute(&[0]).unwrap_err(), ERR_PERMUTE_RANK);
 }
 
 #[test]

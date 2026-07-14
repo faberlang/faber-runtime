@@ -144,3 +144,31 @@ fn host_abi_v1_symbol_namespace_is_versioned() {
         "%FaberRtPtrResultV1 = type { i32, ptr }"
     );
 }
+
+#[test]
+fn host_abi_v1_does_not_expose_tensor_permute_or_transpose_symbols() {
+    for symbol in [
+        SYMBOL_TENSOR_NEW,
+        SYMBOL_TENSOR_CREATE,
+        SYMBOL_TENSOR_FROM_FLAT,
+        SYMBOL_TENSOR_RANK,
+        SYMBOL_TENSOR_SHAPE,
+        SYMBOL_TENSOR_RESHAPE,
+        SYMBOL_TENSOR_GET,
+        SYMBOL_TENSOR_SET,
+        SYMBOL_TENSOR_FILL,
+        SYMBOL_TENSOR_FLATTEN,
+        SYMBOL_TENSOR_MATERIALIZE,
+        SYMBOL_TENSOR_SLICE,
+        SYMBOL_TENSOR_ADD,
+        SYMBOL_TENSOR_SUB,
+        SYMBOL_TENSOR_MUL,
+        SYMBOL_TENSOR_MATMUL,
+        SYMBOL_TENSOR_SUM,
+        SYMBOL_TENSOR_MEAN,
+        SYMBOL_TENSOR_CONVERT,
+    ] {
+        assert!(!symbol.contains("permute"), "{symbol}");
+        assert!(!symbol.contains("transpose"), "{symbol}");
+    }
+}

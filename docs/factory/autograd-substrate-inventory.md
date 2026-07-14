@@ -11,12 +11,12 @@ behavior, session integration, optimizer support, or host ABI gradient handles.
 | Dense carrier | `Tensor<T>` stores homogeneous numeric data behind runtime shape metadata, row-major strides, and an offset. It is `Clone`, `Send`, and `Sync` when the element type is. | `src/tensor.rs`; `src/tensor_test.rs::tensor_is_send_sync_when_elements_are` |
 | Shape and indexing | Rank, shape, element count, construction from flat data, reshape, flat offset calculation, get, set, and fill are implemented with explicit negative-dimension, negative-index, out-of-bounds, mismatch, and overflow checks. | `src/tensor.rs`; `src/tensor_test.rs`; `hosts/llvm/src/tensor.rs` |
 | Elementwise arithmetic | Dense tensors support broadcast-compatible add, subtract, and multiply. Broadcast mismatches fail closed with `ERR_BROADCAST_SHAPE`. | `Tensor::addita`, `Tensor::subtrahe`, `Tensor::multiplica`; `src/tensor_test.rs::addita_broadcasts_size_one_dimension` |
-| Matmul | Dense tensors support rank-2 matrix multiply with receiver rank, argument rank, and inner-dimension errors. `Tensor::transpose_rank2` is now the bounded materializing transpose primitive used by the Rust autograd scaffold's rank-2 matmul VJP. This is not a general axis-permutation primitive and is not exposed through the host ABI. | `Tensor::matmul`; `Tensor::transpose_rank2`; `src/tensor_test.rs::matmul_rectangular`; `src/tensor_test.rs::transpose_rank2_materializes_rows_as_columns`; `src/autograd.rs::tests::backward_matches_rank2_matmul_sum_vjp` |
+| Matmul and permutation | Dense tensors support rank-2 matrix multiply with receiver rank, argument rank, and inner-dimension errors. `Tensor::transpose_rank2` is the bounded materializing transpose primitive used by the Rust autograd scaffold's rank-2 matmul VJP. `Tensor::permute` materializes arbitrary axis order with dedicated rank, negative-axis, out-of-range-axis, and duplicate-axis diagnostics. Neither transpose nor permutation is exposed through the host ABI. | `Tensor::matmul`; `Tensor::transpose_rank2`; `Tensor::permute`; `src/tensor_test.rs::matmul_rectangular`; `src/tensor_test.rs::transpose_rank2_materializes_rows_as_columns`; `src/tensor_test.rs::permute_materializes_general_axis_order`; `src/host_abi_test.rs::host_abi_v1_does_not_expose_tensor_permute_or_transpose_symbols`; `src/autograd.rs::tests::backward_matches_rank2_matmul_sum_vjp` |
 | Reductions | The Rust carrier exposes `summa` as an element-type sum and `Tensor<f32>::media` as a non-empty f32 mean. The LLVM host ABI also exposes `__faber_rt_v1_tensor_sum` and float-only `__faber_rt_v1_tensor_mean`; integer mean is rejected until conversion support is honest for that path. | `src/tensor.rs`; `src/tensor_test.rs::media_averages_f32_elements_and_rejects_empty_tensor`; `hosts/llvm/src/tensor.rs`; `hosts/llvm/src/lib_test.rs::tensor_arithmetic_family_adds_matmuls_and_reduces` |
 | Views and materialization | Rust `sectio` returns an axis-0 view sharing the same `Arc<Mutex<Vec<T>>>`; parent and slice mutations alias. `materialize` copies logical data and breaks that alias. The LLVM host ABI materializes slices rather than exposing Rust view layout. | `src/tensor_test.rs::sectio_returns_axis_zero_view`; `src/tensor_test.rs::materialize_breaks_sectio_alias`; `hosts/llvm/src/tensor.rs` |
 | Sparse bridge | `Sparsa<T>` stores non-default entries, reads absent entries as default, removes entries on default writes, and densifies to `Tensor<T>`. It has no sparse arithmetic kernels. | `src/sparsa.rs`; `src/sparsa_test.rs` |
 | Packed numeric bridge | `PackedU4Block` records toy U4 layout facts, validates metadata, dequantizes to `Vec<f32>`, and materializes as rank-1 `Tensor<f32>`. The only tensor integration row is reference materialization into elementwise add. | `src/packed_numeric.rs`; `src/packed_numeric_test.rs::packed_u4_materialized_tensor_feeds_elementwise_add` |
-| Autograd scaffold | The Rust runtime has an internal dense `Tensor<f32>` tape with node ids, parent edges, saved forward tensors, gradient accumulation, duplicate-parent accumulation, scalar-loss backward, broadcast reductions for add/sub/mul, rank-2 matmul VJP, tape-owned `forma` reshape gradients, tape-owned axis-0 `sectio` with parent-gradient scatter-add, tape-owned `media` mean backward, and fail-closed leaf rejection for raw aliased `sectio` views. Materialized `sectio` copies are accepted and snapshotted like other leaves. | `src/autograd.rs`; `src/autograd.rs::tests::backward_matches_rank2_matmul_sum_vjp`; `src/autograd.rs::tests::backward_reshapes_tape_owned_forma_gradient_into_parent_shape`; `src/autograd.rs::tests::backward_scatter_adds_tape_owned_sectio_gradient_into_parent`; `src/autograd.rs::tests::backward_distributes_tape_owned_media_gradient_over_parent`; `src/autograd.rs::tests::autograd_rejects_raw_sectio_view_leaf`; `src/autograd.rs::tests::autograd_materialized_sectio_snapshot_ignores_parent_alias_mutation` |
+| Autograd scaffold | The Rust runtime has an internal dense `Tensor<f32>` tape with node ids, parent edges, saved forward tensors, gradient accumulation, duplicate-parent accumulation, scalar-loss backward, broadcast reductions for add/sub/mul, rank-2 matmul VJP, tape-owned `forma` reshape gradients, tape-owned materialized `permute` with inverse-permutation backward, tape-owned axis-0 `sectio` with parent-gradient scatter-add, tape-owned `media` mean backward, and fail-closed leaf rejection for raw aliased `sectio` views. Materialized `sectio` copies are accepted and snapshotted like other leaves. | `src/autograd.rs`; `src/autograd.rs::tests::backward_matches_rank2_matmul_sum_vjp`; `src/autograd.rs::tests::backward_reshapes_tape_owned_forma_gradient_into_parent_shape`; `src/autograd.rs::tests::backward_inverts_tape_owned_permute_gradient_into_parent_shape`; `src/autograd.rs::tests::backward_scatter_adds_tape_owned_sectio_gradient_into_parent`; `src/autograd.rs::tests::backward_distributes_tape_owned_media_gradient_over_parent`; `src/autograd.rs::tests::autograd_rejects_raw_sectio_view_leaf`; `src/autograd.rs::tests::autograd_materialized_sectio_snapshot_ignores_parent_alias_mutation` |
 | Finite-difference oracle | Test-only central-difference checks cover rank-0 scalar `x * x + x`, the exact rung-3 scalar target `loss(x, weight, target) = (x * weight - target)^2` with `x=2.0`, `weight=3.0`, `target=4.0`, `loss=4.0`, and `d_weight ~= 8.0`, same-shape vector, broadcast-bias, broadcast-scale, and mean-square losses, plus a dense linear training-step mean loss `media((XW + b - target)^2)` that compares autograd gradients for input, weight, and bias against CPU finite differences. A test-only `TestOnlySgdSession` oracle owns a flat parameter set with frozen input slots and trainable weight/bias slots, computes fresh per-step gradients, zeros frozen input gradients before update, applies manual `param -= learning_rate * grad` updates, compares updated parameters against the finite-difference session step, and checks a two-step loss trace matches the finite-difference trace while strictly decreasing. | `src/autograd_reference_test.rs` |
 | ABI symbols | The host ABI names tensor creation, shape, get/set, fill, flatten, materialize, slice, add/sub/mul, matmul, sum, mean, conversion, and sparse new/get/set/nonzero/rank/densify/from-tensor symbols. | `src/host_abi.rs`; `hosts/llvm/src/lib.rs` |
 
@@ -30,9 +30,10 @@ runtime:
   host ABI gradient handles.
 - No public optimizer or session API. The only training/session boundary is the
   test-only `TestOnlySgdSession` oracle in `src/autograd_reference_test.rs`.
-- No general permutation primitive and no host ABI transpose/permutation symbol.
-  Rank-2 matmul gradients are covered only inside the Rust autograd scaffold
-  with `Tensor::transpose_rank2` for `dA = dY * B^T` and `dB = A^T * dY`.
+- No host ABI transpose/permutation symbol. Rank-2 matmul gradients are covered
+  only inside the Rust autograd scaffold with `Tensor::transpose_rank2` for
+  `dA = dY * B^T` and `dB = A^T * dY`; tape-owned `permute` is still
+  runtime-local and not generated-gradient behavior.
 - No generic elementwise division API in the public `Tensor<T>` carrier.
   `Tensor<f32>::scala` exists for scalar scaling, and `Tensor<f32>::media`
   covers non-empty f32 mean.
@@ -58,10 +59,10 @@ host ABI until the Rust-level invariant is broader:
 1. Use only contiguous, materialized tensors created with `Tensor::structa` or
    by explicitly calling `materialize()` on a `sectio` view.
 2. Restrict the proof graph to materialized dense elementwise add/sub/mul,
-   broadcast add/sub/mul, rank-2 matmul, tape-owned `forma`, tape-owned axis-0
-   `sectio`, `summa`, and non-empty f32 `media`, with no raw aliased `sectio`
-   leaves, no mutation after graph capture, no sparse tensors, and no packed
-   tensors.
+   broadcast add/sub/mul, rank-2 matmul, tape-owned `forma`, materialized
+   tape-owned `permute`, tape-owned axis-0 `sectio`, `summa`, and non-empty f32
+   `media`, with no raw aliased `sectio` leaves, no mutation after graph
+   capture, no sparse tensors, and no packed tensors.
 3. Prove scalar-loss cases with local unit tests and finite-difference oracles
    before broadening generated-gradient claims. The current next-rung evidence
    is a dense mean-squared linear training step plus a test-only SGD session
@@ -72,61 +73,65 @@ host ABI until the Rust-level invariant is broader:
    perturbing one input element at a time, rebuilding tensors with `structa`,
    and comparing proof gradients against the oracle.
 
-General axis permutation remains gated before broadening matmul beyond the
-internal rank-2 dense scaffold. Numeric unary primitives such as neg/exp/log/sin
-can follow once their Tensor-level operations exist.
+General axis permutation is now admitted only as materialized dense
+`Tensor::permute` plus tape-owned inverse-permutation backward. Broader matmul
+or generated-gradient claims remain gated on compiler/AIR integration and host
+ABI design. Numeric unary primitives such as neg/exp/log/sin can follow once
+their Tensor-level operations exist.
 
 ## Transpose And Permutation Policy
 
-The current decision is to expose only a bounded, materializing
-`Tensor::transpose_rank2` primitive. The matmul VJP already required a rank-2
-transpose, and the implementation is fully shaped by existing `Tensor` layout
-helpers: logical view-aware reads, row-major materialization, checked result
-allocation, and rank metadata. This removes the private autograd-only transpose
-loop without introducing a second semantics for the same operation.
+The current decision is to expose materializing dense Tensor primitives only:
+`Tensor::transpose_rank2` for the rank-2 matmul VJP and `Tensor::permute` for
+arbitrary axis order. Both operations use existing `Tensor` layout helpers:
+logical view-aware reads, row-major materialization, checked result allocation,
+and rank metadata. `permute` starts with materialization rather than a
+non-contiguous view contract, so permuting a raw `sectio` view produces a copy
+whose values do not alias later parent mutation.
 
-General permutation remains intentionally absent. A real `permute` primitive
-needs axis validation, duplicate-axis diagnostics, shape/stride policy, view
-versus materialized semantics, host ABI naming, and backward scatter behavior
-before it can support broader generated-gradient claims. The new primitive
-therefore proves only rank-2 transpose materialization for dense tensors and
-keeps AutogradTape, optimizer/session APIs, sparse/packed tensors, device
-execution, and PyTorch equivalence out of scope.
+`Tensor::permute` admits only a complete axis list: axis count must equal rank,
+each axis must be non-negative and in range, and each axis may appear only once.
+Missing axes are rejected by rank mismatch or duplicate-axis validation rather
+than being silently dropped. Rank-0 tensors accept only `[]`.
+
+The host ABI remains intentionally unchanged: no
+`__faber_rt_v1_tensor_permute` or transpose symbol exists. Autograd support is
+tape-owned only; `AutogradTape::permute` records the axis list and backward
+applies the inverse permutation to the upstream gradient. This still keeps
+optimizer/session APIs, sparse/packed tensors, device execution, generated
+gradients, and PyTorch equivalence out of scope.
 
 ## General Axis Permutation Design Gate
 
-The current decision is no broad `Tensor::permute` implementation in this
-packet. A general axis permutation is small in loop mechanics but not small in
-runtime policy: it decides whether permuted tensors are aliases or copies,
-which errors become stable public surface, whether the LLVM host ABI needs a
-symbol, and how autograd inverts the permutation during backward. Until those
-contracts are admitted together, the only permutation-like public Tensor
-operation is the materializing rank-2 `transpose_rank2`.
+The current packet admits materialized `Tensor::permute`; the remaining gate is
+promotion beyond the Rust runtime-local proof. A general axis permutation is
+small in loop mechanics but still broad in integration policy: it decides when
+LLVM host ABI callers get a symbol, how generated code names the operation, and
+how compiler-owned gradient checks prove the inverse-permutation rule.
 
-Admission criteria for a future `Tensor::permute(&[i64])`:
+Current `Tensor::permute(&[i64])` policy:
 
-| Policy row | Required decision before implementation |
+| Policy row | Current decision |
 | --- | --- |
-| Axis validation | Axis list length must equal tensor rank; every axis must be non-negative, in range, and appear exactly once. Rank-0 requires an empty axis list. Duplicate and missing axes should have dedicated diagnostics rather than collapsing into a generic shape mismatch. |
-| Materialization versus view | Start with materialization unless a full non-contiguous view contract is designed. Materialization matches `forma`, `transpose_rank2`, and host slice behavior, avoids exposing arbitrary stride aliasing, and makes post-permute parent mutation unable to change the permuted value. |
-| Shape and stride semantics | The result shape is `input.shape[axes[i]]` in the requested order. If materialized, result strides are normal row-major strides for that result shape; source strides are read-only implementation detail. |
-| ABI boundary | Do not add `__faber_rt_v1_tensor_permute` until the Rust primitive has tests for validation, zero-sized dimensions, rank-0, views, and autograd inversion. The current host ABI non-claim remains: no transpose/permutation symbols. |
-| Backward policy | Autograd support should be tape-owned only. The backward rule scatters or materializes the upstream gradient through the inverse permutation into the parent shape. Raw permuted views must remain rejected as leaves unless they are materialized and snapshotted. |
-| Generated-gradient claim | No generated-gradient or broader matmul claim can depend on arbitrary permutation until the Tensor primitive, AutogradTape op, and finite-difference/reference cases are all present. |
+| Axis validation | Implemented with dedicated diagnostics for rank mismatch, negative axis, out-of-range axis, and duplicate axis. Rank-0 accepts only `[]`. |
+| Materialization versus view | Implemented as materialization. Result tensors have fresh storage and row-major strides. |
+| Shape and stride semantics | The result shape is `input.shape[axes[i]]` in the requested order. Source strides are read-only implementation detail used only while copying logical values. |
+| ABI boundary | No `__faber_rt_v1_tensor_permute` or transpose symbol. `src/host_abi_test.rs::host_abi_v1_does_not_expose_tensor_permute_or_transpose_symbols` guards that non-exposure. |
+| Backward policy | Implemented only for tape-owned `AutogradTape::permute`; backward materializes the upstream gradient through the inverse axis list into the parent shape. |
+| Generated-gradient claim | Still absent. The primitive and tape proof do not imply AIR/compiler-owned gradient behavior or broader matmul claims. |
 
-Failure rows that should become tests with the future primitive:
+Failure rows covered by the current proof:
 
-| Input condition | Expected boundary |
+| Input condition | Current boundary |
 | --- | --- |
-| Axis list rank mismatch | Reject without allocating or recording an autograd node. |
-| Negative axis | Reject with a specific negative-axis diagnostic. |
-| Axis greater than or equal to rank | Reject with an out-of-range-axis diagnostic. |
-| Duplicate axis | Reject with a duplicate-axis diagnostic. |
-| Missing axis | Reject through the duplicate/mismatch validation rather than silently dropping a dimension. |
-| Rank-0 tensor with non-empty axes | Reject; rank-0 accepts only `[]`. |
-| Permuting a raw aliased view | If `Tensor::permute` materializes, the result must not alias the source; if a future view mode is added, raw view leaves remain fail-closed in autograd. |
-| Tape-owned permute across tapes | Reject cross-tape operands without recording a node, matching existing tape identity policy. |
-| Unsupported host ABI call | No symbol exists yet; host callers must not claim permutation support. |
+| Axis list rank mismatch | Rejects with `ERR_PERMUTE_RANK` and AutogradTape records no node. |
+| Negative axis | Rejects with `ERR_PERMUTE_NEGATIVE_AXIS`. |
+| Axis greater than or equal to rank | Rejects with `ERR_PERMUTE_AXIS_OUT_OF_RANGE`. |
+| Duplicate axis | Rejects with `ERR_PERMUTE_DUPLICATE_AXIS`; the missing-axis case cannot silently pass because a complete unique axis list is required. |
+| Rank-0 tensor with non-empty axes | Rejects with `ERR_PERMUTE_RANK`; rank-0 accepts only `[]`. |
+| Permuting a raw aliased view | Materializes fresh storage, so later parent mutation does not change the permuted result. |
+| Tape-owned permute across tapes | Rejects cross-tape operands without recording a node, matching existing tape identity policy. |
+| Unsupported host ABI call | No symbol exists; host callers must not claim permutation support. |
 
 ## Raw And Tape-Owned `sectio` View Gradient Policy
 

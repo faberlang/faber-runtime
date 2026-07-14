@@ -2,13 +2,14 @@
 //!
 //! This v0 is deliberately a tape/metadata scaffold, not a PyTorch-equivalent
 //! runtime. It records contiguous/materialized leaf tensors and broadcast-aware
-//! `add`, `sub`, `mul`, rank-2 `matmul`, `forma`, axis-0 `sectio`, `summa`, and
-//! `media` forward operations, then runs a scalar-loss backward pass for those
-//! same operations. Broadcasted binary operations reduce parent gradients back
-//! to each original parent shape. Raw `Tensor::sectio` views are rejected at the
-//! leaf boundary; tape-owned `sectio` records parent identity and scatter-adds
-//! gradients back to the parent. It does not implement sessions, optimizers,
-//! host ABI gradient handles, or mutation semantics.
+//! `add`, `sub`, `mul`, rank-2 `matmul`, `forma`, materialized `permute`,
+//! axis-0 `sectio`, `summa`, and `media` forward operations, then runs a
+//! scalar-loss backward pass for those same operations. Broadcasted binary
+//! operations reduce parent gradients back to each original parent shape. Raw
+//! `Tensor::sectio` views are rejected at the leaf boundary; tape-owned
+//! `sectio` records parent identity and scatter-adds gradients back to the
+//! parent. It does not implement sessions, optimizers, host ABI gradient
+//! handles, or mutation semantics.
 
 #![allow(dead_code)]
 
@@ -26,7 +27,7 @@ pub(crate) struct AutogradTapeId(u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct AutogradNodeId(usize);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AutogradOp {
     Leaf,
     Add,
@@ -34,6 +35,7 @@ pub(crate) enum AutogradOp {
     Mul,
     Matmul,
     Forma,
+    Permute { axes: Vec<i64> },
     Sectio { start: i64 },
     Summa,
     Media,
@@ -92,7 +94,7 @@ impl AutogradNode {
     }
 
     pub(crate) fn op(&self) -> AutogradOp {
-        self.op
+        self.op.clone()
     }
 
     pub(crate) fn parents(&self) -> &[AutogradNodeId] {
@@ -181,6 +183,22 @@ impl AutogradTape {
         Ok(self.record(AutogradOp::Forma, vec![value.id], tensor))
     }
 
+    pub(crate) fn permute(
+        &mut self,
+        value: &AutogradValue,
+        axes: &[i64],
+    ) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(value)?;
+        let tensor = value.tensor.permute(axes).map_err(AutogradError::Tensor)?;
+        Ok(self.record(
+            AutogradOp::Permute {
+                axes: axes.to_vec(),
+            },
+            vec![value.id],
+            tensor,
+        ))
+    }
+
     pub(crate) fn sectio(
         &mut self,
         value: &AutogradValue,
@@ -250,7 +268,7 @@ impl AutogradTape {
                 continue;
             };
 
-            match node.op {
+            match node.op.clone() {
                 AutogradOp::Leaf => {}
                 AutogradOp::Add => {
                     let &[lhs, rhs] = parent_pair(node)?;
@@ -322,6 +340,18 @@ impl AutogradTape {
                         parent,
                         upstream
                             .forma(&parent_shape)
+                            .map_err(AutogradError::Tensor)?,
+                    )?;
+                }
+                AutogradOp::Permute { axes } => {
+                    let &[parent] = node.parents.as_slice() else {
+                        return Err(AutogradError::MissingNode);
+                    };
+                    let inverse_axes = inverse_permutation_axes(&axes)?;
+                    gradients.accumulate(
+                        parent,
+                        upstream
+                            .permute(&inverse_axes)
                             .map_err(AutogradError::Tensor)?,
                     )?;
                 }
@@ -626,6 +656,22 @@ fn scale_tensor(tensor: &Tensor<f32>, scalar: f32) -> Result<Tensor<f32>, Autogr
     Tensor::structa(data, &tensor.magnitudines()).map_err(AutogradError::Tensor)
 }
 
+fn inverse_permutation_axes(axes: &[i64]) -> Result<Vec<i64>, AutogradError> {
+    let rank = axes.len();
+    let mut inverse = vec![0_i64; rank];
+    let mut seen = vec![false; rank];
+    for (output_axis, &input_axis) in axes.iter().enumerate() {
+        let input_axis = usize::try_from(input_axis).map_err(|_| AutogradError::ShapeMismatch)?;
+        if input_axis >= rank || seen[input_axis] {
+            return Err(AutogradError::ShapeMismatch);
+        }
+        seen[input_axis] = true;
+        inverse[input_axis] =
+            i64::try_from(output_axis).map_err(|_| AutogradError::ShapeMismatch)?;
+    }
+    Ok(inverse)
+}
+
 fn transpose_rank2(tensor: &Tensor<f32>) -> Result<Tensor<f32>, AutogradError> {
     tensor.transpose_rank2().map_err(AutogradError::Tensor)
 }
@@ -903,6 +949,87 @@ mod tests {
         let before = local_tape.nodes().len();
         assert_eq!(
             local_tape.forma(&foreign, &[2]).unwrap_err(),
+            AutogradError::ForeignTapeValue
+        );
+        assert_eq!(local_tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_tape_owned_permute_records_parent_edge_axes_and_forward_value() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(
+            &mut tape,
+            tensor(
+                &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0],
+                &[2, 3, 2],
+            ),
+        );
+
+        let permuted = tape.permute(&value, &[2, 0, 1]).expect("permute records");
+
+        assert_eq!(permuted.tensor().magnitudines(), vec![2, 2, 3]);
+        assert_eq!(
+            permuted.tensor().planata(),
+            vec![0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 1.0, 3.0, 5.0, 7.0, 9.0, 11.0]
+        );
+        let node = tape.node(permuted.id()).expect("permute node");
+        assert_eq!(
+            node.op(),
+            AutogradOp::Permute {
+                axes: vec![2, 0, 1]
+            }
+        );
+        assert_eq!(node.parents(), &[value.id()]);
+    }
+
+    #[test]
+    fn backward_inverts_tape_owned_permute_gradient_into_parent_shape() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]));
+        let weights = leaf(
+            &mut tape,
+            tensor(&[10.0, 20.0, 30.0, 40.0, 50.0, 60.0], &[3, 2]),
+        );
+
+        let permuted = tape.permute(&value, &[1, 0]).expect("permute records");
+        let product = tape.mul(&permuted, &weights).expect("same-shape product");
+        let loss = tape.summa(&product).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(value.id()).expect("value gradient"),
+            &[10.0, 30.0, 50.0, 20.0, 40.0, 60.0],
+            &[2, 3],
+        );
+        assert_tensor_close(
+            gradients.gradient(weights.id()).expect("weights gradient"),
+            &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0],
+            &[3, 2],
+        );
+    }
+
+    #[test]
+    fn autograd_tape_owned_permute_rejects_invalid_axes_without_recording_node() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+
+        let before = tape.nodes().len();
+        assert_eq!(
+            tape.permute(&value, &[0, 0]).unwrap_err(),
+            AutogradError::Tensor(crate::tensor::ERR_PERMUTE_DUPLICATE_AXIS)
+        );
+        assert_eq!(tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_tape_owned_permute_rejects_cross_tape_parent_without_recording_node() {
+        let mut local_tape = AutogradTape::new();
+        let mut foreign_tape = AutogradTape::new();
+        let foreign = leaf(&mut foreign_tape, tensor(&[1.0, 2.0], &[2]));
+
+        let before = local_tape.nodes().len();
+        assert_eq!(
+            local_tape.permute(&foreign, &[0]).unwrap_err(),
             AutogradError::ForeignTapeValue
         );
         assert_eq!(local_tape.nodes().len(), before);

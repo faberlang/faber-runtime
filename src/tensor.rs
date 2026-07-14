@@ -31,6 +31,10 @@ pub const ERR_MATMUL_RECEIVER_RANK: &str = "tensor matmul requires rank-2 tensor
 pub const ERR_MATMUL_ARGUMENT_RANK: &str = "tensor matmul requires rank-2 tensor argument";
 pub const ERR_MATMUL_INNER_DIMENSION: &str = "tensor matmul inner dimension mismatch";
 pub const ERR_TRANSPOSE_RANK: &str = "tensor transpose requires rank-2 tensor";
+pub const ERR_PERMUTE_RANK: &str = "tensor permute axis count must equal tensor rank";
+pub const ERR_PERMUTE_NEGATIVE_AXIS: &str = "tensor permute axis must be non-negative";
+pub const ERR_PERMUTE_AXIS_OUT_OF_RANGE: &str = "tensor permute axis out of range";
+pub const ERR_PERMUTE_DUPLICATE_AXIS: &str = "tensor permute axis must appear exactly once";
 pub const ERR_MEDIA_EMPTY: &str = "tensor media (mean) requires at least one element";
 
 pub fn tensor_dim_non_negative(value: i64) -> bool {
@@ -221,7 +225,7 @@ impl<T: Clone + Default> Tensor<T> {
         Self::from_contiguous(self.planata(), self.shape.clone())
     }
 
-    /// Materialized rank-2 transpose. General axis permutation is not exposed yet.
+    /// Materialized rank-2 transpose.
     pub fn transpose_rank2(&self) -> Result<Self, &'static str> {
         if self.shape.len() != 2 {
             return Err(ERR_TRANSPOSE_RANK);
@@ -236,6 +240,23 @@ impl<T: Clone + Default> Tensor<T> {
             }
         }
         Ok(Self::from_contiguous(data, vec![cols, rows]))
+    }
+
+    /// Materialized axis permutation. The result is a copy with row-major strides.
+    pub fn permute(&self, axes: &[i64]) -> Result<Self, &'static str> {
+        let axes = permute_axes(axes, self.shape.len())?;
+        let shape: Vec<usize> = axes.iter().map(|&axis| self.shape[axis]).collect();
+        let count = checked_allocation_count::<T>(&shape)?;
+        let mut data = Vec::with_capacity(count);
+        for ordinal in 0..count {
+            let output_index = unravel_index(ordinal, &shape);
+            let mut input_index = vec![0; self.shape.len()];
+            for (output_axis, &input_axis) in axes.iter().enumerate() {
+                input_index[input_axis] = output_index[output_axis];
+            }
+            data.push(self.value_at_logical(&input_index));
+        }
+        Ok(Self::from_contiguous(data, shape))
     }
 
     pub(crate) fn is_view(&self) -> bool {
@@ -330,6 +351,26 @@ fn unravel_index(mut ordinal: usize, shape: &[usize]) -> Vec<usize> {
         ordinal /= dim;
     }
     index
+}
+
+fn permute_axes(axes: &[i64], rank: usize) -> Result<Vec<usize>, &'static str> {
+    if axes.len() != rank {
+        return Err(ERR_PERMUTE_RANK);
+    }
+    let mut parsed = Vec::with_capacity(rank);
+    let mut seen = vec![false; rank];
+    for &axis in axes {
+        let axis = parse_non_negative(axis, ERR_PERMUTE_NEGATIVE_AXIS)?;
+        if axis >= rank {
+            return Err(ERR_PERMUTE_AXIS_OUT_OF_RANGE);
+        }
+        if seen[axis] {
+            return Err(ERR_PERMUTE_DUPLICATE_AXIS);
+        }
+        seen[axis] = true;
+        parsed.push(axis);
+    }
+    Ok(parsed)
 }
 
 fn broadcast_shape(lhs: &[usize], rhs: &[usize]) -> Result<Vec<usize>, &'static str> {
