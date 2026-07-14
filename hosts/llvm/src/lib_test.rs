@@ -323,6 +323,14 @@ fn text_query_and_transformation_family_preserves_unicode_semantics() {
         "ōma/"
     );
     assert_eq!(
+        unsafe { __faber_rt_v1_text_slice(context, trimmed.value.cast(), -1, 2) }.status,
+        STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_text_slice(context, trimmed.value.cast(), 0, -1) }.status,
+        STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
         unsafe { &*replaced.value.cast::<RuntimeText>() }._value,
         "Rōma/Rōma"
     );

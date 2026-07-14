@@ -143,9 +143,12 @@ pub unsafe extern "C" fn __faber_rt_v1_text_slice(
     start: i64,
     end: i64,
 ) -> FaberRtPtrResultV1 {
+    if start < 0 || end < 0 {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    }
     transform(context, text, |text| {
-        let start = usize::try_from(start.max(0)).unwrap_or(usize::MAX);
-        let end = usize::try_from(end.max(0)).unwrap_or(usize::MAX);
+        let start = usize::try_from(start).unwrap_or(usize::MAX);
+        let end = usize::try_from(end).unwrap_or(usize::MAX);
         text.chars()
             .skip(start)
             .take(end.saturating_sub(start))
