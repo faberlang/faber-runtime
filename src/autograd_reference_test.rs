@@ -50,6 +50,21 @@ fn same_shape_vector_loss(params: &[f32]) -> f32 {
         .summa()
 }
 
+fn broadcast_bias_loss(params: &[f32]) -> f32 {
+    let x = Tensor::structa(params[0..4].to_vec(), &[2, 2]).expect("x tensor");
+    let bias = Tensor::structa(params[4..6].to_vec(), &[2, 1]).expect("bias tensor");
+    let target = Tensor::structa(vec![1.0, -2.0, 0.5, 3.0], &[2, 2]).expect("target tensor");
+
+    let prediction = x.addita(&bias).expect("row bias broadcasts across columns");
+    let residual = prediction
+        .subtrahe(&target)
+        .expect("same-shape elementwise subtract");
+    residual
+        .multiplica(&residual)
+        .expect("same-shape square")
+        .summa()
+}
+
 fn rung3_scalar_loss(params: &[f32]) -> f32 {
     let x = Tensor::structa(vec![params[0]], &[]).expect("rank-zero x tensor");
     let weight = Tensor::structa(vec![params[1]], &[]).expect("rank-zero weight tensor");
@@ -70,6 +85,33 @@ fn finite_difference_reference_checks_rank_zero_scalar_loss() {
     let params = vec![1.75_f32];
     let gradient = finite_difference_gradient(&params, rank_zero_loss);
     let expected = vec![2.0 * params[0] + 1.0];
+
+    assert_gradient_close(&gradient, &expected);
+}
+
+#[test]
+fn finite_difference_reference_checks_broadcast_bias_gradient_reduction() {
+    let params = vec![0.5_f32, -1.0, 2.0, 4.0, 0.25, -0.75];
+    let gradient = finite_difference_gradient(&params, broadcast_bias_loss);
+
+    let x = &params[0..4];
+    let bias = &params[4..6];
+    let target = [1.0_f32, -2.0, 0.5, 3.0];
+    let residuals: Vec<f32> = x
+        .chunks_exact(2)
+        .zip(bias.iter())
+        .flat_map(|(row, bias)| row.iter().map(move |x| x + bias))
+        .zip(target.iter())
+        .map(|(prediction, target)| prediction - target)
+        .collect();
+
+    let mut expected = Vec::with_capacity(params.len());
+    expected.extend(residuals.iter().map(|residual| 2.0 * residual));
+    expected.extend(
+        residuals
+            .chunks_exact(2)
+            .map(|row| row.iter().map(|residual| 2.0 * residual).sum::<f32>()),
+    );
 
     assert_gradient_close(&gradient, &expected);
 }
