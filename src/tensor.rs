@@ -155,7 +155,7 @@ impl<T: Clone + Default> Tensor<T> {
     pub fn forma(&self, shape: &[i64]) -> Result<Self, &'static str> {
         let dims = shape_dims(shape)?;
         if !tensor_shape_has_element_count(shape, self.element_count()) {
-            return Err("tensor reshape element count mismatch");
+            return Err(ERR_FORMA_RESHAPE_COUNT);
         }
         Ok(Self::from_contiguous(self.planata(), dims))
     }
