@@ -35,8 +35,10 @@ runtime:
   `dA = dY * B^T` and `dB = A^T * dY`; tape-owned `permute` is still
   runtime-local and not generated-gradient behavior.
 - Checked finite division exists for dense `Tensor<f32>` forward values and
-  the internal tape-owned VJP, using `d(lhs)=upstream/rhs` and
-  `d(rhs)=-(upstream*lhs)/(rhs*rhs)` with broadcast reduction back to parent
+  the internal tape-owned VJP. The RHS gradient follows the runtime-local
+  quotient proof described below: `quotient = lhs/rhs`,
+  `numerator = upstream*quotient`, then `-numerator/rhs`, avoiding an
+  intermediate `rhs*rhs` overflow before broadcast reduction back to parent
   shapes. This remains runtime-local only. `Tensor<f32>::scala` is covered by
   the internal tape-owned scalar-scale VJP, and `Tensor<f32>::media` covers
   non-empty f32 mean.
