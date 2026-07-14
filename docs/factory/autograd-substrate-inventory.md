@@ -16,7 +16,7 @@ autograd, gradient tracking, or PyTorch-equivalent behavior today.
 | Views and materialization | Rust `sectio` returns an axis-0 view sharing the same `Arc<Mutex<Vec<T>>>`; parent and slice mutations alias. `materialize` copies logical data and breaks that alias. The LLVM host ABI materializes slices rather than exposing Rust view layout. | `src/tensor_test.rs::sectio_returns_axis_zero_view`; `src/tensor_test.rs::materialize_breaks_sectio_alias`; `hosts/llvm/src/tensor.rs` |
 | Sparse bridge | `Sparsa<T>` stores non-default entries, reads absent entries as default, removes entries on default writes, and densifies to `Tensor<T>`. It has no sparse arithmetic kernels. | `src/sparsa.rs`; `src/sparsa_test.rs` |
 | Packed numeric bridge | `PackedU4Block` records toy U4 layout facts, validates metadata, dequantizes to `Vec<f32>`, and materializes as rank-1 `Tensor<f32>`. The only tensor integration row is reference materialization into elementwise add. | `src/packed_numeric.rs`; `src/packed_numeric_test.rs::packed_u4_materialized_tensor_feeds_elementwise_add` |
-| Finite-difference oracle | Test-only central-difference checks cover rank-0 scalar `x * x + x` and same-shape vector `summa((x * w - target) * (x * w - target))` losses using only materialized dense `Tensor<f32>` operations. | `src/autograd_reference_test.rs` |
+| Finite-difference oracle | Test-only central-difference checks cover rank-0 scalar `x * x + x`, the exact rung-3 scalar target `loss(x, weight, target) = (x * weight - target)^2` with `x=2.0`, `weight=3.0`, `target=4.0`, `loss=4.0`, and `d_weight ~= 8.0`, plus same-shape vector `summa((x * w - target) * (x * w - target))` losses using only materialized dense `Tensor<f32>` operations. | `src/autograd_reference_test.rs` |
 | ABI symbols | The host ABI names tensor creation, shape, get/set, fill, flatten, materialize, slice, add/sub/mul, matmul, sum, mean, conversion, and sparse new/get/set/nonzero/rank/densify/from-tensor symbols. | `src/host_abi.rs`; `hosts/llvm/src/lib.rs` |
 
 ## Autograd-Relevant Blockers
@@ -43,7 +43,7 @@ missing the runtime machinery that would make gradients first-class:
   aliased inputs.
 - No AIR/compiler-owned gradient-check harness yet. The repo now has a
   runtime-local finite-difference oracle for the first dense `Tensor<f32>`
-  seed subset only.
+  seed subset only; it is not generated-gradient behavior.
 - Sparse and packed numeric carriers are bridge materialization surfaces only
   for this purpose; they do not yet provide sparse or quantized gradient rules.
 

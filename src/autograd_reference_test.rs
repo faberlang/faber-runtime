@@ -50,6 +50,21 @@ fn same_shape_vector_loss(params: &[f32]) -> f32 {
         .summa()
 }
 
+fn rung3_scalar_loss(params: &[f32]) -> f32 {
+    let x = Tensor::structa(vec![params[0]], &[]).expect("rank-zero x tensor");
+    let weight = Tensor::structa(vec![params[1]], &[]).expect("rank-zero weight tensor");
+    let target = Tensor::structa(vec![params[2]], &[]).expect("rank-zero target tensor");
+
+    let prediction = x.multiplica(&weight).expect("same-shape scalar multiply");
+    let residual = prediction
+        .subtrahe(&target)
+        .expect("same-shape scalar subtract");
+    residual
+        .multiplica(&residual)
+        .expect("same-shape scalar square")
+        .summa()
+}
+
 #[test]
 fn finite_difference_reference_checks_rank_zero_scalar_loss() {
     let params = vec![1.75_f32];
@@ -57,6 +72,16 @@ fn finite_difference_reference_checks_rank_zero_scalar_loss() {
     let expected = vec![2.0 * params[0] + 1.0];
 
     assert_gradient_close(&gradient, &expected);
+}
+
+#[test]
+fn finite_difference_reference_checks_exec_approved_rung3_weight_gradient() {
+    let params = vec![2.0_f32, 3.0, 4.0];
+    let loss = rung3_scalar_loss(&params);
+    let gradient = finite_difference_gradient(&params, rung3_scalar_loss);
+
+    assert_eq!(loss, 4.0);
+    assert_gradient_close(&[gradient[1]], &[8.0]);
 }
 
 #[test]
