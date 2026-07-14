@@ -2,10 +2,10 @@
 //!
 //! This v0 is deliberately a tape/metadata scaffold, not a PyTorch-equivalent
 //! runtime. It records contiguous/materialized leaf tensors and broadcast-aware
-//! `add`, `sub`, `mul`, rank-2 `matmul`, `forma`, axis-0 `sectio`, and `summa`
-//! forward operations, then runs a scalar-loss backward pass for those same
-//! operations. Broadcasted binary operations reduce parent gradients back to
-//! each original parent shape. Raw `Tensor::sectio` views are rejected at the
+//! `add`, `sub`, `mul`, rank-2 `matmul`, `forma`, axis-0 `sectio`, `summa`, and
+//! `media` forward operations, then runs a scalar-loss backward pass for those
+//! same operations. Broadcasted binary operations reduce parent gradients back
+//! to each original parent shape. Raw `Tensor::sectio` views are rejected at the
 //! leaf boundary; tape-owned `sectio` records parent identity and scatter-adds
 //! gradients back to the parent. It does not implement sessions, optimizers,
 //! host ABI gradient handles, or mutation semantics.
@@ -36,6 +36,7 @@ pub(crate) enum AutogradOp {
     Forma,
     Sectio { start: i64 },
     Summa,
+    Media,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -202,6 +203,16 @@ impl AutogradTape {
         Ok(self.record(AutogradOp::Summa, vec![value.id], tensor))
     }
 
+    pub(crate) fn media(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(value)?;
+        let tensor = Tensor::structa(
+            vec![value.tensor.media().map_err(AutogradError::Tensor)?],
+            &[],
+        )
+        .map_err(AutogradError::Tensor)?;
+        Ok(self.record(AutogradOp::Media, vec![value.id], tensor))
+    }
+
     pub(crate) fn reject_unsupported<T>(
         &self,
         op: UnsupportedAutogradOp,
@@ -337,6 +348,23 @@ impl AutogradTape {
                     gradients.accumulate(
                         parent,
                         Tensor::crea(&parent_shape, scalar).map_err(AutogradError::Tensor)?,
+                    )?;
+                }
+                AutogradOp::Media => {
+                    let &[parent] = node.parents.as_slice() else {
+                        return Err(AutogradError::MissingNode);
+                    };
+                    let scalar = rank_zero_scalar(&upstream)?;
+                    let parent_shape = parent_shape(self, parent)?;
+                    let count = tensor_shape_element_count(&parent_shape)
+                        .ok_or(AutogradError::ShapeMismatch)?;
+                    if count == 0 {
+                        return Err(AutogradError::Tensor(crate::tensor::ERR_MEDIA_EMPTY));
+                    }
+                    gradients.accumulate(
+                        parent,
+                        Tensor::crea(&parent_shape, scalar / count as f32)
+                            .map_err(AutogradError::Tensor)?,
                     )?;
                 }
             }
@@ -889,6 +917,62 @@ mod tests {
         let before = local_tape.nodes().len();
         assert_eq!(
             local_tape.forma(&foreign, &[2]).unwrap_err(),
+            AutogradError::ForeignTapeValue
+        );
+        assert_eq!(local_tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_tape_owned_media_records_scalar_mean() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+
+        let mean = tape.media(&value).expect("mean records");
+
+        assert_eq!(mean.tensor().magnitudines(), Vec::<i64>::new());
+        assert_eq!(mean.tensor().planata(), vec![2.5]);
+        let node = tape.node(mean.id()).expect("media node");
+        assert_eq!(node.op(), AutogradOp::Media);
+        assert_eq!(node.parents(), &[value.id()]);
+    }
+
+    #[test]
+    fn backward_distributes_tape_owned_media_gradient_over_parent() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+
+        let mean = tape.media(&value).expect("mean records");
+        let gradients = tape.backward(&mean).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(value.id()).expect("value gradient"),
+            &[0.25, 0.25, 0.25, 0.25],
+            &[2, 2],
+        );
+    }
+
+    #[test]
+    fn autograd_tape_owned_media_rejects_empty_without_recording_node() {
+        let mut tape = AutogradTape::new();
+        let empty = leaf(&mut tape, tensor(&[], &[0]));
+
+        let before = tape.nodes().len();
+        assert_eq!(
+            tape.media(&empty).unwrap_err(),
+            AutogradError::Tensor(crate::tensor::ERR_MEDIA_EMPTY)
+        );
+        assert_eq!(tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_tape_owned_media_rejects_cross_tape_parent_without_recording_node() {
+        let mut local_tape = AutogradTape::new();
+        let mut foreign_tape = AutogradTape::new();
+        let foreign = leaf(&mut foreign_tape, tensor(&[1.0, 2.0], &[2]));
+
+        let before = local_tape.nodes().len();
+        assert_eq!(
+            local_tape.media(&foreign).unwrap_err(),
             AutogradError::ForeignTapeValue
         );
         assert_eq!(local_tape.nodes().len(), before);

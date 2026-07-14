@@ -30,6 +30,7 @@ pub const ERR_BROADCAST_SHAPE: &str = "tensor broadcast shape mismatch";
 pub const ERR_MATMUL_RECEIVER_RANK: &str = "tensor matmul requires rank-2 tensor receiver";
 pub const ERR_MATMUL_ARGUMENT_RANK: &str = "tensor matmul requires rank-2 tensor argument";
 pub const ERR_MATMUL_INNER_DIMENSION: &str = "tensor matmul inner dimension mismatch";
+pub const ERR_MEDIA_EMPTY: &str = "tensor media (mean) requires at least one element";
 
 pub fn tensor_dim_non_negative(value: i64) -> bool {
     value >= 0
@@ -416,6 +417,28 @@ where
     /// Elementwise `self * other` after NumPy-style broadcast unification.
     pub fn multiplica(&self, other: &Tensor<T>) -> Result<Tensor<T>, &'static str> {
         tensor_elementwise(self, other, |lhs, rhs| lhs * rhs)
+    }
+}
+
+impl Tensor<f32> {
+    /// Elementwise scalar multiplication preserving tensor shape.
+    pub fn scala(&self, factor: f32) -> Tensor<f32> {
+        Tensor::from_contiguous(
+            self.planata()
+                .into_iter()
+                .map(|value| value * factor)
+                .collect(),
+            self.shape.clone(),
+        )
+    }
+
+    /// Mean of all elements as an f32 scalar.
+    pub fn media(&self) -> Result<f32, &'static str> {
+        let count = self.element_count();
+        if count == 0 {
+            return Err(ERR_MEDIA_EMPTY);
+        }
+        Ok(self.summa() / count as f32)
     }
 }
 

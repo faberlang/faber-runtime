@@ -1,7 +1,7 @@
 use super::{
     tensor_flat_offset, tensor_shape_element_count, tensor_shape_has_element_count, Tensor,
     ERR_BROADCAST_SHAPE, ERR_ELEMENT_COUNT_OVERFLOW, ERR_MATMUL_ARGUMENT_RANK,
-    ERR_MATMUL_INNER_DIMENSION, ERR_MATMUL_RECEIVER_RANK,
+    ERR_MATMUL_INNER_DIMENSION, ERR_MATMUL_RECEIVER_RANK, ERR_MEDIA_EMPTY,
 };
 
 #[test]
@@ -265,6 +265,25 @@ fn summa_folds_all_elements_to_element_type() {
     assert_eq!(grid.summa(), 10.0);
     let ints = Tensor::structa(vec![1i64, 2, 3, 4], &[4]).unwrap();
     assert_eq!(ints.summa(), 10);
+}
+
+#[test]
+fn scala_scales_f32_elements_and_preserves_shape() {
+    let tensor = Tensor::structa(vec![1.0f32, -2.0, 3.5, 4.0], &[2, 2]).unwrap();
+
+    let scaled = tensor.scala(0.5);
+
+    assert_eq!(scaled.magnitudines(), vec![2, 2]);
+    assert_eq!(scaled.planata(), vec![0.5, -1.0, 1.75, 2.0]);
+}
+
+#[test]
+fn media_averages_f32_elements_and_rejects_empty_tensor() {
+    let tensor = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+    let empty = Tensor::<f32>::structa(Vec::new(), &[0]).unwrap();
+
+    assert_eq!(tensor.media().unwrap(), 2.5);
+    assert_eq!(empty.media().unwrap_err(), ERR_MEDIA_EMPTY);
 }
 
 #[test]

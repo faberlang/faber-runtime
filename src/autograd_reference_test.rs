@@ -63,6 +63,23 @@ fn same_shape_vector_loss(params: &[f32]) -> f32 {
         .summa()
 }
 
+fn mean_square_loss(params: &[f32]) -> f32 {
+    let x = Tensor::structa(params.to_vec(), &[2, 2]).expect("x tensor");
+    let squared = x.multiplica(&x).expect("same-shape square");
+    squared.media().expect("non-empty mean")
+}
+
+fn mean_square_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(params, &[2, 2]));
+
+    let squared = tape.mul(&x, &x).expect("same-shape square");
+    let loss = tape.media(&squared).expect("mean loss");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    gradients.gradient(x.id()).expect("x gradient").planata()
+}
+
 fn broadcast_bias_loss(params: &[f32]) -> f32 {
     let x = Tensor::structa(params[0..4].to_vec(), &[2, 2]).expect("x tensor");
     let bias = Tensor::structa(params[4..6].to_vec(), &[2, 1]).expect("bias tensor");
@@ -325,6 +342,15 @@ fn autograd_matches_finite_difference_broadcast_mul_gradient_reduction() {
     let params = vec![0.5_f32, -1.0, 1.2, -0.7, 0.6, -0.4];
     let reference = finite_difference_gradient(&params, broadcast_scale_loss);
     let actual = broadcast_scale_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
+#[test]
+fn autograd_matches_finite_difference_mean_square_gradient() {
+    let params = vec![0.5_f32, -1.0, 2.0, -0.75];
+    let reference = finite_difference_gradient(&params, mean_square_loss);
+    let actual = mean_square_autograd_gradient(&params);
 
     assert_gradient_close(&actual, &reference);
 }
