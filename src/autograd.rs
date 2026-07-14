@@ -173,7 +173,8 @@ impl AutogradTape {
 
     pub(crate) fn neg(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
         self.ensure_member(value)?;
-        Ok(self.record(AutogradOp::Neg, vec![value.id], value.tensor.neg()))
+        let tensor = self.value(value.id)?.neg();
+        Ok(self.record(AutogradOp::Neg, vec![value.id], tensor))
     }
 
     pub(crate) fn matmul(
@@ -183,9 +184,9 @@ impl AutogradTape {
     ) -> Result<AutogradValue, AutogradError> {
         self.ensure_member(lhs)?;
         self.ensure_member(rhs)?;
-        let tensor = lhs
-            .tensor
-            .matmul(&rhs.tensor)
+        let tensor = self
+            .value(lhs.id)?
+            .matmul(self.value(rhs.id)?)
             .map_err(AutogradError::Tensor)?;
         Ok(self.record(AutogradOp::Matmul, vec![lhs.id, rhs.id], tensor))
     }
@@ -196,7 +197,7 @@ impl AutogradTape {
         factor: f32,
     ) -> Result<AutogradValue, AutogradError> {
         self.ensure_member(value)?;
-        let tensor = value.tensor.scala(factor);
+        let tensor = self.value(value.id)?.scala(factor);
         Ok(self.record(
             AutogradOp::Scala {
                 factor: factor.to_bits(),
@@ -212,7 +213,10 @@ impl AutogradTape {
         shape: &[i64],
     ) -> Result<AutogradValue, AutogradError> {
         self.ensure_member(value)?;
-        let tensor = value.tensor.forma(shape).map_err(AutogradError::Tensor)?;
+        let tensor = self
+            .value(value.id)?
+            .forma(shape)
+            .map_err(AutogradError::Tensor)?;
         Ok(self.record(AutogradOp::Forma, vec![value.id], tensor))
     }
 
@@ -222,7 +226,10 @@ impl AutogradTape {
         axes: &[i64],
     ) -> Result<AutogradValue, AutogradError> {
         self.ensure_member(value)?;
-        let tensor = value.tensor.permute(axes).map_err(AutogradError::Tensor)?;
+        let tensor = self
+            .value(value.id)?
+            .permute(axes)
+            .map_err(AutogradError::Tensor)?;
         Ok(self.record(
             AutogradOp::Permute {
                 axes: axes.to_vec(),
@@ -239,8 +246,8 @@ impl AutogradTape {
         end: i64,
     ) -> Result<AutogradValue, AutogradError> {
         self.ensure_member(value)?;
-        let tensor = value
-            .tensor
+        let tensor = self
+            .value(value.id)?
             .sectio(start, end)
             .map_err(AutogradError::Tensor)?
             .materialize();
@@ -249,15 +256,18 @@ impl AutogradTape {
 
     pub(crate) fn summa(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
         self.ensure_member(value)?;
-        let tensor =
-            Tensor::structa(vec![value.tensor.summa()], &[]).map_err(AutogradError::Tensor)?;
+        let tensor = Tensor::structa(vec![self.value(value.id)?.summa()], &[])
+            .map_err(AutogradError::Tensor)?;
         Ok(self.record(AutogradOp::Summa, vec![value.id], tensor))
     }
 
     pub(crate) fn media(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
         self.ensure_member(value)?;
         let tensor = Tensor::structa(
-            vec![value.tensor.media().map_err(AutogradError::Tensor)?],
+            vec![self
+                .value(value.id)?
+                .media()
+                .map_err(AutogradError::Tensor)?],
             &[],
         )
         .map_err(AutogradError::Tensor)?;
@@ -485,7 +495,8 @@ impl AutogradTape {
     ) -> Result<AutogradValue, AutogradError> {
         self.ensure_member(lhs)?;
         self.ensure_member(rhs)?;
-        let tensor = forward(&lhs.tensor, &rhs.tensor).map_err(AutogradError::Tensor)?;
+        let tensor =
+            forward(self.value(lhs.id)?, self.value(rhs.id)?).map_err(AutogradError::Tensor)?;
         Ok(self.record(op, vec![lhs.id, rhs.id], tensor))
     }
 
@@ -1526,6 +1537,27 @@ mod tests {
 
         let gradients = tape.backward(&loss).expect("backward succeeds");
 
+        assert_tensor_close(gradients.gradient(x.id()).expect("x gradient"), &[3.0], &[]);
+        assert_tensor_close(
+            gradients.gradient(weight.id()).expect("weight gradient"),
+            &[2.0],
+            &[],
+        );
+    }
+
+    #[test]
+    fn autograd_ops_ignore_pre_op_mutation_of_exposed_value_tensor_clone() {
+        let mut tape = AutogradTape::new();
+        let x = leaf(&mut tape, tensor(&[2.0], &[]));
+        let weight = leaf(&mut tape, tensor(&[3.0], &[]));
+
+        let mut x_value_alias = x.tensor().clone();
+        x_value_alias.reple(20.0);
+        let prediction = tape.mul(&x, &weight).expect("x * weight");
+        let loss = tape.summa(&prediction).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(prediction.tensor(), &[6.0], &[]);
         assert_tensor_close(gradients.gradient(x.id()).expect("x gradient"), &[3.0], &[]);
         assert_tensor_close(
             gradients.gradient(weight.id()).expect("weight gradient"),
