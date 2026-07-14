@@ -83,6 +83,50 @@ fn linear_training_step_loss(params: &[f32]) -> f32 {
         .summa()
 }
 
+fn linear_training_step_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let input = leaf(&mut tape, tensor(&params[0..4], &[2, 2]));
+    let weight = leaf(&mut tape, tensor(&params[4..8], &[2, 2]));
+    let bias = leaf(&mut tape, tensor(&params[8..10], &[1, 2]));
+    let target = leaf(&mut tape, tensor(&[0.25, -1.0, 1.5, 0.75], &[2, 2]));
+
+    let prediction = tape.matmul(&input, &weight).expect("linear matmul");
+    let shifted = tape.add(&prediction, &bias).expect("batch bias broadcasts");
+    let residual = tape.sub(&shifted, &target).expect("prediction - target");
+    let squared = tape.mul(&residual, &residual).expect("residual squared");
+    let loss = tape.summa(&squared).expect("scalar loss");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    let mut actual = Vec::with_capacity(params.len());
+    actual.extend(
+        gradients
+            .gradient(input.id())
+            .expect("input gradient")
+            .planata(),
+    );
+    actual.extend(
+        gradients
+            .gradient(weight.id())
+            .expect("weight gradient")
+            .planata(),
+    );
+    actual.extend(
+        gradients
+            .gradient(bias.id())
+            .expect("bias gradient")
+            .planata(),
+    );
+    actual
+}
+
+fn apply_linear_parameter_update(params: &[f32], gradient: &[f32], learning_rate: f32) -> Vec<f32> {
+    let mut updated = params.to_vec();
+    for index in 4..10 {
+        updated[index] -= learning_rate * gradient[index];
+    }
+    updated
+}
+
 fn rung3_scalar_loss(params: &[f32]) -> f32 {
     let x = Tensor::structa(vec![params[0]], &[]).expect("rank-zero x tensor");
     let weight = Tensor::structa(vec![params[1]], &[]).expect("rank-zero weight tensor");
@@ -147,41 +191,29 @@ fn finite_difference_reference_checks_broadcast_bias_gradient_reduction() {
 fn autograd_matches_finite_difference_linear_training_step_gradients() {
     let params = vec![0.5_f32, -1.0, 2.0, 0.75, 1.25, -0.5, 0.8, 1.1, 0.2, -0.3];
     let reference = finite_difference_gradient(&params, linear_training_step_loss);
-
-    let mut tape = AutogradTape::new();
-    let input = leaf(&mut tape, tensor(&params[0..4], &[2, 2]));
-    let weight = leaf(&mut tape, tensor(&params[4..8], &[2, 2]));
-    let bias = leaf(&mut tape, tensor(&params[8..10], &[1, 2]));
-    let target = leaf(&mut tape, tensor(&[0.25, -1.0, 1.5, 0.75], &[2, 2]));
-
-    let prediction = tape.matmul(&input, &weight).expect("linear matmul");
-    let shifted = tape.add(&prediction, &bias).expect("batch bias broadcasts");
-    let residual = tape.sub(&shifted, &target).expect("prediction - target");
-    let squared = tape.mul(&residual, &residual).expect("residual squared");
-    let loss = tape.summa(&squared).expect("scalar loss");
-    let gradients = tape.backward(&loss).expect("backward succeeds");
-
-    let mut actual = Vec::with_capacity(params.len());
-    actual.extend(
-        gradients
-            .gradient(input.id())
-            .expect("input gradient")
-            .planata(),
-    );
-    actual.extend(
-        gradients
-            .gradient(weight.id())
-            .expect("weight gradient")
-            .planata(),
-    );
-    actual.extend(
-        gradients
-            .gradient(bias.id())
-            .expect("bias gradient")
-            .planata(),
-    );
+    let actual = linear_training_step_autograd_gradient(&params);
 
     assert_gradient_close(&actual, &reference);
+}
+
+#[test]
+fn autograd_parameter_update_matches_finite_difference_linear_oracle() {
+    let params = vec![0.5_f32, -1.0, 2.0, 0.75, 1.25, -0.5, 0.8, 1.1, 0.2, -0.3];
+    let learning_rate = 0.01;
+    let reference_gradient = finite_difference_gradient(&params, linear_training_step_loss);
+    let autograd_gradient = linear_training_step_autograd_gradient(&params);
+
+    let reference_updated =
+        apply_linear_parameter_update(&params, &reference_gradient, learning_rate);
+    let autograd_updated =
+        apply_linear_parameter_update(&params, &autograd_gradient, learning_rate);
+
+    assert_gradient_close(&autograd_updated, &reference_updated);
+    assert_eq!(&autograd_updated[0..4], &params[0..4]);
+    assert!(
+        linear_training_step_loss(&autograd_updated) < linear_training_step_loss(&params),
+        "manual weight/bias update should lower the local training loss"
+    );
 }
 
 #[test]
