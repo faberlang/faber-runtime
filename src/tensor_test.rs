@@ -18,6 +18,12 @@ fn crea_rejects_negative_shape_dimension() {
 }
 
 #[test]
+fn crea_rejects_overflowing_shape_product() {
+    let err = Tensor::<f32>::crea(&[i64::MAX, 2], 0.0).unwrap_err();
+    assert_eq!(err, ERR_ELEMENT_COUNT_OVERFLOW);
+}
+
+#[test]
 fn tensor_shape_element_count_rejects_negative_and_overflow() {
     assert_eq!(tensor_shape_element_count(&[2, 3, 4]), Some(24));
     assert_eq!(tensor_shape_element_count(&[-1, 4]), None);
@@ -267,4 +273,12 @@ fn matmul_inner_mismatch_rejects_with_error() {
     let a = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
     let b = Tensor::structa(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[4, 2]).unwrap();
     assert_eq!(a.matmul(&b).unwrap_err(), ERR_MATMUL_INNER_DIMENSION);
+}
+
+#[test]
+fn matmul_rejects_overflowing_result_shape_before_allocation() {
+    let a = Tensor::<f32>::crea(&[i64::MAX, 0], 0.0).expect("zero-element huge receiver");
+    let b = Tensor::<f32>::crea(&[0, 2], 0.0).expect("zero-element argument");
+
+    assert_eq!(a.matmul(&b).unwrap_err(), ERR_ELEMENT_COUNT_OVERFLOW);
 }

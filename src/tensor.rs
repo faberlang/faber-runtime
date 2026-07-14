@@ -70,6 +70,12 @@ fn shape_dims(shape: &[i64]) -> Result<Vec<usize>, &'static str> {
         .collect()
 }
 
+fn shape_dims_and_count<T>(shape: &[i64]) -> Result<(Vec<usize>, usize), &'static str> {
+    let dims = shape_dims(shape)?;
+    let count = checked_allocation_count::<T>(&dims)?;
+    Ok((dims, count))
+}
+
 fn index_dims(indices: &[i64]) -> Result<Vec<usize>, &'static str> {
     indices
         .iter()
@@ -125,8 +131,7 @@ impl<T: Clone + Default> Tensor<T> {
     }
 
     pub fn crea(shape: &[i64], fill: T) -> Result<Self, &'static str> {
-        let dims = shape_dims(shape)?;
-        let count = element_count_usize(&dims);
+        let (dims, count) = shape_dims_and_count::<T>(shape)?;
         Ok(Self::from_contiguous(vec![fill; count], dims))
     }
 
@@ -261,7 +266,22 @@ impl<T: Clone + Default> Tensor<T> {
 }
 
 fn element_count_usize(shape: &[usize]) -> usize {
-    shape.iter().product()
+    checked_element_count_usize(shape).expect("tensor shape has checked element count")
+}
+
+fn checked_element_count_usize(shape: &[usize]) -> Option<usize> {
+    shape
+        .iter()
+        .try_fold(1_usize, |acc, dim| acc.checked_mul(*dim))
+}
+
+fn checked_allocation_count<T>(shape: &[usize]) -> Result<usize, &'static str> {
+    let count = checked_element_count_usize(shape).ok_or(ERR_ELEMENT_COUNT_OVERFLOW)?;
+    let element_size = std::mem::size_of::<T>();
+    if element_size != 0 && count > (isize::MAX as usize) / element_size {
+        return Err(ERR_ELEMENT_COUNT_OVERFLOW);
+    }
+    Ok(count)
 }
 
 fn row_major_strides(shape: &[usize]) -> Vec<usize> {
@@ -332,7 +352,7 @@ where
     F: Fn(T, T) -> T,
 {
     let shape = broadcast_shape(&lhs.shape, &rhs.shape)?;
-    let count = element_count_usize(&shape);
+    let count = checked_allocation_count::<T>(&shape)?;
     let mut data = Vec::with_capacity(count);
     for ordinal in 0..count {
         let index = unravel_index(ordinal, &shape);
@@ -412,7 +432,8 @@ where
         }
         // WHY: explicit O(M*K*N) contraction loop keeps the kernel readable and
         // works for materialized tensors and views through descriptor offsets.
-        let mut result = Vec::with_capacity(m * n);
+        let result_count = checked_allocation_count::<T>(&[m, n])?;
+        let mut result = Vec::with_capacity(result_count);
         for i in 0..m {
             for j in 0..n {
                 let mut acc = T::default();
