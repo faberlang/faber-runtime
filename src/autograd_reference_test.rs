@@ -3,6 +3,9 @@ use crate::Tensor;
 
 const FINITE_DIFFERENCE_EPSILON: f32 = 1.0e-3;
 const FINITE_DIFFERENCE_TOLERANCE: f32 = 2.0e-3;
+const LINEAR_INPUT_RANGE: std::ops::Range<usize> = 0..4;
+const LINEAR_WEIGHT_RANGE: std::ops::Range<usize> = 4..8;
+const LINEAR_BIAS_RANGE: std::ops::Range<usize> = 8..10;
 
 fn finite_difference_gradient<F>(params: &[f32], loss: F) -> Vec<f32>
 where
@@ -159,9 +162,11 @@ fn broadcast_scale_autograd_gradient(params: &[f32]) -> Vec<f32> {
 }
 
 fn linear_training_step_loss(params: &[f32]) -> f32 {
-    let input = Tensor::structa(params[0..4].to_vec(), &[2, 2]).expect("input tensor");
-    let weight = Tensor::structa(params[4..8].to_vec(), &[2, 2]).expect("weight tensor");
-    let bias = Tensor::structa(params[8..10].to_vec(), &[1, 2]).expect("bias tensor");
+    let input =
+        Tensor::structa(params[LINEAR_INPUT_RANGE].to_vec(), &[2, 2]).expect("input tensor");
+    let weight =
+        Tensor::structa(params[LINEAR_WEIGHT_RANGE].to_vec(), &[2, 2]).expect("weight tensor");
+    let bias = Tensor::structa(params[LINEAR_BIAS_RANGE].to_vec(), &[1, 2]).expect("bias tensor");
     let target = Tensor::structa(vec![0.25, -1.0, 1.5, 0.75], &[2, 2]).expect("target tensor");
 
     let prediction = input.matmul(&weight).expect("rank-2 linear matmul");
@@ -172,21 +177,22 @@ fn linear_training_step_loss(params: &[f32]) -> f32 {
     residual
         .multiplica(&residual)
         .expect("same-shape square")
-        .summa()
+        .media()
+        .expect("non-empty mean")
 }
 
 fn linear_training_step_autograd_gradient(params: &[f32]) -> Vec<f32> {
     let mut tape = AutogradTape::new();
-    let input = leaf(&mut tape, tensor(&params[0..4], &[2, 2]));
-    let weight = leaf(&mut tape, tensor(&params[4..8], &[2, 2]));
-    let bias = leaf(&mut tape, tensor(&params[8..10], &[1, 2]));
+    let input = leaf(&mut tape, tensor(&params[LINEAR_INPUT_RANGE], &[2, 2]));
+    let weight = leaf(&mut tape, tensor(&params[LINEAR_WEIGHT_RANGE], &[2, 2]));
+    let bias = leaf(&mut tape, tensor(&params[LINEAR_BIAS_RANGE], &[1, 2]));
     let target = leaf(&mut tape, tensor(&[0.25, -1.0, 1.5, 0.75], &[2, 2]));
 
     let prediction = tape.matmul(&input, &weight).expect("linear matmul");
     let shifted = tape.add(&prediction, &bias).expect("batch bias broadcasts");
     let residual = tape.sub(&shifted, &target).expect("prediction - target");
     let squared = tape.mul(&residual, &residual).expect("residual squared");
-    let loss = tape.summa(&squared).expect("scalar loss");
+    let loss = tape.media(&squared).expect("mean loss");
     let gradients = tape.backward(&loss).expect("backward succeeds");
 
     let mut actual = Vec::with_capacity(params.len());
@@ -211,21 +217,27 @@ fn linear_training_step_autograd_gradient(params: &[f32]) -> Vec<f32> {
     actual
 }
 
-fn apply_linear_parameter_update(params: &[f32], gradient: &[f32], learning_rate: f32) -> Vec<f32> {
+fn zero_frozen_linear_gradient(gradient: &mut [f32]) {
+    for index in LINEAR_INPUT_RANGE {
+        gradient[index] = 0.0;
+    }
+}
+
+fn apply_test_only_sgd_update(params: &[f32], gradient: &[f32], learning_rate: f32) -> Vec<f32> {
     let mut updated = params.to_vec();
-    for index in 4..10 {
-        updated[index] -= learning_rate * gradient[index];
+    for (value, gradient) in updated.iter_mut().zip(gradient.iter()) {
+        *value -= learning_rate * gradient;
     }
     updated
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct LinearTrainingSession {
+struct TestOnlySgdSession {
     params: Vec<f32>,
     learning_rate: f32,
 }
 
-impl LinearTrainingSession {
+impl TestOnlySgdSession {
     fn new(params: Vec<f32>, learning_rate: f32) -> Self {
         Self {
             params,
@@ -237,21 +249,35 @@ impl LinearTrainingSession {
         linear_training_step_loss(&self.params)
     }
 
-    fn autograd_step(&mut self) {
-        let gradient = linear_training_step_autograd_gradient(&self.params);
-        self.params = apply_linear_parameter_update(&self.params, &gradient, self.learning_rate);
+    fn autograd_trainable_gradient(&self) -> Vec<f32> {
+        let mut gradient = linear_training_step_autograd_gradient(&self.params);
+        zero_frozen_linear_gradient(&mut gradient);
+        gradient
     }
 
-    fn finite_difference_step(&mut self) {
-        let gradient = finite_difference_gradient(&self.params, linear_training_step_loss);
-        self.params = apply_linear_parameter_update(&self.params, &gradient, self.learning_rate);
+    fn finite_difference_trainable_gradient(&self) -> Vec<f32> {
+        let mut gradient = finite_difference_gradient(&self.params, linear_training_step_loss);
+        zero_frozen_linear_gradient(&mut gradient);
+        gradient
+    }
+
+    fn autograd_step(&mut self) -> Vec<f32> {
+        let gradient = self.autograd_trainable_gradient();
+        self.params = apply_test_only_sgd_update(&self.params, &gradient, self.learning_rate);
+        gradient
+    }
+
+    fn finite_difference_step(&mut self) -> Vec<f32> {
+        let gradient = self.finite_difference_trainable_gradient();
+        self.params = apply_test_only_sgd_update(&self.params, &gradient, self.learning_rate);
+        gradient
     }
 
     fn autograd_loss_trace(&mut self, steps: usize) -> Vec<f32> {
         let mut trace = Vec::with_capacity(steps + 1);
         trace.push(self.loss());
         for _ in 0..steps {
-            self.autograd_step();
+            let _gradient = self.autograd_step();
             trace.push(self.loss());
         }
         trace
@@ -261,7 +287,7 @@ impl LinearTrainingSession {
         let mut trace = Vec::with_capacity(steps + 1);
         trace.push(self.loss());
         for _ in 0..steps {
-            self.finite_difference_step();
+            let _gradient = self.finite_difference_step();
             trace.push(self.loss());
         }
         trace
@@ -368,15 +394,19 @@ fn autograd_matches_finite_difference_linear_training_step_gradients() {
 fn autograd_parameter_update_matches_finite_difference_linear_oracle() {
     let params = vec![0.5_f32, -1.0, 2.0, 0.75, 1.25, -0.5, 0.8, 1.1, 0.2, -0.3];
     let learning_rate = 0.01;
-    let mut reference = LinearTrainingSession::new(params.clone(), learning_rate);
-    let mut autograd = LinearTrainingSession::new(params.clone(), learning_rate);
+    let mut reference = TestOnlySgdSession::new(params.clone(), learning_rate);
+    let mut autograd = TestOnlySgdSession::new(params.clone(), learning_rate);
     let initial_loss = autograd.loss();
 
-    reference.finite_difference_step();
-    autograd.autograd_step();
+    let reference_gradient = reference.finite_difference_step();
+    let autograd_gradient = autograd.autograd_step();
 
+    assert_gradient_close(&autograd_gradient, &reference_gradient);
     assert_gradient_close(&autograd.params, &reference.params);
-    assert_eq!(&autograd.params[0..4], &params[0..4]);
+    assert_eq!(
+        &autograd.params[LINEAR_INPUT_RANGE],
+        &params[LINEAR_INPUT_RANGE]
+    );
     assert!(
         autograd.loss() < initial_loss,
         "manual weight/bias update should lower the local training loss"
@@ -384,11 +414,32 @@ fn autograd_parameter_update_matches_finite_difference_linear_oracle() {
 }
 
 #[test]
+fn test_only_sgd_session_zeroes_frozen_input_gradient_before_update() {
+    let params = vec![0.5_f32, -1.0, 2.0, 0.75, 1.25, -0.5, 0.8, 1.1, 0.2, -0.3];
+    let mut session = TestOnlySgdSession::new(params.clone(), 0.01);
+
+    let gradient = session.autograd_step();
+
+    assert_eq!(&gradient[LINEAR_INPUT_RANGE], &[0.0, 0.0, 0.0, 0.0]);
+    assert!(
+        gradient[LINEAR_WEIGHT_RANGE]
+            .iter()
+            .chain(gradient[LINEAR_BIAS_RANGE].iter())
+            .any(|value| value.abs() > 1.0e-6),
+        "trainable weight/bias gradient should be nonzero"
+    );
+    assert_eq!(
+        &session.params[LINEAR_INPUT_RANGE],
+        &params[LINEAR_INPUT_RANGE]
+    );
+}
+
+#[test]
 fn autograd_two_step_loss_trace_matches_finite_difference_session_oracle() {
     let params = vec![0.5_f32, -1.0, 2.0, 0.75, 1.25, -0.5, 0.8, 1.1, 0.2, -0.3];
     let learning_rate = 0.01;
-    let mut reference = LinearTrainingSession::new(params.clone(), learning_rate);
-    let mut autograd = LinearTrainingSession::new(params.clone(), learning_rate);
+    let mut reference = TestOnlySgdSession::new(params.clone(), learning_rate);
+    let mut autograd = TestOnlySgdSession::new(params.clone(), learning_rate);
 
     let reference_trace = reference.finite_difference_loss_trace(2);
     let autograd_trace = autograd.autograd_loss_trace(2);
@@ -396,7 +447,10 @@ fn autograd_two_step_loss_trace_matches_finite_difference_session_oracle() {
     assert_gradient_close(&autograd_trace, &reference_trace);
     assert_strictly_decreasing(&autograd_trace);
     assert_gradient_close(&autograd.params, &reference.params);
-    assert_eq!(&autograd.params[0..4], &params[0..4]);
+    assert_eq!(
+        &autograd.params[LINEAR_INPUT_RANGE],
+        &params[LINEAR_INPUT_RANGE]
+    );
 }
 
 #[test]
