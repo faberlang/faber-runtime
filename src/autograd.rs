@@ -293,7 +293,8 @@ impl AutogradTape {
             return Err(AutogradError::BackwardRequiresScalar);
         }
 
-        let mut gradients = AutogradGradients::new(self.nodes.len());
+        let mut gradients =
+            AutogradGradients::new(self.nodes.iter().map(|node| node.shape.clone()).collect());
         gradients.accumulate(loss.id, scalar_tensor(1.0)?)?;
 
         for node in self.nodes.iter().rev() {
@@ -532,12 +533,15 @@ fn next_autograd_tape_id() -> AutogradTapeId {
 #[derive(Clone, Debug)]
 pub(crate) struct AutogradGradients {
     gradients: Vec<Option<Tensor<f32>>>,
+    expected_shapes: Vec<Vec<i64>>,
 }
 
 impl AutogradGradients {
-    fn new(len: usize) -> Self {
+    fn new(expected_shapes: Vec<Vec<i64>>) -> Self {
+        let len = expected_shapes.len();
         Self {
             gradients: vec![None; len],
+            expected_shapes,
         }
     }
 
@@ -550,6 +554,13 @@ impl AutogradGradients {
         id: AutogradNodeId,
         gradient: Tensor<f32>,
     ) -> Result<(), AutogradError> {
+        let expected_shape = self
+            .expected_shapes
+            .get(id.0)
+            .ok_or(AutogradError::MissingNode)?;
+        if gradient.magnitudines() != *expected_shape {
+            return Err(AutogradError::ShapeMismatch);
+        }
         let slot = self
             .gradients
             .get_mut(id.0)
@@ -800,6 +811,37 @@ mod tests {
         assert_eq!(lhs.tape_id(), lhs_tape.id());
         assert_eq!(rhs.tape_id(), rhs_tape.id());
         assert_ne!(lhs.tape_id(), rhs.tape_id());
+    }
+
+    #[test]
+    fn gradient_accumulation_rejects_first_wrong_shape() {
+        let mut gradients = AutogradGradients::new(vec![vec![2, 2]]);
+
+        assert_eq!(
+            gradients.accumulate(AutogradNodeId(0), tensor(&[1.0], &[1, 1])),
+            Err(AutogradError::ShapeMismatch)
+        );
+        assert!(gradients.gradient(AutogradNodeId(0)).is_none());
+    }
+
+    #[test]
+    fn gradient_accumulation_rejects_broadcast_compatible_wrong_shape() {
+        let mut gradients = AutogradGradients::new(vec![vec![2, 2]]);
+
+        gradients
+            .accumulate(AutogradNodeId(0), tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]))
+            .expect("initial exact-shape gradient");
+        assert_eq!(
+            gradients.accumulate(AutogradNodeId(0), tensor(&[10.0], &[1, 1])),
+            Err(AutogradError::ShapeMismatch)
+        );
+        assert_tensor_close(
+            gradients
+                .gradient(AutogradNodeId(0))
+                .expect("existing gradient remains unchanged"),
+            &[1.0, 2.0, 3.0, 4.0],
+            &[2, 2],
+        );
     }
 
     #[test]
