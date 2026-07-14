@@ -78,6 +78,10 @@ mod valor_aggregate_test;
 mod json_test;
 
 #[cfg(test)]
+#[path = "autograd_reference_test.rs"]
+mod autograd_reference_test;
+
+#[cfg(test)]
 #[path = "frame_test.rs"]
 mod frame_test;
 

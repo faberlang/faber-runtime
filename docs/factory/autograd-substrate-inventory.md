@@ -16,6 +16,7 @@ autograd, gradient tracking, or PyTorch-equivalent behavior today.
 | Views and materialization | Rust `sectio` returns an axis-0 view sharing the same `Arc<Mutex<Vec<T>>>`; parent and slice mutations alias. `materialize` copies logical data and breaks that alias. The LLVM host ABI materializes slices rather than exposing Rust view layout. | `src/tensor_test.rs::sectio_returns_axis_zero_view`; `src/tensor_test.rs::materialize_breaks_sectio_alias`; `hosts/llvm/src/tensor.rs` |
 | Sparse bridge | `Sparsa<T>` stores non-default entries, reads absent entries as default, removes entries on default writes, and densifies to `Tensor<T>`. It has no sparse arithmetic kernels. | `src/sparsa.rs`; `src/sparsa_test.rs` |
 | Packed numeric bridge | `PackedU4Block` records toy U4 layout facts, validates metadata, dequantizes to `Vec<f32>`, and materializes as rank-1 `Tensor<f32>`. The only tensor integration row is reference materialization into elementwise add. | `src/packed_numeric.rs`; `src/packed_numeric_test.rs::packed_u4_materialized_tensor_feeds_elementwise_add` |
+| Finite-difference oracle | Test-only central-difference checks cover rank-0 scalar `x * x + x` and same-shape vector `summa((x * w - target) * (x * w - target))` losses using only materialized dense `Tensor<f32>` operations. | `src/autograd_reference_test.rs` |
 | ABI symbols | The host ABI names tensor creation, shape, get/set, fill, flatten, materialize, slice, add/sub/mul, matmul, sum, mean, conversion, and sparse new/get/set/nonzero/rank/densify/from-tensor symbols. | `src/host_abi.rs`; `hosts/llvm/src/lib.rs` |
 
 ## Autograd-Relevant Blockers
@@ -40,7 +41,9 @@ missing the runtime machinery that would make gradients first-class:
   aliasing is intentional for mutation, but a gradient proof must decide whether
   views scatter-add into the parent gradient or whether the first proof forbids
   aliased inputs.
-- No finite-difference or analytic gradient-check harness in this repo.
+- No AIR/compiler-owned gradient-check harness yet. The repo now has a
+  runtime-local finite-difference oracle for the first dense `Tensor<f32>`
+  seed subset only.
 - Sparse and packed numeric carriers are bridge materialization surfaces only
   for this purpose; they do not yet provide sparse or quantized gradient rules.
 
@@ -55,9 +58,9 @@ LLVM host ABI until the Rust-level invariant is proven:
    no sparse tensors, and no packed tensors.
 3. Prove one scalar-loss case such as
    `loss = summa((x * w + b) * (x * w + b))`.
-4. Add a local gradient-check test that computes finite differences by copying
-   `planata()` values, perturbing one input element at a time, rebuilding
-   tensors with `structa`, and comparing against the proof's analytic gradients.
+4. Reuse the local finite-difference tests by copying `planata()` values,
+   perturbing one input element at a time, rebuilding tensors with `structa`,
+   and comparing future proof gradients against the oracle.
 
 After that passes, the next promotion should add broadcast-gradient reduction
 for add/mul and a transpose primitive before claiming matmul gradient coverage.
