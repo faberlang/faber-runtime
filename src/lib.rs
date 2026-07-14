@@ -5,6 +5,7 @@
 
 pub mod arena;
 pub mod ascii;
+mod autograd;
 pub mod display;
 pub mod frame;
 pub mod host_abi;
