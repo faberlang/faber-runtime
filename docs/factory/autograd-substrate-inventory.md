@@ -51,6 +51,21 @@ runtime:
 - Sparse and packed numeric carriers are bridge materialization surfaces only
   for this purpose; they do not yet provide sparse or quantized gradient rules.
 
+## Dense Primitive Gap Matrix
+
+This matrix ranks the next small internal dense proof units after the
+test-only training/session oracle. It is a planning gate for `Tensor<f32>` and
+the private autograd tape only; it does not create public optimizer/session,
+host ABI gradient, generated-gradient, sparse/packed, or PyTorch-equivalence
+claims.
+
+| Priority | Gap | Current substrate | Smallest acceptance gate | Explicit non-claim |
+| --- | --- | --- | --- | --- |
+| 1 | Elementwise division / reciprocal scaling | `Tensor<f32>::scala` covers scalar multiplication, but there is no generic tensor division API or tape-owned division VJP. | Add checked `Tensor<f32>` division policy first (including divide-by-zero/finite-result stance), then tape-owned backward tests against finite differences for mean-square or linear residual normalization. | No broad arithmetic parity and no generated-gradient division rule until compiler/AIR owns an oracle. |
+| 2 | Numeric unary primitives | `Tensor::forma` is the current unary proof because reshape already exists; no `neg`, `exp`, `log`, `sin`, or similar elementwise numeric Tensor operations exist. | Pick one primitive with a local derivative and a clear domain policy, starting with `neg` if the goal is shape-preserving linearity or `exp` only after non-finite behavior is specified; prove tensor forward plus tape VJP against finite differences. | No math-library surface, activation library, or PyTorch unary parity. |
+| 3 | Training-loss reductions beyond scalar `summa` / non-empty f32 `media` | `summa` and `media` are covered for scalar-loss backward; current session oracle uses mean-squared loss. | Add one named reduction only if the Tensor forward API exists and its scalar seed rule is local; otherwise keep using `media((prediction-target)^2)` as the reference loss. | No optimizer/session API and no reduction host ABI gradient handle. |
+| 4 | Higher-rank matmul / batched linear algebra | Rank-2 `Tensor::matmul` plus `transpose_rank2` support the current dense linear oracle. `Tensor::permute` is materialized and tape-owned only. | Do not widen until shape policy, broadcast semantics, and AIR/generated-gradient ownership are named; first gate should be a design/test packet, not code. | No broader matmul, device execution, or generated-gradient claim. |
+
 ## Current Proof Boundary
 
 The honest proof boundary stays inside dense `Tensor<f32>` and avoids the LLVM
