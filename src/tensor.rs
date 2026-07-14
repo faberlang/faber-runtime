@@ -483,6 +483,14 @@ where
 }
 
 impl Tensor<f32> {
+    /// Elementwise negation preserving tensor shape.
+    pub fn neg(&self) -> Tensor<f32> {
+        Tensor::from_contiguous(
+            self.planata().into_iter().map(|value| -value).collect(),
+            self.shape.clone(),
+        )
+    }
+
     /// Elementwise scalar multiplication preserving tensor shape.
     pub fn scala(&self, factor: f32) -> Tensor<f32> {
         Tensor::from_contiguous(

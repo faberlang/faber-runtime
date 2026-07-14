@@ -2,10 +2,10 @@
 //!
 //! This v0 is deliberately a tape/metadata scaffold, not a PyTorch-equivalent
 //! runtime. It records contiguous/materialized leaf tensors and broadcast-aware
-//! `add`, `sub`, `mul`, checked finite `divide`, rank-2 `matmul`, tape-owned
-//! scalar `scala`, `forma`, materialized `permute`, axis-0 `sectio`, `summa`,
-//! and `media` forward operations, then runs a scalar-loss backward pass for
-//! those same operations. Broadcasted binary
+//! `add`, `sub`, `mul`, checked finite `divide`, tape-owned `neg`, rank-2
+//! `matmul`, tape-owned scalar `scala`, `forma`, materialized `permute`,
+//! axis-0 `sectio`, `summa`, and `media` forward operations, then runs a
+//! scalar-loss backward pass for those same operations. Broadcasted binary
 //! operations reduce parent gradients back to each original parent shape. Raw
 //! `Tensor::sectio` views are rejected at the leaf boundary; tape-owned
 //! `sectio` records parent identity and scatter-adds gradients back to the
@@ -35,6 +35,7 @@ pub(crate) enum AutogradOp {
     Sub,
     Mul,
     Div,
+    Neg,
     Matmul,
     Scala { factor: u32 },
     Forma,
@@ -168,6 +169,11 @@ impl AutogradTape {
         rhs: &AutogradValue,
     ) -> Result<AutogradValue, AutogradError> {
         self.binary(lhs, rhs, AutogradOp::Div, Tensor::divide)
+    }
+
+    pub(crate) fn neg(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(value)?;
+        Ok(self.record(AutogradOp::Neg, vec![value.id], value.tensor.neg()))
     }
 
     pub(crate) fn matmul(
@@ -367,6 +373,12 @@ impl AutogradTape {
                             &rhs_shape,
                         )?,
                     )?;
+                }
+                AutogradOp::Neg => {
+                    let &[parent] = node.parents.as_slice() else {
+                        return Err(AutogradError::MissingNode);
+                    };
+                    gradients.accumulate(parent, upstream.neg())?;
                 }
                 AutogradOp::Matmul => {
                     let &[lhs, rhs] = parent_pair(node)?;
@@ -1115,6 +1127,57 @@ mod tests {
         let before = local_tape.nodes().len();
         assert_eq!(
             local_tape.divide(&lhs, &foreign_rhs).unwrap_err(),
+            AutogradError::ForeignTapeValue
+        );
+        assert_eq!(local_tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_tape_owned_neg_records_parent_edge_and_forward_value() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, -2.0, 0.0, 4.5], &[2, 2]));
+
+        let negated = tape.neg(&value).expect("neg records");
+
+        assert_eq!(negated.tensor().magnitudines(), vec![2, 2]);
+        assert_eq!(negated.tensor().planata(), vec![-1.0, 2.0, -0.0, -4.5]);
+        let node = tape.node(negated.id()).expect("neg node");
+        assert_eq!(node.op(), AutogradOp::Neg);
+        assert_eq!(node.parents(), &[value.id()]);
+    }
+
+    #[test]
+    fn backward_negates_tape_owned_neg_gradient() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, -2.0, 3.0], &[3]));
+        let weights = leaf(&mut tape, tensor(&[5.0, 7.0, 11.0], &[3]));
+
+        let negated = tape.neg(&value).expect("neg records");
+        let product = tape.mul(&negated, &weights).expect("same-shape product");
+        let loss = tape.summa(&product).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(value.id()).expect("value gradient"),
+            &[-5.0, -7.0, -11.0],
+            &[3],
+        );
+        assert_tensor_close(
+            gradients.gradient(weights.id()).expect("weights gradient"),
+            &[-1.0, 2.0, -3.0],
+            &[3],
+        );
+    }
+
+    #[test]
+    fn autograd_tape_owned_neg_rejects_cross_tape_parent_without_recording_node() {
+        let mut local_tape = AutogradTape::new();
+        let mut foreign_tape = AutogradTape::new();
+        let foreign = leaf(&mut foreign_tape, tensor(&[1.0, 2.0], &[2]));
+
+        let before = local_tape.nodes().len();
+        assert_eq!(
+            local_tape.neg(&foreign).unwrap_err(),
             AutogradError::ForeignTapeValue
         );
         assert_eq!(local_tape.nodes().len(), before);

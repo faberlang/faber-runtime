@@ -271,6 +271,16 @@ fn summa_folds_all_elements_to_element_type() {
 }
 
 #[test]
+fn neg_negates_f32_elements_and_preserves_shape() {
+    let tensor = Tensor::structa(vec![1.0f32, -2.0, 0.0, 4.5], &[2, 2]).unwrap();
+
+    let negated = tensor.neg();
+
+    assert_eq!(negated.magnitudines(), vec![2, 2]);
+    assert_eq!(negated.planata(), vec![-1.0, 2.0, -0.0, -4.5]);
+}
+
+#[test]
 fn scala_scales_f32_elements_and_preserves_shape() {
     let tensor = Tensor::structa(vec![1.0f32, -2.0, 3.5, 4.0], &[2, 2]).unwrap();
 

@@ -89,6 +89,16 @@ fn division_square_loss(params: &[f32]) -> f32 {
         .summa()
 }
 
+fn neg_linear_loss(params: &[f32]) -> f32 {
+    let x = Tensor::structa(params[0..3].to_vec(), &[3]).expect("x tensor");
+    let weight = Tensor::structa(params[3..6].to_vec(), &[3]).expect("weight tensor");
+    let negated = x.neg();
+    negated
+        .multiplica(&weight)
+        .expect("same-shape product")
+        .summa()
+}
+
 fn mean_square_autograd_gradient(params: &[f32]) -> Vec<f32> {
     let mut tape = AutogradTape::new();
     let x = leaf(&mut tape, tensor(params, &[2, 2]));
@@ -128,6 +138,27 @@ fn division_square_autograd_gradient(params: &[f32]) -> Vec<f32> {
         gradients
             .gradient(denominator.id())
             .expect("denominator gradient")
+            .planata(),
+    );
+    actual
+}
+
+fn neg_linear_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(&params[0..3], &[3]));
+    let weight = leaf(&mut tape, tensor(&params[3..6], &[3]));
+
+    let negated = tape.neg(&x).expect("neg records");
+    let product = tape.mul(&negated, &weight).expect("same-shape product");
+    let loss = tape.summa(&product).expect("scalar loss");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    let mut actual = Vec::with_capacity(params.len());
+    actual.extend(gradients.gradient(x.id()).expect("x gradient").planata());
+    actual.extend(
+        gradients
+            .gradient(weight.id())
+            .expect("weight gradient")
             .planata(),
     );
     actual
@@ -445,6 +476,15 @@ fn autograd_matches_finite_difference_division_square_gradient() {
     let params = vec![0.5_f32, -1.0, 2.0, 1.25, -2.0, 4.0];
     let reference = finite_difference_gradient(&params, division_square_loss);
     let actual = division_square_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
+#[test]
+fn autograd_matches_finite_difference_neg_linear_gradient() {
+    let params = vec![0.5_f32, -1.0, 2.0, 1.25, -0.75, 0.4];
+    let reference = finite_difference_gradient(&params, neg_linear_loss);
+    let actual = neg_linear_autograd_gradient(&params);
 
     assert_gradient_close(&actual, &reference);
 }
