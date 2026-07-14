@@ -66,6 +66,41 @@ claims.
 | 3 | Training-loss reductions beyond scalar `summa` / non-empty f32 `media` | `summa` and `media` are covered for scalar-loss backward; current session oracle uses mean-squared loss. | Add one named reduction only if the Tensor forward API exists and its scalar seed rule is local; otherwise keep using `media((prediction-target)^2)` as the reference loss. | No optimizer/session API and no reduction host ABI gradient handle. |
 | 4 | Higher-rank matmul / batched linear algebra | Rank-2 `Tensor::matmul` plus `transpose_rank2` support the current dense linear oracle. `Tensor::permute` is materialized and tape-owned only. | Do not widen until shape policy, broadcast semantics, and AIR/generated-gradient ownership are named; first gate should be a design/test packet, not code. | No broader matmul, device execution, or generated-gradient claim. |
 
+## Division And Reciprocal Policy Gate
+
+Division is not implemented yet. The selected policy for the next internal
+dense `Tensor<f32>` forward primitive is checked finite division, not IEEE
+pass-through of `NaN`, `inf`, or `-inf` values.
+
+The next implementation should start with scalar reciprocal or scalar division
+unless tensor/tensor denominator broadcast policy is implemented in the same
+packet. Inputs must be finite before division. An exact zero denominator is an
+error, and the implementation must not materialize positive or negative
+infinity for that case. A non-finite result, including overflow to infinity or
+any `NaN`, is also an error. Scalar reciprocal and scalar division preserve the
+receiver shape. If full tensor/tensor division is added, it must use the same
+broadcast unification as add/sub/mul and keep `ERR_BROADCAST_SHAPE` for
+incompatible operand shapes.
+
+Autograd support remains blocked until the forward Tensor policy is enforced by
+tests. The next acceptance gate is:
+
+1. Add named `Tensor<f32>` diagnostics for zero denominator and non-finite
+   division input/result.
+2. Add focused forward tests for finite scalar division or reciprocal, zero
+   denominator rejection, non-finite input rejection, non-finite result
+   rejection, shape preservation, and broadcast mismatch if tensor/tensor
+   division is included.
+3. Only after those forward checks pass, add a tape-owned operation and
+   finite-difference proof for the same primitive. Scalar division by a finite
+   non-zero constant should scale upstream gradients by the reciprocal
+   constant. Reciprocal-style `c / x` must prove the local derivative
+   `-c / (x * x)` before being admitted.
+
+This gate does not add a public optimizer/session API, host ABI gradient
+handle, generated-gradient rule, sparse or packed division rule, or
+PyTorch-equivalence claim.
+
 ## Current Proof Boundary
 
 The honest proof boundary stays inside dense `Tensor<f32>` and avoids the LLVM
