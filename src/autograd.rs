@@ -2,12 +2,13 @@
 //!
 //! This v0 is deliberately a tape/metadata scaffold, not a PyTorch-equivalent
 //! runtime. It records contiguous/materialized leaf tensors and broadcast-aware
-//! `add`, `sub`, `mul`, rank-2 `matmul`, and `summa` forward operations, then
-//! runs a scalar-loss backward pass for those same operations. Broadcasted binary
-//! operations reduce parent gradients back to each original parent shape.
-//! `Tensor::sectio` views are rejected at the leaf boundary until scatter-add
-//! view gradients exist. It does not implement sessions, optimizers, host ABI
-//! gradient handles, or mutation semantics.
+//! `add`, `sub`, `mul`, rank-2 `matmul`, axis-0 `sectio`, and `summa` forward
+//! operations, then runs a scalar-loss backward pass for those same operations.
+//! Broadcasted binary operations reduce parent gradients back to each original
+//! parent shape. Raw `Tensor::sectio` views are rejected at the leaf boundary;
+//! tape-owned `sectio` records parent identity and scatter-adds gradients back
+//! to the parent. It does not implement sessions, optimizers, host ABI gradient
+//! handles, or mutation semantics.
 
 #![allow(dead_code)]
 
@@ -32,6 +33,7 @@ pub(crate) enum AutogradOp {
     Sub,
     Mul,
     Matmul,
+    Sectio { start: i64 },
     Summa,
 }
 
@@ -167,6 +169,21 @@ impl AutogradTape {
         Ok(self.record(AutogradOp::Matmul, vec![lhs.id, rhs.id], tensor))
     }
 
+    pub(crate) fn sectio(
+        &mut self,
+        value: &AutogradValue,
+        start: i64,
+        end: i64,
+    ) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(value)?;
+        let tensor = value
+            .tensor
+            .sectio(start, end)
+            .map_err(AutogradError::Tensor)?
+            .materialize();
+        Ok(self.record(AutogradOp::Sectio { start }, vec![value.id], tensor))
+    }
+
     pub(crate) fn summa(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
         self.ensure_member(value)?;
         let tensor =
@@ -272,6 +289,16 @@ impl AutogradTape {
                         lhs_transposed
                             .matmul(&upstream)
                             .map_err(AutogradError::Tensor)?,
+                    )?;
+                }
+                AutogradOp::Sectio { start } => {
+                    let &[parent] = node.parents.as_slice() else {
+                        return Err(AutogradError::MissingNode);
+                    };
+                    let parent_shape = parent_shape(self, parent)?;
+                    gradients.accumulate(
+                        parent,
+                        scatter_axis0_gradient(&upstream, &parent_shape, start)?,
                     )?;
                 }
                 AutogradOp::Summa => {
@@ -415,6 +442,43 @@ fn reduce_broadcast_gradient(
     for (ordinal, value) in upstream.planata().into_iter().enumerate() {
         let upstream_index = unravel_index(ordinal, &upstream_shape)?;
         let target_index = broadcast_parent_index(&upstream_index, target_shape)?;
+        let offset =
+            tensor_flat_offset(target_shape, &target_index).ok_or(AutogradError::ShapeMismatch)?;
+        data[offset] += value;
+    }
+
+    Tensor::structa(data, target_shape).map_err(AutogradError::Tensor)
+}
+
+fn scatter_axis0_gradient(
+    upstream: &Tensor<f32>,
+    target_shape: &[i64],
+    start: i64,
+) -> Result<Tensor<f32>, AutogradError> {
+    let upstream_shape = upstream.magnitudines();
+    if start < 0
+        || target_shape.is_empty()
+        || upstream_shape.len() != target_shape.len()
+        || upstream_shape
+            .iter()
+            .zip(target_shape.iter())
+            .skip(1)
+            .any(|(upstream_dim, target_dim)| upstream_dim != target_dim)
+        || start
+            .checked_add(*upstream_shape.first().ok_or(AutogradError::ShapeMismatch)?)
+            .ok_or(AutogradError::ShapeMismatch)?
+            > target_shape[0]
+    {
+        return Err(AutogradError::ShapeMismatch);
+    }
+
+    let target_count =
+        tensor_shape_element_count(target_shape).ok_or(AutogradError::ShapeMismatch)?;
+    let mut data = vec![0.0_f32; target_count];
+
+    for (ordinal, value) in upstream.planata().into_iter().enumerate() {
+        let mut target_index = unravel_index(ordinal, &upstream_shape)?;
+        target_index[0] += start;
         let offset =
             tensor_flat_offset(target_shape, &target_index).ok_or(AutogradError::ShapeMismatch)?;
         data[offset] += value;
@@ -1067,7 +1131,94 @@ mod tests {
     }
 
     #[test]
-    fn autograd_rejects_sectio_view_leaf_until_scatter_add_policy_exists() {
+    fn autograd_tape_owned_sectio_records_parent_edge_and_forward_value() {
+        let mut tape = AutogradTape::new();
+        let base = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]));
+
+        let slice = tape.sectio(&base, 1, 3).expect("valid tape-owned slice");
+
+        assert_eq!(slice.tensor().magnitudines(), vec![2, 2]);
+        assert_eq!(slice.tensor().planata(), vec![3.0, 4.0, 5.0, 6.0]);
+        let node = tape.node(slice.id()).expect("sectio node");
+        assert_eq!(node.op(), AutogradOp::Sectio { start: 1 });
+        assert_eq!(node.parents(), &[base.id()]);
+    }
+
+    #[test]
+    fn backward_scatter_adds_tape_owned_sectio_gradient_into_parent() {
+        let mut tape = AutogradTape::new();
+        let base = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+        let weight = leaf(&mut tape, tensor(&[5.0, 7.0], &[1, 2]));
+
+        let slice = tape.sectio(&base, 0, 1).expect("valid tape-owned slice");
+        let product = tape.mul(&slice, &weight).expect("same-shape product");
+        let loss = tape.summa(&product).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(base.id()).expect("base gradient"),
+            &[5.0, 7.0, 0.0, 0.0],
+            &[2, 2],
+        );
+        assert_tensor_close(
+            gradients.gradient(weight.id()).expect("weight gradient"),
+            &[1.0, 2.0],
+            &[1, 2],
+        );
+    }
+
+    #[test]
+    fn backward_accumulates_overlapping_tape_owned_sectio_gradients() {
+        let mut tape = AutogradTape::new();
+        let base = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+
+        let first_row = tape.sectio(&base, 0, 1).expect("first row slice");
+        let all_rows = tape.sectio(&base, 0, 2).expect("all rows slice");
+        let first_loss = tape.summa(&first_row).expect("first row sum");
+        let all_loss = tape.summa(&all_rows).expect("all rows sum");
+        let loss = tape.add(&first_loss, &all_loss).expect("scalar add");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(base.id()).expect("base gradient"),
+            &[2.0, 2.0, 1.0, 1.0],
+            &[2, 2],
+        );
+    }
+
+    #[test]
+    fn autograd_tape_owned_sectio_rejects_invalid_bounds_without_recording_node() {
+        let mut tape = AutogradTape::new();
+        let base = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+
+        let before = tape.nodes().len();
+        assert_eq!(
+            tape.sectio(&base, -1, 1).unwrap_err(),
+            AutogradError::Tensor(crate::tensor::ERR_NEGATIVE_SLICE)
+        );
+        assert_eq!(
+            tape.sectio(&base, 0, 3).unwrap_err(),
+            AutogradError::Tensor(crate::tensor::ERR_INDEX_OUT_OF_BOUNDS)
+        );
+        assert_eq!(tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_tape_owned_sectio_rejects_cross_tape_parent_without_recording_node() {
+        let mut local_tape = AutogradTape::new();
+        let mut foreign_tape = AutogradTape::new();
+        let foreign = leaf(&mut foreign_tape, tensor(&[1.0, 2.0], &[2]));
+
+        let before = local_tape.nodes().len();
+        assert_eq!(
+            local_tape.sectio(&foreign, 0, 1).unwrap_err(),
+            AutogradError::ForeignTapeValue
+        );
+        assert_eq!(local_tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_rejects_raw_sectio_view_leaf() {
         let mut tape = AutogradTape::new();
         let base = tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
         let view = base.sectio(0, 1).expect("valid view");
