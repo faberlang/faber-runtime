@@ -79,6 +79,16 @@ fn scaled_mean_square_loss(params: &[f32]) -> f32 {
     squared.media().expect("non-empty mean")
 }
 
+fn division_square_loss(params: &[f32]) -> f32 {
+    let x = Tensor::structa(params[0..3].to_vec(), &[3]).expect("x tensor");
+    let denominator = Tensor::structa(params[3..6].to_vec(), &[3]).expect("denominator tensor");
+    let quotient = x.divide(&denominator).expect("finite division");
+    quotient
+        .multiplica(&quotient)
+        .expect("same-shape square")
+        .summa()
+}
+
 fn mean_square_autograd_gradient(params: &[f32]) -> Vec<f32> {
     let mut tape = AutogradTape::new();
     let x = leaf(&mut tape, tensor(params, &[2, 2]));
@@ -100,6 +110,27 @@ fn scaled_mean_square_autograd_gradient(params: &[f32]) -> Vec<f32> {
     let gradients = tape.backward(&loss).expect("backward succeeds");
 
     gradients.gradient(x.id()).expect("x gradient").planata()
+}
+
+fn division_square_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(&params[0..3], &[3]));
+    let denominator = leaf(&mut tape, tensor(&params[3..6], &[3]));
+
+    let quotient = tape.divide(&x, &denominator).expect("division records");
+    let squared = tape.mul(&quotient, &quotient).expect("same-shape square");
+    let loss = tape.summa(&squared).expect("scalar loss");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    let mut actual = Vec::with_capacity(params.len());
+    actual.extend(gradients.gradient(x.id()).expect("x gradient").planata());
+    actual.extend(
+        gradients
+            .gradient(denominator.id())
+            .expect("denominator gradient")
+            .planata(),
+    );
+    actual
 }
 
 fn broadcast_bias_loss(params: &[f32]) -> f32 {
@@ -405,6 +436,15 @@ fn autograd_matches_finite_difference_scaled_mean_square_gradient() {
     let params = vec![0.5_f32, -1.0, 2.0, -0.75];
     let reference = finite_difference_gradient(&params, scaled_mean_square_loss);
     let actual = scaled_mean_square_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
+#[test]
+fn autograd_matches_finite_difference_division_square_gradient() {
+    let params = vec![0.5_f32, -1.0, 2.0, 1.25, -2.0, 4.0];
+    let reference = finite_difference_gradient(&params, division_square_loss);
+    let actual = division_square_autograd_gradient(&params);
 
     assert_gradient_close(&actual, &reference);
 }

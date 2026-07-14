@@ -2,9 +2,10 @@
 //!
 //! This v0 is deliberately a tape/metadata scaffold, not a PyTorch-equivalent
 //! runtime. It records contiguous/materialized leaf tensors and broadcast-aware
-//! `add`, `sub`, `mul`, rank-2 `matmul`, tape-owned scalar `scala`, `forma`,
-//! materialized `permute`, axis-0 `sectio`, `summa`, and `media` forward operations, then runs a
-//! scalar-loss backward pass for those same operations. Broadcasted binary
+//! `add`, `sub`, `mul`, checked finite `divide`, rank-2 `matmul`, tape-owned
+//! scalar `scala`, `forma`, materialized `permute`, axis-0 `sectio`, `summa`,
+//! and `media` forward operations, then runs a scalar-loss backward pass for
+//! those same operations. Broadcasted binary
 //! operations reduce parent gradients back to each original parent shape. Raw
 //! `Tensor::sectio` views are rejected at the leaf boundary; tape-owned
 //! `sectio` records parent identity and scatter-adds gradients back to the
@@ -33,6 +34,7 @@ pub(crate) enum AutogradOp {
     Add,
     Sub,
     Mul,
+    Div,
     Matmul,
     Scala { factor: u32 },
     Forma,
@@ -158,6 +160,14 @@ impl AutogradTape {
         rhs: &AutogradValue,
     ) -> Result<AutogradValue, AutogradError> {
         self.binary(lhs, rhs, AutogradOp::Mul, Tensor::multiplica)
+    }
+
+    pub(crate) fn divide(
+        &mut self,
+        lhs: &AutogradValue,
+        rhs: &AutogradValue,
+    ) -> Result<AutogradValue, AutogradError> {
+        self.binary(lhs, rhs, AutogradOp::Div, Tensor::divide)
     }
 
     pub(crate) fn matmul(
@@ -324,6 +334,35 @@ impl AutogradTape {
                         reduce_broadcast_gradient(
                             &upstream
                                 .multiplica(lhs_value)
+                                .map_err(AutogradError::Tensor)?,
+                            &rhs_shape,
+                        )?,
+                    )?;
+                }
+                AutogradOp::Div => {
+                    let &[lhs, rhs] = parent_pair(node)?;
+                    let lhs_value = self.value(lhs)?;
+                    let rhs_value = self.value(rhs)?;
+                    let lhs_shape = parent_shape(self, lhs)?;
+                    let rhs_shape = parent_shape(self, rhs)?;
+                    gradients.accumulate(
+                        lhs,
+                        reduce_broadcast_gradient(
+                            &upstream.divide(rhs_value).map_err(AutogradError::Tensor)?,
+                            &lhs_shape,
+                        )?,
+                    )?;
+                    let numerator = upstream
+                        .multiplica(lhs_value)
+                        .map_err(AutogradError::Tensor)?;
+                    let denominator = rhs_value
+                        .multiplica(rhs_value)
+                        .map_err(AutogradError::Tensor)?;
+                    gradients.accumulate(
+                        rhs,
+                        reduce_broadcast_gradient(
+                            &scale_tensor(&numerator, -1.0)?
+                                .divide(&denominator)
                                 .map_err(AutogradError::Tensor)?,
                             &rhs_shape,
                         )?,
@@ -988,6 +1027,94 @@ mod tests {
         let before = local_tape.nodes().len();
         assert_eq!(
             local_tape.scala(&foreign, 2.0).unwrap_err(),
+            AutogradError::ForeignTapeValue
+        );
+        assert_eq!(local_tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_tape_owned_divide_records_parent_edges_and_forward_value() {
+        let mut tape = AutogradTape::new();
+        let lhs = leaf(&mut tape, tensor(&[8.0, 18.0, -24.0, 40.0], &[2, 2]));
+        let rhs = leaf(&mut tape, tensor(&[2.0, -4.0], &[2, 1]));
+
+        let divided = tape.divide(&lhs, &rhs).expect("division records");
+
+        assert_eq!(divided.tensor().magnitudines(), vec![2, 2]);
+        assert_eq!(divided.tensor().planata(), vec![4.0, 9.0, 6.0, -10.0]);
+        let node = tape.node(divided.id()).expect("divide node");
+        assert_eq!(node.op(), AutogradOp::Div);
+        assert_eq!(node.parents(), &[lhs.id(), rhs.id()]);
+    }
+
+    #[test]
+    fn backward_divides_same_shape_gradients() {
+        let mut tape = AutogradTape::new();
+        let lhs = leaf(&mut tape, tensor(&[8.0, -18.0, 24.0], &[3]));
+        let rhs = leaf(&mut tape, tensor(&[2.0, -3.0, 4.0], &[3]));
+
+        let divided = tape.divide(&lhs, &rhs).expect("same-shape division");
+        let loss = tape.summa(&divided).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(lhs.id()).expect("lhs gradient"),
+            &[0.5, -1.0 / 3.0, 0.25],
+            &[3],
+        );
+        assert_tensor_close(
+            gradients.gradient(rhs.id()).expect("rhs gradient"),
+            &[-2.0, 2.0, -1.5],
+            &[3],
+        );
+    }
+
+    #[test]
+    fn backward_reduces_broadcast_divide_denominator_gradient() {
+        let mut tape = AutogradTape::new();
+        let lhs = leaf(&mut tape, tensor(&[8.0, 18.0, -24.0, 40.0], &[2, 2]));
+        let rhs = leaf(&mut tape, tensor(&[2.0, -4.0], &[2, 1]));
+
+        let divided = tape.divide(&lhs, &rhs).expect("row denominator broadcasts");
+        let loss = tape.summa(&divided).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(lhs.id()).expect("lhs gradient"),
+            &[0.5, 0.5, -0.25, -0.25],
+            &[2, 2],
+        );
+        assert_tensor_close(
+            gradients.gradient(rhs.id()).expect("rhs gradient"),
+            &[-6.5, -1.0],
+            &[2, 1],
+        );
+    }
+
+    #[test]
+    fn autograd_tape_owned_divide_rejects_forward_policy_failures_without_recording_node() {
+        let mut tape = AutogradTape::new();
+        let lhs = leaf(&mut tape, tensor(&[1.0, 2.0], &[2]));
+        let rhs = leaf(&mut tape, tensor(&[1.0, 0.0], &[2]));
+
+        let before = tape.nodes().len();
+        assert_eq!(
+            tape.divide(&lhs, &rhs).unwrap_err(),
+            AutogradError::Tensor(crate::tensor::ERR_DIVIDE_ZERO_DENOMINATOR)
+        );
+        assert_eq!(tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_tape_owned_divide_rejects_cross_tape_operand_without_recording_node() {
+        let mut local_tape = AutogradTape::new();
+        let mut foreign_tape = AutogradTape::new();
+        let lhs = leaf(&mut local_tape, tensor(&[1.0, 2.0], &[2]));
+        let foreign_rhs = leaf(&mut foreign_tape, tensor(&[1.0, 2.0], &[2]));
+
+        let before = local_tape.nodes().len();
+        assert_eq!(
+            local_tape.divide(&lhs, &foreign_rhs).unwrap_err(),
             AutogradError::ForeignTapeValue
         );
         assert_eq!(local_tape.nodes().len(), before);
