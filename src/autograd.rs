@@ -285,15 +285,20 @@ impl AutogradTape {
         tensor: Tensor<f32>,
     ) -> AutogradValue {
         let id = AutogradNodeId(self.nodes.len());
-        let shape = tensor.magnitudines();
-        self.values.push(tensor.clone());
+        let saved_tensor = tensor.materialize();
+        let value_tensor = saved_tensor.materialize();
+        let shape = saved_tensor.magnitudines();
+        self.values.push(saved_tensor);
         self.nodes.push(AutogradNode {
             id,
             op,
             parents,
             shape,
         });
-        AutogradValue { id, tensor }
+        AutogradValue {
+            id,
+            tensor: value_tensor,
+        }
     }
 
     fn value(&self, id: AutogradNodeId) -> Result<&Tensor<f32>, AutogradError> {
@@ -662,6 +667,60 @@ mod tests {
 
         let product = tape.matmul(&lhs, &rhs).expect("rank-2 product");
         let loss = tape.summa(&product).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(
+            gradients.gradient(lhs.id()).expect("lhs gradient"),
+            &[15.0, 19.0, 23.0, 15.0, 19.0, 23.0],
+            &[2, 3],
+        );
+        assert_tensor_close(
+            gradients.gradient(rhs.id()).expect("rhs gradient"),
+            &[5.0, 5.0, 7.0, 7.0, 9.0, 9.0],
+            &[3, 2],
+        );
+    }
+
+    #[test]
+    fn backward_uses_mul_snapshots_after_post_capture_mutation() {
+        let mut tape = AutogradTape::new();
+        let mut x_source = tensor(&[2.0], &[]);
+        let mut weight_source = tensor(&[3.0], &[]);
+        let x = leaf(&mut tape, x_source.clone());
+        let weight = leaf(&mut tape, weight_source.clone());
+
+        let prediction = tape.mul(&x, &weight).expect("x * weight");
+        let loss = tape.summa(&prediction).expect("scalar loss");
+        x_source.reple(20.0);
+        weight_source.reple(30.0);
+        let mut x_value_alias = x.tensor().clone();
+        x_value_alias.reple(200.0);
+
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        assert_tensor_close(gradients.gradient(x.id()).expect("x gradient"), &[3.0], &[]);
+        assert_tensor_close(
+            gradients.gradient(weight.id()).expect("weight gradient"),
+            &[2.0],
+            &[],
+        );
+    }
+
+    #[test]
+    fn backward_uses_matmul_snapshots_after_post_capture_mutation() {
+        let mut tape = AutogradTape::new();
+        let mut lhs_source = tensor(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+        let mut rhs_source = tensor(&[7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[3, 2]);
+        let lhs = leaf(&mut tape, lhs_source.clone());
+        let rhs = leaf(&mut tape, rhs_source.clone());
+
+        let product = tape.matmul(&lhs, &rhs).expect("rank-2 product");
+        let loss = tape.summa(&product).expect("scalar loss");
+        lhs_source.reple(100.0);
+        rhs_source.reple(200.0);
+        let mut rhs_value_alias = rhs.tensor().clone();
+        rhs_value_alias.reple(300.0);
+
         let gradients = tape.backward(&loss).expect("backward succeeds");
 
         assert_tensor_close(
