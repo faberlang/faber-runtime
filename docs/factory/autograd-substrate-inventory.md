@@ -72,10 +72,9 @@ host ABI until the Rust-level invariant is broader:
    perturbing one input element at a time, rebuilding tensors with `structa`,
    and comparing proof gradients against the oracle.
 
-After that passes, the next promotion should decide whether general axis
-permutation is needed before broadening matmul beyond the internal rank-2 dense
-scaffold. Numeric unary primitives such as neg/exp/log/sin can follow once
-their Tensor-level operations exist.
+General axis permutation remains gated before broadening matmul beyond the
+internal rank-2 dense scaffold. Numeric unary primitives such as neg/exp/log/sin
+can follow once their Tensor-level operations exist.
 
 ## Transpose And Permutation Policy
 
@@ -93,6 +92,41 @@ before it can support broader generated-gradient claims. The new primitive
 therefore proves only rank-2 transpose materialization for dense tensors and
 keeps AutogradTape, optimizer/session APIs, sparse/packed tensors, device
 execution, and PyTorch equivalence out of scope.
+
+## General Axis Permutation Design Gate
+
+The current decision is no broad `Tensor::permute` implementation in this
+packet. A general axis permutation is small in loop mechanics but not small in
+runtime policy: it decides whether permuted tensors are aliases or copies,
+which errors become stable public surface, whether the LLVM host ABI needs a
+symbol, and how autograd inverts the permutation during backward. Until those
+contracts are admitted together, the only permutation-like public Tensor
+operation is the materializing rank-2 `transpose_rank2`.
+
+Admission criteria for a future `Tensor::permute(&[i64])`:
+
+| Policy row | Required decision before implementation |
+| --- | --- |
+| Axis validation | Axis list length must equal tensor rank; every axis must be non-negative, in range, and appear exactly once. Rank-0 requires an empty axis list. Duplicate and missing axes should have dedicated diagnostics rather than collapsing into a generic shape mismatch. |
+| Materialization versus view | Start with materialization unless a full non-contiguous view contract is designed. Materialization matches `forma`, `transpose_rank2`, and host slice behavior, avoids exposing arbitrary stride aliasing, and makes post-permute parent mutation unable to change the permuted value. |
+| Shape and stride semantics | The result shape is `input.shape[axes[i]]` in the requested order. If materialized, result strides are normal row-major strides for that result shape; source strides are read-only implementation detail. |
+| ABI boundary | Do not add `__faber_rt_v1_tensor_permute` until the Rust primitive has tests for validation, zero-sized dimensions, rank-0, views, and autograd inversion. The current host ABI non-claim remains: no transpose/permutation symbols. |
+| Backward policy | Autograd support should be tape-owned only. The backward rule scatters or materializes the upstream gradient through the inverse permutation into the parent shape. Raw permuted views must remain rejected as leaves unless they are materialized and snapshotted. |
+| Generated-gradient claim | No generated-gradient or broader matmul claim can depend on arbitrary permutation until the Tensor primitive, AutogradTape op, and finite-difference/reference cases are all present. |
+
+Failure rows that should become tests with the future primitive:
+
+| Input condition | Expected boundary |
+| --- | --- |
+| Axis list rank mismatch | Reject without allocating or recording an autograd node. |
+| Negative axis | Reject with a specific negative-axis diagnostic. |
+| Axis greater than or equal to rank | Reject with an out-of-range-axis diagnostic. |
+| Duplicate axis | Reject with a duplicate-axis diagnostic. |
+| Missing axis | Reject through the duplicate/mismatch validation rather than silently dropping a dimension. |
+| Rank-0 tensor with non-empty axes | Reject; rank-0 accepts only `[]`. |
+| Permuting a raw aliased view | If `Tensor::permute` materializes, the result must not alias the source; if a future view mode is added, raw view leaves remain fail-closed in autograd. |
+| Tape-owned permute across tapes | Reject cross-tape operands without recording a node, matching existing tape identity policy. |
+| Unsupported host ABI call | No symbol exists yet; host callers must not claim permutation support. |
 
 ## Raw And Tape-Owned `sectio` View Gradient Policy
 
