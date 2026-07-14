@@ -68,3 +68,21 @@ After that passes, the next promotion should decide whether to expose a public
 transpose primitive before broadening matmul beyond the internal rank-2 dense
 scaffold. Mean can follow once scalar scaling/division is available as a
 reusable tensor operation rather than only inside the LLVM host ABI mean helper.
+
+## Raw `sectio` View Gradient Spike
+
+Raw `Tensor::sectio` views must remain fail-closed at `AutogradTape::leaf` for
+now. The current `Tensor` view carries shared storage, shape, strides, offset,
+and a `view` marker, but it does not carry autograd parent identity or the slice
+operation that produced it. If `leaf` accepted such a raw view, the tape could
+only create a detached leaf for the slice-shaped tensor; backward would have no
+sound way to scatter the slice gradient into the parent tensor's gradient slot.
+
+The safe next implementation shape is a tape-owned view operation, not a raw
+leaf relaxation. That operation should take an existing `AutogradValue` parent
+and slice bounds, record an explicit view/slice node, return a slice-shaped
+`AutogradValue`, and add a backward rule that scatter-adds upstream values into
+the parent gradient at the recorded offsets. The rule also needs focused tests
+for duplicate/overlapping view use, parent-gradient accumulation shape, saved
+forward snapshots, cross-tape rejection, and continued acceptance of
+`sectio(...).materialize()` as a detached materialized leaf.
