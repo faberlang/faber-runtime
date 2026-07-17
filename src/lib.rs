@@ -9,6 +9,7 @@ mod autograd;
 pub mod display;
 pub mod frame;
 pub mod host_abi;
+pub mod http;
 pub mod instans;
 pub mod intervallum;
 pub mod json;

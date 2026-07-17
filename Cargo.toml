@@ -15,3 +15,6 @@ test-support = []
 [lib]
 name = "faber"
 path = "src/lib.rs"
+
+[dependencies]
+ureq = "2"
