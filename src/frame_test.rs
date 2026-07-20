@@ -994,12 +994,12 @@ fn solum_sequere_vincula_modum_product_routes() {
     );
     frame::sermo_materialize_vacuum(&mut modum);
 
-    let mut modus = frame::sermo_open("solum:modus");
+    let mut get_modus = frame::sermo_open("solum:modus");
     frame::sermo_set_opener(
-        &mut modus,
+        &mut get_modus,
         Valor::Textus(target.to_string_lossy().into_owned()),
     );
-    let mode: i64 = frame::sermo_materialize_scalar(&mut modus);
+    let mode: i64 = frame::sermo_materialize_scalar(&mut get_modus);
     assert_eq!(mode & 0o777, 0o644);
 
     let _ = std::fs::remove_dir_all(&dir);

@@ -6,7 +6,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::task::{Context, Poll, Waker};
 use std::thread;
 use std::time::Duration;
@@ -25,10 +25,12 @@ pub enum FrameStatus {
 }
 
 impl FrameStatus {
+    #[must_use]
     pub fn is_terminal(self) -> bool {
         matches!(self, Self::Done | Self::Error | Self::Cancel)
     }
 
+    #[must_use]
     pub fn is_content(self) -> bool {
         matches!(self, Self::Item | Self::Byte | Self::Bulk)
     }
@@ -148,6 +150,7 @@ impl Cancellation {
         self.cancelled.store(true, Ordering::SeqCst);
     }
 
+    #[must_use]
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
     }
@@ -221,6 +224,7 @@ impl ResponseSender {
         }
     }
 
+    #[must_use]
     pub fn is_cancelled(&self) -> bool {
         self.lease.cancellation.is_cancelled()
     }
@@ -260,7 +264,7 @@ impl ResponseSender {
             .lease
             .terminal_sent
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(PoisonError::into_inner);
         if status.is_terminal() {
             if *terminal_sent {
                 return Err(FrameError::new(
@@ -284,7 +288,7 @@ impl ResponseSender {
             .lease
             .terminal_sent
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(PoisonError::into_inner);
         if *terminal_sent {
             return;
         }
@@ -315,7 +319,7 @@ impl Drop for ResponseSender {
             .lease
             .terminal_sent
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(PoisonError::into_inner);
         if *terminal_sent {
             return;
         }
@@ -385,21 +389,21 @@ pub fn next_frame_id() -> String {
 }
 
 fn lock_sermo(shared: &SermoShared) -> MutexGuard<'_, SermoInner> {
-    shared
-        .state
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    shared.state.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 impl Sermo {
+    #[must_use]
     pub fn conversation_id(&self) -> String {
         lock_sermo(&self.inner).conversation_id.clone()
     }
 
+    #[must_use]
     pub fn route(&self) -> String {
         lock_sermo(&self.inner).route.clone()
     }
 
+    #[must_use]
     pub fn incoming_drained(&self) -> bool {
         lock_sermo(&self.inner).incoming_drained
     }
@@ -412,6 +416,7 @@ impl Sermo {
         self.inner.incoming_changed.notify_all();
     }
 
+    #[must_use]
     pub fn first_outgoing(&self) -> Option<Scrinium> {
         lock_sermo(&self.inner).outgoing.first().cloned()
     }
@@ -425,6 +430,7 @@ pub fn sermo_set_opener(sermo: &mut Sermo, data: Valor) {
     }
 }
 
+#[must_use]
 pub fn sermo_open(route: &str) -> Sermo {
     let conversation_id = next_frame_id();
     Sermo {
@@ -468,6 +474,7 @@ pub fn sermo_open_with_dispatch(route: &str, dispatch: Arc<dyn HostDispatch>) ->
 
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
+#[must_use]
 pub fn test_response_sender(route: &str) -> (Sermo, ResponseSender, Cancellation) {
     let sermo = sermo_open(route);
     {
@@ -481,6 +488,7 @@ pub fn test_response_sender(route: &str) -> (Sermo, ResponseSender, Cancellation
     (sermo, sender, cancellation)
 }
 
+#[must_use]
 pub fn sermo_meus<T>(sermo: &Sermo) -> Meus<T> {
     Meus {
         inner: sermo.inner.clone(),
@@ -488,6 +496,7 @@ pub fn sermo_meus<T>(sermo: &Sermo) -> Meus<T> {
     }
 }
 
+#[must_use]
 pub fn sermo_tuus<T>(sermo: &Sermo) -> Tuus<T> {
     Tuus {
         inner: sermo.inner.clone(),
@@ -518,6 +527,7 @@ pub fn meus_da<T>(meus: &Meus<T>, data: Valor) -> Result<(), FrameError> {
     Ok(())
 }
 
+#[must_use]
 pub fn meus_fini<T>(meus: &Meus<T>) -> FrameStatus {
     let mut inner = lock_sermo(&meus.inner);
     if !inner.meus_closed {
@@ -538,6 +548,7 @@ pub fn meus_fini<T>(meus: &Meus<T>) -> FrameStatus {
     FrameStatus::Done
 }
 
+#[must_use]
 pub fn tuus_accipe<T>(tuus: &Tuus<T>) -> Option<Scrinium> {
     let mut inner = lock_sermo(&tuus.inner);
     recv_content_frame(&mut inner)
@@ -557,6 +568,7 @@ impl<T> Iterator for TuusCursor<T> {
     }
 }
 
+#[must_use]
 pub fn tuus_cursor<T>(tuus: &Tuus<T>) -> TuusCursor<T> {
     TuusCursor {
         inner: tuus.inner.clone(),
@@ -564,6 +576,7 @@ pub fn tuus_cursor<T>(tuus: &Tuus<T>) -> TuusCursor<T> {
     }
 }
 
+#[must_use]
 pub fn tuus_fini<T>(tuus: &Tuus<T>) -> FrameStatus {
     let mut inner = lock_sermo(&tuus.inner);
     if inner.incoming_drained {
@@ -580,6 +593,7 @@ pub fn tuus_fini<T>(tuus: &Tuus<T>) -> FrameStatus {
     FrameStatus::Done
 }
 
+#[must_use]
 pub fn tuus_as_sermo<T>(tuus: &Tuus<T>) -> Sermo {
     Sermo {
         inner: tuus.inner.clone(),
@@ -632,6 +646,7 @@ fn drain_incoming_to_terminal(sermo: &mut Sermo) {
 }
 
 /// Drain inbound content frames into a raw frame list for internal materialization.
+#[must_use]
 pub fn sermo_tuus_frames(mut sermo: Sermo) -> Vec<Scrinium> {
     let mut frames = Vec::new();
     while let Some(frame) = sermo_recv(&mut sermo) {
@@ -658,7 +673,7 @@ pub fn sermo_recv(sermo: &mut Sermo) -> Option<Scrinium> {
             .inner
             .incoming_changed
             .wait(inner)
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(PoisonError::into_inner);
     }
     let frame = inner.incoming.pop_front()?;
     if frame.status.is_terminal() {
@@ -834,6 +849,7 @@ impl HostDispatch for BuiltinRuntimeDispatch {
     }
 }
 
+#[must_use]
 pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> {
     // Freeze: add no provider-surface route here without an explicit dual-backend decision.
     match request.route.as_str() {
@@ -853,15 +869,15 @@ pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> 
             if ms < 0 {
                 return error_frames("tempus:dormiet ms must be non-negative");
             }
-            thread::sleep(Duration::from_millis(ms as u64));
+            thread::sleep(Duration::from_millis(ms.unsigned_abs()));
             done_frames()
         }
         "solum:scribe" | "solum:scribet" | "solum:appone" | "solum:apponet" => {
             solum_write_text_frames(&request.route, request.opener)
         }
         "solum:funde" => solum_write_bytes_frames(request.opener),
-        "solum:dele" | "solum:delet" => solum_delete_frames(request.opener),
-        "solum:parens" => solum_parent_frames(request.opener),
+        "solum:dele" | "solum:delet" => solum_delete_frames(&request.opener),
+        "solum:parens" => solum_parent_frames(&request.opener),
         "solum:nomen" => solum_file_name_frames(request.opener),
         "solum:suffixum" => solum_extension_frames(request.opener),
         "solum:iunge" => solum_join_frames(request.opener),
@@ -889,38 +905,38 @@ pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> 
             consolum_write_stderr_line_frames(request.opener)
         }
         "consolum:lege" | "consolum:leget" => consolum_read_line_frames(),
-        "consolum:hauri" | "consolum:hauriet" => consolum_read_stdin_frames(request.opener),
+        "consolum:hauri" | "consolum:hauriet" => consolum_read_stdin_frames(&request.opener),
         "consolum:funde" => consolum_write_stdout_bytes_frames(request.opener),
-        "consolum:audit" => consolum_is_terminal_frames(ConsolumStream::Stdin),
-        "consolum:loquitur" => consolum_is_terminal_frames(ConsolumStream::Stdout),
-        "consolum:admonet" => consolum_is_terminal_frames(ConsolumStream::Stderr),
-        "solum:lege" => solum_lege_frames(request.opener, request.target),
-        "solum:hauri" | "solum:hauriet" => solum_hauri_frames(request.opener),
+        "consolum:audit" => consolum_is_terminal_frames(&ConsolumStream::Stdin),
+        "consolum:loquitur" => consolum_is_terminal_frames(&ConsolumStream::Stdout),
+        "consolum:admonet" => consolum_is_terminal_frames(&ConsolumStream::Stderr),
+        "solum:lege" => solum_lege_frames(&request.opener, request.target),
+        "solum:hauri" | "solum:hauriet" => solum_hauri_frames(&request.opener),
         // Line-oriented read: one Item frame per line (for sermo ↦ lista<textus>).
-        "solum:carpe" | "solum:carpiet" => solum_carpe_frames(request.opener),
-        "solum:mensura" => solum_mensura_frames(request.opener, request.target),
+        "solum:carpe" | "solum:carpiet" => solum_carpe_frames(&request.opener),
+        "solum:mensura" => solum_mensura_frames(&request.opener, request.target),
         "solum:inveni" => solum_inveni_frames(request.opener, request.target),
-        "solum:crea" | "solum:creabit" => solum_create_dir_frames(request.opener),
-        "solum:enumera" | "solum:enumerabit" => solum_list_dir_frames(request.opener),
-        "solum:amputa" | "solum:amputabit" => solum_remove_dir_frames(request.opener),
+        "solum:crea" | "solum:creabit" => solum_create_dir_frames(&request.opener),
+        "solum:enumera" | "solum:enumerabit" => solum_list_dir_frames(&request.opener),
+        "solum:amputa" | "solum:amputabit" => solum_remove_dir_frames(&request.opener),
         "solum:exscribe" | "solum:exscribet" => solum_copy_frames(request.opener),
         "solum:renomina" | "solum:renominabit" => solum_rename_frames(request.opener),
-        "solum:tange" | "solum:tanget" => solum_touch_frames(request.opener),
-        "solum:sequere" | "solum:sequetur" => solum_follow_symlink_frames(request.opener),
+        "solum:tange" | "solum:tanget" => solum_touch_frames(&request.opener),
+        "solum:sequere" | "solum:sequetur" => solum_follow_symlink_frames(&request.opener),
         "solum:vincula" => solum_create_symlink_frames(request.opener),
         "solum:modum" => solum_set_mode_frames(request.opener),
-        "solum:modus" => solum_get_mode_frames(request.opener),
+        "solum:modus" => solum_get_mode_frames(&request.opener),
         "solum:exstat"
         | "solum:exstabit"
         | "solum:directoriumne"
         | "solum:regularene"
         | "solum:legibilene"
         | "solum:vinculumne" => {
-            solum_path_bool_frames(&request.route, request.opener, request.target)
+            solum_path_bool_frames(&request.route, &request.opener, request.target)
         }
         // Random / seed — product packages without host=native (host-providers aleator parity).
         "aleator:fractum" => aleator_fractum_frames(),
-        "aleator:sortire" => aleator_sortire_frames(request.opener),
+        "aleator:sortire" => aleator_sortire_frames(&request.opener),
         "aleator:octetos" => aleator_octetos_frames(request.opener),
         "aleator:uuid" => aleator_uuid_frames(),
         "aleator:semina" => aleator_semina_frames(request.opener),
@@ -929,14 +945,14 @@ pub fn builtin_route_frames(request: SermoRequest) -> Vec<(FrameStatus, Valor)> 
 }
 
 pub fn dispatch_builtin_route(request: SermoRequest, responses: ResponseSender) {
-    send_response_frames(responses, builtin_route_frames(request));
+    send_response_frames(&responses, builtin_route_frames(request));
 }
 
 fn runtime_dispatch_builtin(request: SermoRequest, responses: ResponseSender) {
     dispatch_builtin_route(request, responses);
 }
 
-fn send_response_frames(responses: ResponseSender, frames: Vec<(FrameStatus, Valor)>) {
+fn send_response_frames(responses: &ResponseSender, frames: Vec<(FrameStatus, Valor)>) {
     for (status, data) in frames {
         let _ = responses.send(status, data);
     }
@@ -979,8 +995,7 @@ fn request_data(inner: &SermoInner) -> Valor {
     inner
         .outgoing
         .first()
-        .map(|request| request.data.clone())
-        .unwrap_or(Valor::Nihil)
+        .map_or(Valor::Nihil, |request| request.data.clone())
 }
 
 fn valor_text(data: &Valor) -> Option<String> {
@@ -1086,7 +1101,7 @@ fn solum_write_text_frames(route: &str, data: Valor) -> Vec<(FrameStatus, Valor)
     }
 }
 
-fn solum_parent_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+fn solum_parent_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
         return error_frames("solum:parens opener must be textus");
     };
@@ -1123,7 +1138,7 @@ fn solum_home_value(
         .ok_or("no home directory environment variable")
 }
 
-fn solum_delete_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+fn solum_delete_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
         return error_frames("solum:dele opener must be textus");
     };
@@ -1134,7 +1149,7 @@ fn solum_delete_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     }
 }
 
-fn solum_hauri_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+fn solum_hauri_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
         return error_frames("solum:hauri opener must be textus");
     };
@@ -1154,7 +1169,7 @@ fn solum_write_bytes_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     }
 }
 
-fn solum_create_dir_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+fn solum_create_dir_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
         return error_frames("solum:crea opener must be textus");
     };
@@ -1164,7 +1179,7 @@ fn solum_create_dir_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     }
 }
 
-fn solum_list_dir_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+fn solum_list_dir_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
         return error_frames("solum:enumera opener must be textus");
     };
@@ -1193,7 +1208,7 @@ fn solum_list_dir_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     }
 }
 
-fn solum_remove_dir_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+fn solum_remove_dir_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
         return error_frames("solum:amputa opener must be textus");
     };
@@ -1223,7 +1238,7 @@ fn solum_rename_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     }
 }
 
-fn solum_touch_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+fn solum_touch_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
         return error_frames("solum:tange opener must be textus");
     };
@@ -1249,7 +1264,7 @@ fn solum_touch_path(path: &std::path::Path) -> std::io::Result<()> {
     handle.set_times(times)
 }
 
-fn solum_follow_symlink_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+fn solum_follow_symlink_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
         return error_frames("solum:sequere opener must be textus");
     };
@@ -1283,7 +1298,7 @@ fn solum_set_mode_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     }
 }
 
-fn solum_get_mode_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+fn solum_get_mode_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
         return error_frames("solum:modus opener must be textus");
     };
@@ -1330,9 +1345,7 @@ impl AleatorPrng {
 static ALEATOR_RNG: Mutex<AleatorPrng> = Mutex::new(AleatorPrng { state: 0 });
 
 fn aleator_rng() -> MutexGuard<'static, AleatorPrng> {
-    ALEATOR_RNG
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    ALEATOR_RNG.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 fn aleator_default_seed() -> u64 {
@@ -1348,7 +1361,7 @@ fn aleator_fractum_frames() -> Vec<(FrameStatus, Valor)> {
     item_done_frames(Valor::Fractus(frac))
 }
 
-fn aleator_sortire_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+fn aleator_sortire_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     let (min, max) = match &data {
         Valor::Lista(items) if items.len() >= 2 => {
             let min = valor_numerus(&items[0]);
@@ -1642,6 +1655,7 @@ fn processus_exi_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     std::process::exit(code);
 }
 
+#[derive(Clone, Copy)]
 enum ConsolumStream {
     Stdin,
     Stdout,
@@ -1720,7 +1734,7 @@ fn consolum_read_line_frames() -> Vec<(FrameStatus, Valor)> {
     }
 }
 
-fn consolum_read_stdin_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+fn consolum_read_stdin_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     use std::io::Read;
     let Some(magnitude) = valor_numerus(&data) else {
         return error_frames("consolum:hauri opener must be numerus");
@@ -1736,7 +1750,7 @@ fn consolum_read_stdin_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     }
 }
 
-fn consolum_is_terminal_frames(stream: ConsolumStream) -> Vec<(FrameStatus, Valor)> {
+fn consolum_is_terminal_frames(stream: &ConsolumStream) -> Vec<(FrameStatus, Valor)> {
     use std::io::IsTerminal;
     let is_tty = match stream {
         ConsolumStream::Stdin => std::io::stdin().is_terminal(),
@@ -1763,14 +1777,14 @@ fn solum_line_item_frames(path: &str, read_err_prefix: &str) -> Vec<(FrameStatus
 }
 
 /// Read a file as text lines for `norma:solum.carpe` / `solum:carpe`.
-fn solum_carpe_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
+fn solum_carpe_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
         return error_frames("solum:carpe opener must be textus");
     };
     solum_line_item_frames(&path, &format!("solum:carpe failed for {path}"))
 }
 
-fn solum_lege_frames(data: Valor, target: Option<&'static str>) -> Vec<(FrameStatus, Valor)> {
+fn solum_lege_frames(data: &Valor, target: Option<&'static str>) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
         return error_frames("solum:lege opener must be textus");
     };
@@ -1835,7 +1849,7 @@ fn solum_partem_frames(data: Valor, target: Option<&'static str>) -> Vec<(FrameS
     }
 }
 
-fn solum_mensura_frames(data: Valor, target: Option<&'static str>) -> Vec<(FrameStatus, Valor)> {
+fn solum_mensura_frames(data: &Valor, target: Option<&'static str>) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
         return error_frames("solum:mensura opener must be textus");
     };
@@ -1901,7 +1915,7 @@ fn solum_inveni_frames(data: Valor, target: Option<&'static str>) -> Vec<(FrameS
 
 fn solum_path_bool_frames(
     route: &str,
-    data: Valor,
+    data: &Valor,
     target: Option<&'static str>,
 ) -> Vec<(FrameStatus, Valor)> {
     let Some(path) = valor_text(&data) else {
@@ -1948,6 +1962,7 @@ fn elapsed_nanos() -> i64 {
     start.elapsed().as_nanos().min(i64::MAX as u128) as i64
 }
 
+#[must_use]
 pub fn now_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2349,10 +2364,7 @@ pub fn try_sermo_materialize_instans(
     if content_count > 1 {
         return Err(FrameError::new(
             "frame_instans_multiple_content_frames",
-            format!(
-                "sermo ↦ instans: more than one content frame (found {})",
-                content_count
-            ),
+            format!("sermo ↦ instans: more than one content frame (found {content_count})"),
         ));
     }
     extracted.ok_or_else(|| {
@@ -2403,10 +2415,7 @@ pub async fn try_sermo_materialize_instans_async(
     if content_count > 1 {
         return Err(FrameError::new(
             "frame_instans_multiple_content_frames",
-            format!(
-                "sermo ↦ instans: more than one content frame (found {})",
-                content_count
-            ),
+            format!("sermo ↦ instans: more than one content frame (found {content_count})"),
         ));
     }
     extracted.ok_or_else(|| {
@@ -2445,10 +2454,7 @@ where
     if content_count > 1 {
         return Err(FrameError::new(
             "frame_scalar_multiple_content_frames",
-            format!(
-                "sermo ↦ T scalar: more than one content frame (found {})",
-                content_count
-            ),
+            format!("sermo ↦ T scalar: more than one content frame (found {content_count})"),
         ));
     }
     extracted.ok_or_else(|| {
@@ -2487,10 +2493,7 @@ where
     if content_count > 1 {
         return Err(FrameError::new(
             "frame_scalar_multiple_content_frames",
-            format!(
-                "sermo ↦ T scalar: more than one content frame (found {})",
-                content_count
-            ),
+            format!("sermo ↦ T scalar: more than one content frame (found {content_count})"),
         ));
     }
     extracted.ok_or_else(|| {
@@ -2557,7 +2560,7 @@ fn ok_type_id_cast<T: 'static, U: 'static>(value: U) -> Result<T, FrameError> {
         ));
     }
     // SAFETY: TypeId equality above guarantees T and U are the same type.
-    let ptr = Box::into_raw(Box::new(value)) as *mut T;
+    let ptr = Box::into_raw(Box::new(value)).cast::<T>();
     Ok(unsafe { *Box::from_raw(ptr) })
 }
 
