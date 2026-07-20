@@ -229,8 +229,10 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
         if out_context.is_null() || argc < 0 || (argc > 0 && argv.is_null()) {
             return STATUS_INVALID_ARGUMENT;
         }
-        let mut arguments = Vec::with_capacity(argc as usize);
-        for index in 0..argc as usize {
+        // SAFETY: `argc` is checked non-negative above (line 229).
+        let argc = usize::try_from(argc).unwrap_or(0);
+        let mut arguments = Vec::with_capacity(argc);
+        for index in 0..argc {
             let value = *argv.add(index);
             if value.is_null() {
                 return STATUS_INVALID_ARGUMENT;

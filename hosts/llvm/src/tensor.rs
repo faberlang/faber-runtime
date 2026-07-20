@@ -231,7 +231,10 @@ pub unsafe extern "C" fn __faber_rt_v1_tensor_rank(
         let Some(output) = (unsafe { output.as_mut() }) else {
             return STATUS_INVALID_ARGUMENT;
         };
-        *output = tensor.shape.len() as i64;
+        let Ok(len) = i64::try_from(tensor.shape.len()) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        *output = len;
         STATUS_OK
     })
 }
@@ -428,14 +431,27 @@ pub unsafe extern "C" fn __faber_rt_v1_tensor_slice(
             let _ = ERR_INVALID_SLICE_RANGE;
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         }
-        if tensor.shape.is_empty() || end as usize > tensor.shape[0] as usize {
+        if tensor.shape.is_empty() {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        }
+        let Ok(end_usize) = usize::try_from(end) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let Ok(dim0) = usize::try_from(tensor.shape[0]) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        if end_usize > dim0 {
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         }
         let mut shape = tensor.shape.clone();
+        // `start` is still i64 — safe because both are checked >= 0 above.
         shape[0] = end - start;
         let row = tensor_shape_element_count(&tensor.shape[1..]).unwrap_or(1);
-        let start_off = (start as usize).saturating_mul(row);
-        let end_off = (end as usize).saturating_mul(row);
+        let Ok(start_usize) = usize::try_from(start) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let start_off = start_usize.saturating_mul(row);
+        let end_off = end_usize.saturating_mul(row);
         if end_off > tensor.data.len() {
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         }
@@ -727,6 +743,9 @@ fn tensor_sum_value(tensor: &RuntimeTensor) -> Option<RuntimeValue> {
 }
 
 fn tensor_mean_value(tensor: &RuntimeTensor) -> Option<RuntimeValue> {
+    // SAFETY: casting `usize` (element count) to `f64` may lose precision
+    // for counts above 2^53, but such counts cannot be allocated in practice.
+    #[allow(clippy::cast_precision_loss)]
     let n = tensor.data.len() as f64;
     if n == 0.0 {
         return None;
@@ -734,7 +753,11 @@ fn tensor_mean_value(tensor: &RuntimeTensor) -> Option<RuntimeValue> {
     match tensor.kind {
         faber::host_abi::VALUE_KIND_F32 => {
             let sum = to_tensor_f32(tensor)?.summa();
-            Some(RuntimeValue::F32((f64::from(sum) / n) as f32))
+            // SAFETY: casting f64 → f32 truncates the mean result to f32
+            // range. This is the element-width contract for the f32 lattice.
+            #[allow(clippy::cast_possible_truncation)]
+            let value = (f64::from(sum) / n) as f32;
+            Some(RuntimeValue::F32(value))
         }
         faber::host_abi::VALUE_KIND_F64 => {
             let sum = to_tensor_f64(tensor)?.summa();
@@ -781,6 +804,21 @@ pub unsafe extern "C" fn __faber_rt_v1_tensor_convert(
     })
 }
 
+/// Convert one tensor element from its current numeric lattice cell to another.
+///
+/// # Safety
+///
+/// This function mirrors Rust `as` semantics for a controlled lattice of
+/// numeric conversions used by tensor width conversion. All casts below are
+/// deliberate truncations or sign reinterpretations that match IEEE/ABI
+/// behavior for the tensor element-width lattice. No single conversion
+/// escapes the bounded element-kind set guarded by [`tensor_kind`].
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_wrap
+)]
 fn cast_runtime_value(
     value: RuntimeValue,
     from_kind: FaberRtValueKindV1,
@@ -816,7 +854,15 @@ fn cast_runtime_value(
     }
 }
 
-#[allow(clippy::match_same_arms)]
+/// Unify tensor element values into a canonical `f64` carrier.
+///
+/// # Safety
+///
+/// Lossy precision for i64/u64 → f64 is an acknowledged lattice property:
+/// i64/u64 span 64 bits while f64 has a 52-bit mantissa, so values beyond
+/// 2^53 lose integer precision. This matches the tensor element-width
+/// conversion contract — callers operate on a controlled numeric lattice.
+#[allow(clippy::cast_precision_loss, clippy::match_same_arms)]
 fn value_as_f64(value: RuntimeValue, kind: FaberRtValueKindV1) -> Option<f64> {
     Some(match (kind, value) {
         (faber::host_abi::VALUE_KIND_I1, RuntimeValue::I1(v)) => f64::from(v),
@@ -835,7 +881,15 @@ fn value_as_f64(value: RuntimeValue, kind: FaberRtValueKindV1) -> Option<f64> {
     })
 }
 
-#[allow(clippy::match_same_arms)]
+/// Unify tensor element values into a canonical `i128` carrier.
+///
+/// # Safety
+///
+/// Truncation for f32/f64 → i128 is an acknowledged lattice property:
+/// float values with magnitude beyond i128::MAX or fractional values lose
+/// precision. This is consistent with Rust `as` semantics and the
+/// controlled tensor element-width conversion lattice.
+#[allow(clippy::cast_possible_truncation, clippy::match_same_arms)]
 fn value_as_i128(value: RuntimeValue, kind: FaberRtValueKindV1) -> Option<i128> {
     Some(match (kind, value) {
         (faber::host_abi::VALUE_KIND_I1, RuntimeValue::I1(v)) => i128::from(v),

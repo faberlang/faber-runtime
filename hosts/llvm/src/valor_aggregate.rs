@@ -287,7 +287,13 @@ pub(super) fn valor_to_runtime_value(
         VALUE_KIND_U16 => RuntimeValue::U16(i64::from_valor(valor)?.try_into().ok()?),
         VALUE_KIND_U32 => RuntimeValue::U32(i64::from_valor(valor)?.try_into().ok()?),
         VALUE_KIND_U64 => RuntimeValue::U64(i64::from_valor(valor)?.try_into().ok()?),
-        VALUE_KIND_F32 => RuntimeValue::F32(f64::from_valor(valor)? as f32),
+        VALUE_KIND_F32 => RuntimeValue::F32({
+            // SAFETY: f64 → f32 truncation is the element-width contract
+            // for the f32 valor lattice. Values come from Valor::from_valor.
+            #[allow(clippy::cast_possible_truncation)]
+            let value = f64::from_valor(valor)? as f32;
+            value
+        }),
         VALUE_KIND_F64 => RuntimeValue::F64(f64::from_valor(valor)?),
         VALUE_KIND_TEXT => {
             let result = store_text(context_ptr(runtime), String::from_valor(valor)?);

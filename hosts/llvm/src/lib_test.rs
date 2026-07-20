@@ -3,6 +3,15 @@
 //! Float comparisons here are against compile-time exact IEEE values after
 //! parse round-trips (e.g. `"1.25"` → `1.25`), not fuzzy numeric algorithms.
 #![allow(clippy::float_cmp)]
+// Test-only cast noise: truncation/wrap/precision-loss sites in test helpers
+// that mirror ABI call signatures (i64 → narrower types, float ↔ int, etc.).
+// Production code in sibling modules is kept clean per Pro cast policy.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
 
 use super::*;
 use std::ffi::{c_void, CStr};
