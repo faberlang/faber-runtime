@@ -1,3 +1,9 @@
+//! LLVM host integration tests.
+//!
+//! Float comparisons here are against compile-time exact IEEE values after
+//! parse round-trips (e.g. `"1.25"` → `1.25`), not fuzzy numeric algorithms.
+#![allow(clippy::float_cmp)]
+
 use super::*;
 use std::ffi::{c_void, CStr};
 
