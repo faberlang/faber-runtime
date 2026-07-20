@@ -193,6 +193,12 @@ impl std::fmt::Display for DispatchError {
 impl std::error::Error for DispatchError {}
 
 pub trait HostDispatch: Send + Sync {
+    /// Start handling a conversation request.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(DispatchError)` if the handler cannot be started (e.g.,
+    /// the host dispatch is already installed).
     fn start(
         &self,
         request: SermoRequest,
@@ -203,6 +209,11 @@ pub trait HostDispatch: Send + Sync {
 
 static HOST_DISPATCH: OnceLock<Arc<dyn HostDispatch>> = OnceLock::new();
 
+/// Install a global host dispatch handler.
+///
+/// # Errors
+///
+/// Returns `Err` if a host dispatch is already installed.
 pub fn install_host_dispatch(dispatch: Arc<dyn HostDispatch>) -> Result<(), DispatchError> {
     HOST_DISPATCH.set(dispatch).map_err(|_| {
         DispatchError::new(
@@ -229,26 +240,57 @@ impl ResponseSender {
         self.lease.cancellation.is_cancelled()
     }
 
+    /// Enqueue an item frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the sender is cancelled or a terminal frame was already sent.
     pub fn item(&self, data: Valor) -> Result<(), FrameError> {
         self.send(FrameStatus::Item, data)
     }
 
+    /// Enqueue a byte frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the sender is cancelled or a terminal frame was already sent.
     pub fn byte(&self, bytes: Vec<u8>) -> Result<(), FrameError> {
         self.send(FrameStatus::Byte, Valor::Octeti(bytes))
     }
 
+    /// Enqueue a done (success) terminal frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the sender is cancelled or a terminal frame was already sent.
     pub fn done(&self) -> Result<(), FrameError> {
         self.send(FrameStatus::Done, Valor::Nihil)
     }
 
+    /// Enqueue an error terminal frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the sender is cancelled or a terminal frame was already sent.
     pub fn error(&self, message: impl Into<String>) -> Result<(), FrameError> {
         self.send(FrameStatus::Error, Valor::Textus(message.into()))
     }
 
+    /// Enqueue a cancel terminal frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the sender is cancelled or a terminal frame was already sent.
     pub fn cancel(&self) -> Result<(), FrameError> {
         self.send(FrameStatus::Cancel, Valor::Nihil)
     }
 
+    /// Enqueue a frame with the given status and data.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the sender is cancelled (non-terminal frames are
+    /// rejected after cancellation) or a terminal frame was already sent.
     pub fn send(&self, mut status: FrameStatus, mut data: Valor) -> Result<(), FrameError> {
         if self.is_cancelled() && !status.is_terminal() {
             return Err(FrameError::new(
@@ -504,6 +546,11 @@ pub fn sermo_tuus<T>(sermo: &Sermo) -> Tuus<T> {
     }
 }
 
+/// Push a frame onto a Meus half-stream.
+///
+/// # Errors
+///
+/// Returns `Err` if the Meus half-stream is closed.
 pub fn meus_da<T>(meus: &Meus<T>, data: Valor) -> Result<(), FrameError> {
     let mut inner = lock_sermo(&meus.inner);
     if inner.meus_closed {
@@ -1992,10 +2039,20 @@ fn drain_remaining_then_err<T>(sermo: &mut Sermo, error: FrameError) -> Result<T
     Err(error)
 }
 
+/// Drain all frames until terminal, discarding content.
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame.
 pub fn sermo_materialize_vacuum(sermo: &mut Sermo) {
     try_sermo_materialize_vacuum(sermo).expect("sermo ↦ vacuum materialization failed");
 }
 
+/// Drain all frames until terminal, discarding content.
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame.
 pub fn try_sermo_materialize_vacuum(sermo: &mut Sermo) -> Result<(), FrameError> {
     while let Some(frame) = sermo_recv(sermo) {
         if let Some(message) = terminal_error(&frame) {
@@ -2008,12 +2065,22 @@ pub fn try_sermo_materialize_vacuum(sermo: &mut Sermo) -> Result<(), FrameError>
     Ok(())
 }
 
+/// Drain all frames until terminal, discarding content (async).
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame.
 pub async fn sermo_materialize_vacuum_async(sermo: &mut Sermo) {
     try_sermo_materialize_vacuum_async(sermo)
         .await
         .expect("sermo ↦ vacuum async materialization failed");
 }
 
+/// Drain all frames until terminal, discarding content (async).
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame.
 pub async fn try_sermo_materialize_vacuum_async(sermo: &mut Sermo) -> Result<(), FrameError> {
     while let Some(frame) = sermo_recv_async(sermo).await {
         if let Some(message) = terminal_error(&frame) {
@@ -2026,10 +2093,22 @@ pub async fn try_sermo_materialize_vacuum_async(sermo: &mut Sermo) -> Result<(),
     Ok(())
 }
 
+/// Materialize a `textus` (String) from the stream.
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame or a non-textus
+/// content frame.
 pub fn sermo_materialize_textus(sermo: &mut Sermo) -> String {
     try_sermo_materialize_textus(sermo).expect("sermo ↦ textus materialization failed")
 }
 
+/// Materialize a `textus` (String) from the stream.
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame or a
+/// non-textus content frame.
 pub fn try_sermo_materialize_textus(sermo: &mut Sermo) -> Result<String, FrameError> {
     ensure_runtime_response_started_for_target(sermo, std::any::type_name::<String>());
     let mut out = String::new();
@@ -2054,12 +2133,24 @@ pub fn try_sermo_materialize_textus(sermo: &mut Sermo) -> Result<String, FrameEr
     Ok(out)
 }
 
+/// Materialize a `textus` (String) from the stream (async).
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame or a non-textus
+/// content frame.
 pub async fn sermo_materialize_textus_async(sermo: &mut Sermo) -> String {
     try_sermo_materialize_textus_async(sermo)
         .await
         .expect("sermo ↦ textus async materialization failed")
 }
 
+/// Materialize a `textus` (String) from the stream (async).
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame or a
+/// non-textus content frame.
 pub async fn try_sermo_materialize_textus_async(sermo: &mut Sermo) -> Result<String, FrameError> {
     ensure_runtime_response_started_for_target(sermo, std::any::type_name::<String>());
     let mut out = String::new();
@@ -2085,10 +2176,22 @@ pub async fn try_sermo_materialize_textus_async(sermo: &mut Sermo) -> Result<Str
     Ok(out)
 }
 
+/// Materialize octeti (bytes) from the stream.
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame or a content frame
+/// with an unsupported payload variant.
 pub fn sermo_materialize_octeti(sermo: &mut Sermo) -> Vec<u8> {
     try_sermo_materialize_octeti(sermo).expect("sermo ↦ octeti materialization failed")
 }
 
+/// Materialize octeti (bytes) from the stream.
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame or a content
+/// frame with an unsupported payload variant.
 pub fn try_sermo_materialize_octeti(sermo: &mut Sermo) -> Result<Vec<u8>, FrameError> {
     ensure_runtime_response_started_for_type::<Vec<u8>>(sermo);
     let mut out = Vec::new();
@@ -2138,12 +2241,24 @@ pub fn try_sermo_materialize_octeti(sermo: &mut Sermo) -> Result<Vec<u8>, FrameE
     Ok(out)
 }
 
+/// Materialize octeti (bytes) from the stream (async).
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame or a content frame
+/// with an unsupported payload variant.
 pub async fn sermo_materialize_octeti_async(sermo: &mut Sermo) -> Vec<u8> {
     try_sermo_materialize_octeti_async(sermo)
         .await
         .expect("sermo ↦ octeti async materialization failed")
 }
 
+/// Materialize octeti (bytes) from the stream (async).
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame or a content
+/// frame with an unsupported payload variant.
 pub async fn try_sermo_materialize_octeti_async(sermo: &mut Sermo) -> Result<Vec<u8>, FrameError> {
     ensure_runtime_response_started_for_type::<Vec<u8>>(sermo);
     let mut out = Vec::new();
@@ -2196,10 +2311,20 @@ pub async fn try_sermo_materialize_octeti_async(sermo: &mut Sermo) -> Result<Vec
     Ok(out)
 }
 
+/// Materialize a single `Valor` from the stream (first content frame).
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame.
 pub fn sermo_materialize_valor(sermo: &mut Sermo) -> Valor {
     try_sermo_materialize_valor(sermo).expect("sermo ↦ valor materialization failed")
 }
 
+/// Materialize a single `Valor` from the stream (first content frame).
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame.
 pub fn try_sermo_materialize_valor(sermo: &mut Sermo) -> Result<Valor, FrameError> {
     let mut captured: Option<Valor> = None;
     while let Some(frame) = sermo_recv(sermo) {
@@ -2216,12 +2341,22 @@ pub fn try_sermo_materialize_valor(sermo: &mut Sermo) -> Result<Valor, FrameErro
     Ok(captured.unwrap_or(Valor::Nihil))
 }
 
+/// Materialize a single `Valor` from the stream (async, first content frame).
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame.
 pub async fn sermo_materialize_valor_async(sermo: &mut Sermo) -> Valor {
     try_sermo_materialize_valor_async(sermo)
         .await
         .expect("sermo ↦ valor async materialization failed")
 }
 
+/// Materialize a single `Valor` from the stream (async, first content frame).
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame.
 pub async fn try_sermo_materialize_valor_async(sermo: &mut Sermo) -> Result<Valor, FrameError> {
     let mut captured: Option<Valor> = None;
     while let Some(frame) = sermo_recv_async(sermo).await {
@@ -2238,6 +2373,12 @@ pub async fn try_sermo_materialize_valor_async(sermo: &mut Sermo) -> Result<Valo
     Ok(captured.unwrap_or(Valor::Nihil))
 }
 
+/// Materialize a `lista<T>` (Vec<T>) from the stream.
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame or a content frame
+/// whose payload does not match the element type.
 pub fn sermo_materialize_lista<T>(sermo: &mut Sermo) -> Vec<T>
 where
     T: crate::FromValor,
@@ -2245,6 +2386,12 @@ where
     try_sermo_materialize_lista(sermo).expect("sermo ↦ lista<T> materialization failed")
 }
 
+/// Materialize a `lista<T>` (Vec<T>) from the stream.
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame or a content
+/// frame whose payload does not match the element type.
 pub fn try_sermo_materialize_lista<T>(sermo: &mut Sermo) -> Result<Vec<T>, FrameError>
 where
     T: crate::FromValor,
@@ -2274,6 +2421,12 @@ where
     Ok(out)
 }
 
+/// Materialize a `lista<T>` (Vec<T>) from the stream (async).
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame or a content frame
+/// whose payload does not match the element type.
 pub async fn sermo_materialize_lista_async<T>(sermo: &mut Sermo) -> Vec<T>
 where
     T: crate::FromValor,
@@ -2283,6 +2436,12 @@ where
         .expect("sermo ↦ lista<T> async materialization failed")
 }
 
+/// Materialize a `lista<T>` (Vec<T>) from the stream (async).
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame or a content
+/// frame whose payload does not match the element type.
 pub async fn try_sermo_materialize_lista_async<T>(sermo: &mut Sermo) -> Result<Vec<T>, FrameError>
 where
     T: crate::FromValor,
@@ -2313,6 +2472,13 @@ where
     Ok(out)
 }
 
+/// Materialize a scalar `T` from the stream.
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame, zero content frames,
+/// multiple content frames, or a content frame whose payload does not match
+/// the target type.
 pub fn sermo_materialize_scalar<T>(sermo: &mut Sermo) -> T
 where
     T: crate::FromValor,
@@ -2320,6 +2486,13 @@ where
     try_sermo_materialize_scalar(sermo).expect("sermo ↦ T scalar materialization failed")
 }
 
+/// Materialize a scalar `T` from the stream (async).
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame, zero content frames,
+/// multiple content frames, or a content frame whose payload does not match
+/// the target type.
 pub async fn sermo_materialize_scalar_async<T>(sermo: &mut Sermo) -> T
 where
     T: crate::FromValor,
@@ -2329,10 +2502,24 @@ where
         .expect("sermo ↦ T scalar async materialization failed")
 }
 
+/// Materialize an `Instans` from the stream.
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame, zero content frames,
+/// multiple content frames, or a content frame whose payload does not match
+/// the target type or precision.
 pub fn sermo_materialize_instans(sermo: &mut Sermo, precision: InstansPraecisio) -> Instans {
     try_sermo_materialize_instans(sermo, precision).expect("sermo ↦ instans materialization failed")
 }
 
+/// Materialize an `Instans` from the stream.
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame, zero content
+/// frames, multiple content frames, or a content frame whose payload does not
+/// match the target type or precision.
 pub fn try_sermo_materialize_instans(
     sermo: &mut Sermo,
     precision: InstansPraecisio,
@@ -2375,6 +2562,13 @@ pub fn try_sermo_materialize_instans(
     })
 }
 
+/// Materialize an `Instans` from the stream (async).
+///
+/// # Panics
+///
+/// Panics if the stream produces a terminal error frame, zero content frames,
+/// multiple content frames, or a content frame whose payload does not match
+/// the target type or precision.
 pub async fn sermo_materialize_instans_async(
     sermo: &mut Sermo,
     precision: InstansPraecisio,
@@ -2384,6 +2578,13 @@ pub async fn sermo_materialize_instans_async(
         .expect("sermo ↦ instans async materialization failed")
 }
 
+/// Materialize an `Instans` from the stream (async).
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame, zero content
+/// frames, multiple content frames, or a content frame whose payload does not
+/// match the target type or precision.
 pub async fn try_sermo_materialize_instans_async(
     sermo: &mut Sermo,
     precision: InstansPraecisio,
@@ -2426,6 +2627,13 @@ pub async fn try_sermo_materialize_instans_async(
     })
 }
 
+/// Materialize a scalar `T` from the stream.
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame, zero content
+/// frames, multiple content frames, or a content frame whose payload does not
+/// match the target type.
 pub fn try_sermo_materialize_scalar<T>(sermo: &mut Sermo) -> Result<T, FrameError>
 where
     T: crate::FromValor,
@@ -2465,6 +2673,13 @@ where
     })
 }
 
+/// Materialize a scalar `T` from the stream (async).
+///
+/// # Errors
+///
+/// Returns `Err` if the stream produces a terminal error frame, zero content
+/// frames, multiple content frames, or a content frame whose payload does not
+/// match the target type.
 pub async fn try_sermo_materialize_scalar_async<T>(sermo: &mut Sermo) -> Result<T, FrameError>
 where
     T: crate::FromValor,
@@ -2510,6 +2725,12 @@ where
 /// parameter. At monomorphization this dispatches by `TypeId` so
 /// `lista<textus>` uses multi-item frames and does not panic on
 /// `frame_scalar_multiple_content_frames`.
+/// Materialize `T` from the stream using automatic dispatch by TypeId.
+///
+/// # Errors
+///
+/// Returns `Err` if the underlying materializer fails or the internal TypeId
+/// cast detects a mismatch.
 pub fn try_sermo_materialize_auto<T>(sermo: &mut Sermo) -> Result<T, FrameError>
 where
     T: crate::FromValor + 'static,
@@ -2531,6 +2752,12 @@ where
 }
 
 /// Async twin of [`try_sermo_materialize_auto`].
+/// Materialize `T` from the stream using automatic dispatch by TypeId (async).
+///
+/// # Errors
+///
+/// Returns `Err` if the underlying materializer fails or the internal TypeId
+/// cast detects a mismatch.
 pub async fn try_sermo_materialize_auto_async<T>(sermo: &mut Sermo) -> Result<T, FrameError>
 where
     T: crate::FromValor + 'static,

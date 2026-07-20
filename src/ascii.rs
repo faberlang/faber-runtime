@@ -24,6 +24,11 @@ impl Ascii {
     /// on any byte ≥ 128, independent of UTF-8 validity. Going through `textus`
     /// first would conflate ASCII validity with UTF-8 validity. This validates
     /// ASCII directly and constructs the carrier.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the byte slice is ASCII-valid but not valid UTF-8. This should
+    /// never happen because ASCII is a strict subset of UTF-8.
     #[must_use]
     pub fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
         if bytes.is_ascii() {

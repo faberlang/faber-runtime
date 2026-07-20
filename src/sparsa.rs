@@ -62,6 +62,10 @@ impl<T: Clone + Default + PartialEq> Sparsa<T> {
     /// Construct an all-zero (empty) sparse tensor with the given shape.
     ///
     /// No entries are stored; every in-bounds read returns `T::default()`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any dimension is negative.
     pub fn vacua(shape: &[i64]) -> Result<Self, &'static str> {
         let shape = shape_dims(shape)?;
         Ok(Self {
@@ -99,6 +103,10 @@ impl<T: Clone + Default + PartialEq> Sparsa<T> {
     }
 
     /// Number of stored (non-default) entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the entry count overflows `i64`.
     pub fn nonnihil(&self) -> Result<i64, &'static str> {
         i64::try_from(self.entries.len()).map_err(|_| ERR_NONNIHIL_COUNT_OVERFLOW)
     }
@@ -106,7 +114,12 @@ impl<T: Clone + Default + PartialEq> Sparsa<T> {
     /// Read the value at the given index.
     ///
     /// Returns `T::default()` for in-bounds coordinates that have no stored
-    /// entry. Returns `Err` for negative or out-of-bounds indices.
+    /// entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if `indices` length does not match the shape rank, any
+    /// index is negative, or any index is out of bounds.
     pub fn accipe(&self, indices: &[i64]) -> Result<T, &'static str> {
         validate_indices(&self.shape, indices)?;
         Ok(self.entries.get(indices).cloned().unwrap_or_default())
@@ -116,6 +129,11 @@ impl<T: Clone + Default + PartialEq> Sparsa<T> {
     ///
     /// If the value equals `T::default()`, the entry is removed to preserve
     /// sparsity (absent entries are implicitly zero).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if `indices` length does not match the shape rank, any
+    /// index is negative, or any index is out of bounds.
     pub fn ponde(&mut self, indices: &[i64], value: T) -> Result<(), &'static str> {
         validate_indices(&self.shape, indices)?;
         if value == T::default() {
@@ -127,6 +145,11 @@ impl<T: Clone + Default + PartialEq> Sparsa<T> {
     }
 
     /// Materialize to a dense `Tensor<T>`, filling absent entries with default.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the element count overflows `usize` or the tensor
+    /// construction fails due to shape mismatch.
     pub fn densata(&self) -> Result<Tensor<T>, &'static str> {
         let count = self.element_count().ok_or(ERR_ELEMENT_COUNT_OVERFLOW)?;
 

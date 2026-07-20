@@ -26,6 +26,12 @@ pub enum JsonErrorKind {
 }
 
 impl Json {
+    /// Parse a JSON wire string into a `Json` value.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` on invalid JSON syntax, non-finite numbers, unsupported
+    /// value variants, duplicate keys, or trailing characters after the root.
     pub fn parse(wire: &str) -> Result<Self, JsonError> {
         let mut parser = Parser::new(wire);
         let value = parser.parse_value("$")?;
@@ -36,6 +42,12 @@ impl Json {
         Self::try_from(value)
     }
 
+    /// Create a `Json` value from a map of object fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any field value is a non-finite number or an unsupported
+    /// variant (`Octeti` or `Instans`).
     pub fn from_object(fields: BTreeMap<String, Valor>) -> Result<Self, JsonError> {
         Self::try_from(Valor::Tabula(fields))
     }

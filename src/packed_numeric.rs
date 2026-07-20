@@ -86,6 +86,12 @@ pub struct PackedU4Block {
 }
 
 impl PackedU4Block {
+    /// Create a new packed U4 block.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if `bytes` length does not match the required packed byte
+    /// count, if `scale` is non-finite, or if `zero_point` exceeds 0x0f.
     pub fn new(bytes: &[u8], scale: f32, zero_point: u8) -> Result<Self, &'static str> {
         if bytes.len() != PackedU4Layout::PACKED_BYTES {
             return Err(ERR_PACKED_U4_BYTE_COUNT);
@@ -126,6 +132,11 @@ impl PackedU4Block {
         self.zero_point
     }
 
+    /// Extract a single packed u4 value at the given index.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if `index` is out of bounds for this block.
     pub fn extract(&self, index: usize) -> Result<u8, &'static str> {
         if index >= PackedU4Layout::BLOCK_VALUES {
             return Err(ERR_PACKED_U4_INDEX);
@@ -143,6 +154,11 @@ impl PackedU4Block {
             .collect()
     }
 
+    /// Dequantize this block into a rank-1 `Tensor<f32>`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the tensor shape element count overflows `i64`.
     pub fn dequantize_tensor(&self) -> Result<Tensor<f32>, &'static str> {
         Tensor::structa(
             self.dequantize(),

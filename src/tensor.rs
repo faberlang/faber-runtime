@@ -148,11 +148,22 @@ impl<T: Clone + Default> Tensor<T> {
         element_count_usize(&self.shape)
     }
 
+    /// Create a new tensor filled with the given value.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any dimension is negative or the element count overflows.
     pub fn crea(shape: &[i64], fill: T) -> Result<Self, &'static str> {
         let (dims, count) = shape_dims_and_count::<T>(shape)?;
         Ok(Self::from_contiguous(vec![fill; count], dims))
     }
 
+    /// Create a tensor from data and shape.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any dimension is negative or if the data length does
+    /// not match the shape element count.
     pub fn structa(data: Vec<T>, shape: &[i64]) -> Result<Self, &'static str> {
         let dims = shape_dims(shape)?;
         if !tensor_shape_has_element_count(shape, data.len()) {
@@ -170,6 +181,12 @@ impl<T: Clone + Default> Tensor<T> {
             .collect()
     }
 
+    /// Reshape the tensor.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any dimension is negative or if the element count does
+    /// not match the new shape.
     pub fn forma(&self, shape: &[i64]) -> Result<Self, &'static str> {
         let dims = shape_dims(shape)?;
         if !tensor_shape_has_element_count(shape, self.element_count()) {
@@ -178,6 +195,13 @@ impl<T: Clone + Default> Tensor<T> {
         Ok(Self::from_contiguous(self.planata(), dims))
     }
 
+    /// Read the value at the given indices.
+    ///
+    /// Returns `Ok(None)` for in-bounds indices that fall within a view gap.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any index is negative.
     pub fn accipe(&self, indices: &[i64]) -> Result<Option<T>, &'static str> {
         let index = index_dims(indices)?;
         let Some(offset) = self.offset_for_index(&index) else {
@@ -186,6 +210,11 @@ impl<T: Clone + Default> Tensor<T> {
         Ok(tensor_data(&self.data).get(offset).cloned())
     }
 
+    /// Write a value at the given indices.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any index is negative or out of bounds.
     pub fn ponde(&mut self, indices: &[i64], value: T) -> Result<(), &'static str> {
         let index = index_dims(indices)?;
         let Some(offset) = self.offset_for_index(&index) else {
@@ -217,6 +246,11 @@ impl<T: Clone + Default> Tensor<T> {
     }
 
     /// View a contiguous slice along axis 0 from `start` (inclusive) to `end` (exclusive).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if bounds are negative, `end < start`, or `end` exceeds
+    /// the first dimension.
     pub fn sectio(&self, start: i64, end: i64) -> Result<Self, &'static str> {
         let (start, end) = slice_bounds(start, end)?;
         if self.shape.is_empty() || end > self.shape[0] {
@@ -239,6 +273,10 @@ impl<T: Clone + Default> Tensor<T> {
     }
 
     /// Materialized rank-2 transpose.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the tensor is not rank-2 or the element count overflows.
     pub fn transpose_rank2(&self) -> Result<Self, &'static str> {
         if self.shape.len() != 2 {
             return Err(ERR_TRANSPOSE_RANK);
@@ -256,6 +294,12 @@ impl<T: Clone + Default> Tensor<T> {
     }
 
     /// Materialized axis permutation. The result is a copy with row-major strides.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the axis count does not match the tensor rank, any axis
+    /// is negative or out of range, an axis is duplicated, or the element count
+    /// overflows.
     pub fn permute(&self, axes: &[i64]) -> Result<Self, &'static str> {
         let axes = permute_axes(axes, self.shape.len())?;
         let shape: Vec<usize> = axes.iter().map(|&axis| self.shape[axis]).collect();
@@ -459,6 +503,11 @@ where
     T: Clone + Default + std::ops::Add<Output = T>,
 {
     /// Elementwise `self + other` after NumPy-style broadcast unification.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if shapes are not broadcast-compatible or the element
+    /// count overflows.
     pub fn addita(&self, other: &Tensor<T>) -> Result<Tensor<T>, &'static str> {
         tensor_elementwise(self, other, |lhs, rhs| lhs + rhs)
     }
@@ -478,6 +527,11 @@ where
     T: Clone + Default + std::ops::Sub<Output = T>,
 {
     /// Elementwise `self - other` after NumPy-style broadcast unification.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if shapes are not broadcast-compatible or the element
+    /// count overflows.
     pub fn subtrahe(&self, other: &Tensor<T>) -> Result<Tensor<T>, &'static str> {
         tensor_elementwise(self, other, |lhs, rhs| lhs - rhs)
     }
@@ -488,6 +542,11 @@ where
     T: Clone + Default + std::ops::Mul<Output = T>,
 {
     /// Elementwise `self * other` after NumPy-style broadcast unification.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if shapes are not broadcast-compatible or the element
+    /// count overflows.
     pub fn multiplica(&self, other: &Tensor<T>) -> Result<Tensor<T>, &'static str> {
         tensor_elementwise(self, other, |lhs, rhs| lhs * rhs)
     }
@@ -516,6 +575,12 @@ impl Tensor<f32> {
     }
 
     /// Elementwise checked division after NumPy-style broadcast unification.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if shapes are not broadcast-compatible, the element count
+    /// overflows, any input is non-finite, the denominator is zero, or the
+    /// result is non-finite.
     pub fn divide(&self, other: &Tensor<f32>) -> Result<Tensor<f32>, &'static str> {
         let shape = broadcast_shape(&self.shape, &other.shape)?;
         let count = checked_allocation_count::<f32>(&shape)?;
@@ -533,6 +598,11 @@ impl Tensor<f32> {
     }
 
     /// Elementwise checked reciprocal preserving tensor shape.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any input is non-finite, zero, or the division
+    /// produces a non-finite result.
     pub fn reciproca(&self) -> Result<Tensor<f32>, &'static str> {
         let data = self
             .planata()
@@ -543,6 +613,10 @@ impl Tensor<f32> {
     }
 
     /// Mean of all elements as an f32 scalar.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the tensor has zero elements.
     pub fn media(&self) -> Result<f32, &'static str> {
         let count = self.element_count();
         if count == 0 {
@@ -574,6 +648,11 @@ where
     T: Clone + Default + std::ops::Add<Output = T> + std::ops::Mul<Output = T>,
 {
     /// Rank-2 matrix multiply `self × other`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if either tensor is not rank-2, the inner dimensions do
+    /// not match, or the result element count overflows.
     pub fn matmul(&self, other: &Tensor<T>) -> Result<Tensor<T>, &'static str> {
         let dims = &self.shape;
         if dims.len() != 2 {
