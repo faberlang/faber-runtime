@@ -766,6 +766,8 @@ fn solum_partem_route_materializes_large_range_without_valor_list() {
         Valor::Lista(vec![
             Valor::Textus(path.clone()),
             Valor::Numerus(0),
+            // SAFETY: test data is small.
+            #[allow(clippy::cast_possible_wrap)]
             Valor::Numerus(data.len() as i64),
         ]),
     );

@@ -85,7 +85,10 @@ impl<T: Clone + Default + PartialEq> Sparsa<T> {
     /// Rank (number of dimensions).
     #[must_use]
     pub fn longitudo(&self) -> i64 {
-        self.shape.len() as i64
+        // SAFETY: shape length fits in i64 for practical use.
+        #[allow(clippy::cast_possible_wrap)]
+        let len = self.shape.len() as i64;
+        len
     }
 
     /// Shape dimensions.

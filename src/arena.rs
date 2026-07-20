@@ -97,6 +97,8 @@ impl<T> Arena<T> {
             return ArenaHandle::new(index, generation);
         }
 
+        // SAFETY: arena index fits in u32 for practical use.
+        #[allow(clippy::cast_possible_truncation)]
         let index = self.slots.len() as u32;
         let generation = 0;
         self.slots.push(Slot::Live { generation, value });

@@ -101,6 +101,8 @@ fn parse_non_negative(value: i64, message: &'static str) -> Result<usize, &'stat
     if value < 0 {
         Err(message)
     } else {
+        // SAFETY: guarded by non-negative check above.
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
         Ok(value as usize)
     }
 }
@@ -135,12 +137,23 @@ impl<T: Clone + Default> Tensor<T> {
 
     #[must_use]
     pub fn longitudo(&self) -> i64 {
-        self.shape.len() as i64
+        // SAFETY: shape length fits in i64 for practical use.
+        #[allow(clippy::cast_possible_wrap)]
+        let len = self.shape.len() as i64;
+        len
     }
 
     #[must_use]
     pub fn magnitudines(&self) -> Vec<i64> {
-        self.shape.iter().map(|&d| d as i64).collect()
+        // SAFETY: each dimension fits in i64 for practical tensor shapes.
+        self.shape
+            .iter()
+            .map(|&d| {
+                #[allow(clippy::cast_possible_wrap)]
+                let d = d as i64;
+                d
+            })
+            .collect()
     }
 
     #[must_use]
@@ -622,6 +635,8 @@ impl Tensor<f32> {
         if count == 0 {
             return Err(ERR_MEDIA_EMPTY);
         }
+        // SAFETY: intentional f32 mean; precision loss acceptable for large element counts.
+        #[allow(clippy::cast_precision_loss)]
         Ok(self.summa() / count as f32)
     }
 }

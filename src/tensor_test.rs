@@ -85,7 +85,12 @@ fn structa_rejects_negative_shape_dimension() {
 #[test]
 fn convert_elements_preserves_shape_and_maps_values() {
     let tensor = Tensor::structa(vec![1i64, 2, 3, 4], &[2, 2]).expect("shape matches data");
-    let converted = tensor.convert_elements(|value| value as f64);
+    let converted = tensor.convert_elements(|value| {
+        // SAFETY: test values are small integers.
+        #[allow(clippy::cast_precision_loss)]
+        let value = value as f64;
+        value
+    });
     assert_eq!(converted.magnitudines(), vec![2, 2]);
     assert_eq!(converted.planata(), vec![1.0, 2.0, 3.0, 4.0]);
 }

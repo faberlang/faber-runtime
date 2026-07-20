@@ -474,9 +474,13 @@ impl AutogradTape {
                     if count == 0 {
                         return Err(AutogradError::Tensor(crate::tensor::ERR_MEDIA_EMPTY));
                     }
+                    // SAFETY: element count is a tensor-size integer; f32 mean
+                    // gradient uses IEEE precision intentionally.
+                    #[allow(clippy::cast_precision_loss)]
+                    let count_f = count as f32;
                     gradients.accumulate(
                         parent,
-                        Tensor::crea(&parent_shape, scalar / count as f32)
+                        Tensor::crea(&parent_shape, scalar / count_f)
                             .map_err(AutogradError::Tensor)?,
                     )?;
                 }

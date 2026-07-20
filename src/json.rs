@@ -372,7 +372,10 @@ impl<'a> Parser<'a> {
             let Some(digit) = ch.to_digit(16) else {
                 return Err(self.syntax(path, "invalid unicode escape"));
             };
-            value = (value << 4) | digit as u16;
+            // SAFETY: digit is 0..=15 from to_digit(16), safe for u16.
+            #[allow(clippy::cast_possible_truncation)]
+            let digit = digit as u16;
+            value = (value << 4) | digit;
         }
         Ok(value)
     }

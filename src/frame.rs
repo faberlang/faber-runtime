@@ -1339,7 +1339,10 @@ fn solum_set_mode_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
         return error_frames("solum:modum modus must be between 0 and 0o7777");
     }
     use std::os::unix::fs::PermissionsExt;
-    match std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode as u32)) {
+    // SAFETY: mode is range-checked to 0..=0o7777 above.
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    let mode = mode as u32;
+    match std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)) {
         Ok(()) => done_frames(),
         Err(err) => error_frames(format!("solum:modum failed for {path}: {err}")),
     }
@@ -1396,6 +1399,8 @@ fn aleator_rng() -> MutexGuard<'static, AleatorPrng> {
 }
 
 fn aleator_default_seed() -> u64 {
+    // SAFETY: nanoseconds since epoch fit in u64 for the foreseeable future.
+    #[allow(clippy::cast_possible_truncation)]
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_nanos() as u64);
@@ -1404,6 +1409,8 @@ fn aleator_default_seed() -> u64 {
 
 fn aleator_fractum_frames() -> Vec<(FrameStatus, Valor)> {
     let bits = aleator_rng().next_u64() >> 11;
+    // SAFETY: deliberate f64 fraction from u64 random bits.
+    #[allow(clippy::cast_precision_loss)]
     let frac = (bits as f64) / ((1_u64 << 53) as f64);
     item_done_frames(Valor::Fractus(frac))
 }
@@ -1421,12 +1428,22 @@ fn aleator_sortire_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
         _ => return error_frames("aleator:sortire opener must be [numerus, numerus]"),
     };
     let (lo, hi) = if min <= max { (min, max) } else { (max, min) };
-    let span = (hi as i128 - lo as i128 + 1) as u128;
+    // SAFETY: all intermediate casts are range-guarded — hi >= lo,
+    // span fits in u128, and the modular offset stays within [lo, hi].
+    #[allow(
+        clippy::cast_sign_loss,
+        clippy::cast_possible_wrap,
+        clippy::cast_possible_truncation
+    )]
+    let span: u128 = (i128::from(hi) - i128::from(lo) + 1) as u128;
     if span == 0 {
         return error_frames("aleator:sortire empty range");
     }
+    #[allow(clippy::cast_possible_wrap)]
     let offset = (u128::from(aleator_rng().next_u64()) % span) as i128;
-    item_done_frames(Valor::Numerus((lo as i128 + offset) as i64))
+    #[allow(clippy::cast_possible_truncation)]
+    let result: i64 = (i128::from(lo) + offset) as i64;
+    item_done_frames(Valor::Numerus(result))
 }
 
 fn aleator_octetos_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
@@ -1484,11 +1501,10 @@ fn aleator_semina_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(n) = valor_numerus(&data) else {
         return error_frames("aleator:semina opener must be numerus");
     };
-    aleator_rng().state = if n > 0 {
-        n as u64
-    } else {
-        aleator_default_seed()
-    };
+    // SAFETY: guarded by n > 0 check.
+    #[allow(clippy::cast_sign_loss)]
+    let state = n as u64;
+    aleator_rng().state = if n > 0 { state } else { aleator_default_seed() };
     done_frames()
 }
 
@@ -1550,6 +1566,8 @@ fn valor_path_bytes(data: Valor) -> Result<(String, Vec<u8>), String> {
                 if !(0..=255).contains(byte) {
                     return Err("byte out of range".to_owned());
                 }
+                // SAFETY: guarded by range check above.
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
                 out.push(*byte as u8);
             }
             out
@@ -1604,7 +1622,7 @@ fn processus_captura_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
             let mut fields = BTreeMap::new();
             fields.insert(
                 "status".to_owned(),
-                Valor::Numerus(output.status.code().unwrap_or(-1) as i64),
+                Valor::Numerus(i64::from(output.status.code().unwrap_or(-1))),
             );
             fields.insert(
                 "stdout".to_owned(),
@@ -1698,6 +1716,8 @@ fn processus_exi_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(code) = valor_numerus(&data) else {
         return error_frames("processus:exi opener must be numerus");
     };
+    // SAFETY: clamped to 0..=255, safe for i32.
+    #[allow(clippy::cast_possible_truncation)]
     let code = code.clamp(0, i64::from(u8::MAX)) as i32;
     std::process::exit(code);
 }
@@ -1751,6 +1771,8 @@ fn consolum_write_stdout_bytes_frames(data: Valor) -> Vec<(FrameStatus, Valor)> 
                 if !(0..=255).contains(byte) {
                     return error_frames("consolum:funde byte out of range");
                 }
+                // SAFETY: guarded by range check above.
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
                 out.push(*byte as u8);
             }
             out
@@ -1786,6 +1808,8 @@ fn consolum_read_stdin_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     let Some(magnitude) = valor_numerus(&data) else {
         return error_frames("consolum:hauri opener must be numerus");
     };
+    // SAFETY: magnitude is clamped to >= 0.
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     let magnitude = magnitude.max(0) as usize;
     let mut buffer = vec![0_u8; magnitude];
     match std::io::stdin().lock().read(&mut buffer) {
@@ -1996,17 +2020,23 @@ where
 }
 
 fn epoch_nanos() -> i64 {
-    SystemTime::now()
+    // SAFETY: clamped to i64::MAX before narrowing cast.
+    #[allow(clippy::cast_possible_truncation)]
+    let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| {
             duration.as_nanos().min(i64::MAX as u128) as i64
-        })
+        });
+    nanos
 }
 
 fn elapsed_nanos() -> i64 {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
     let start = START.get_or_init(std::time::Instant::now);
-    start.elapsed().as_nanos().min(i64::MAX as u128) as i64
+    // SAFETY: clamped to i64::MAX before narrowing cast.
+    #[allow(clippy::cast_possible_truncation)]
+    let nanos = start.elapsed().as_nanos().min(i64::MAX as u128) as i64;
+    nanos
 }
 
 #[must_use]

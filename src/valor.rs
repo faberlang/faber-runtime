@@ -78,6 +78,8 @@ impl FromValor for f64 {
     fn from_valor(v: &Valor) -> Option<Self> {
         match v {
             Valor::Fractus(f) => Some(*f),
+            // SAFETY: intentional f64 conversion from integer; precision loss acceptable.
+            #[allow(clippy::cast_precision_loss)]
             Valor::Numerus(n) => Some(*n as f64),
             _ => None,
         }

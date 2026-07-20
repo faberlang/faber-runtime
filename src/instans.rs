@@ -240,14 +240,24 @@ fn format_rfc3339_utc(nanos: i64, praecisio: InstansPraecisio) -> String {
     let day_index = truncated.div_euclid(NANOS_PER_DAY);
     let nanos_of_day = truncated.rem_euclid(NANOS_PER_DAY);
     let (year, month, day) = civil_from_days(day_index);
+    // SAFETY: secs_of_day ∈ [0, 86399] and nanos_remainder ∈ [0, 999_999_999],
+    // safe for u32. Constants SECONDS_PER_HOUR/MINUTE are positive small values.
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     let secs_of_day = (nanos_of_day / NANOS_PER_SECOND) as u32;
+    #[allow(clippy::cast_sign_loss)]
     let nanos_remainder = (nanos_of_day % NANOS_PER_SECOND) as u32;
-    let hour = secs_of_day / SECONDS_PER_HOUR as u32;
-    let minute = (secs_of_day % SECONDS_PER_HOUR as u32) / SECONDS_PER_MINUTE as u32;
-    let second = secs_of_day % SECONDS_PER_MINUTE as u32;
+    // SAFETY: SECONDS_PER_HOUR/MINUTE are small positive constants (3600/60).
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let hour = secs_of_day / (SECONDS_PER_HOUR as u32);
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let minute = (secs_of_day % (SECONDS_PER_HOUR as u32)) / (SECONDS_PER_MINUTE as u32);
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let second = secs_of_day % (SECONDS_PER_MINUTE as u32);
 
     let mut out = format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}");
     let digits = praecisio.fraction_digits();
+    // SAFETY: fraction_digits returns a small value (≤9), safe for u32.
+    #[allow(clippy::cast_possible_truncation)]
     if digits > 0 {
         let fraction = nanos_remainder / 10u32.pow(9 - digits as u32);
         out.push('.');
@@ -325,6 +335,8 @@ fn parse_numeric_offset(zone: &str) -> Option<i32> {
     } else {
         return None;
     };
+    // SAFETY: minutes are validated to 0..=1439, safe for i32.
+    #[allow(clippy::cast_possible_wrap)]
     Some(sign * minutes as i32)
 }
 
@@ -379,7 +391,10 @@ fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
     y -= if month <= 2 { 1 } else { 0 };
     let era = (if y >= 0 { y } else { y - 399 }) / 400;
     let yoe = y - era * 400;
+    // SAFETY: month/day values are 1..=12 and validated, safe for i32.
+    #[allow(clippy::cast_possible_wrap)]
     let month_i = month as i32;
+    #[allow(clippy::cast_possible_wrap)]
     let day_i = day as i32;
     let doy = (153 * (if month > 2 { month_i - 3 } else { month_i + 9 }) + 2) / 5 + day_i - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
@@ -387,6 +402,11 @@ fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
 }
 
 /// Civil date from days since 1970-01-01 (Howard Hinnant).
+#[allow(
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap
+)]
 fn civil_from_days(z: i64) -> (i32, u32, u32) {
     let z = z + 719_468;
     let era = (if z >= 0 { z } else { z - 146096 }) / 146097;

@@ -130,6 +130,9 @@ fn longitudo_matches_ad_lista_cardinality() {
             finis,
             kind,
         };
-        assert_eq!(range.longitudo(), range.ad_lista().len() as i64);
+        // SAFETY: test data is small.
+        #[allow(clippy::cast_possible_wrap)]
+        let len = range.ad_lista().len() as i64;
+        assert_eq!(range.longitudo(), len);
     }
 }
