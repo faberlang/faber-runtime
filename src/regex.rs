@@ -7,12 +7,14 @@ pub struct Regex {
 }
 
 impl Regex {
+    #[must_use]
     pub fn new(pattern: &str) -> Self {
         Self {
             pattern: pattern.to_owned(),
         }
     }
 
+    #[must_use]
     pub fn pattern(&self) -> &str {
         &self.pattern
     }

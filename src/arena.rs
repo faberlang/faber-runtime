@@ -20,6 +20,7 @@ pub struct ArenaHandle {
 }
 
 impl ArenaHandle {
+    #[must_use]
     pub fn new(index: u32, generation: u32) -> Self {
         Self { index, generation }
     }
@@ -58,6 +59,7 @@ impl<T> Default for Arena<T> {
 }
 
 impl<T> Arena<T> {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             slots: Vec::new(),
@@ -66,10 +68,12 @@ impl<T> Arena<T> {
         }
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.live_count
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.live_count == 0
     }
@@ -101,6 +105,7 @@ impl<T> Arena<T> {
     }
 
     /// Lookup by handle. Stale or out-of-range handles return `None`.
+    #[must_use]
     pub fn get(&self, handle: ArenaHandle) -> Option<&T> {
         let slot = self.slots.get(handle.index as usize)?;
         match slot {
@@ -143,6 +148,7 @@ impl<T> Arena<T> {
     }
 
     /// True when `get(handle)` would succeed.
+    #[must_use]
     pub fn contains(&self, handle: ArenaHandle) -> bool {
         self.get(handle).is_some()
     }

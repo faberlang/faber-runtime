@@ -38,6 +38,7 @@ impl InstansPraecisio {
     }
 
     /// Nanosecond modulus for this precision (finer bits are zeroed).
+    #[must_use]
     pub fn modulus_nanos(self) -> i64 {
         match self {
             Self::Secunda => NANOS_PER_SECOND,
@@ -51,6 +52,7 @@ impl InstansPraecisio {
     ///
     /// WHY: Euclidean bucket arithmetic — pre-epoch values must truncate toward
     /// earlier buckets, not toward zero (which would snap `-1ms` to epoch).
+    #[must_use]
     pub fn truncate_nanos(self, nanos: i64) -> i64 {
         let modulus = self.modulus_nanos();
         nanos.div_euclid(modulus) * modulus
@@ -78,6 +80,7 @@ pub struct Instans {
 }
 
 impl Instans {
+    #[must_use]
     pub fn from_nanos(nanos: i64, praecisio: InstansPraecisio) -> Self {
         Self {
             nanos: praecisio.truncate_nanos(nanos),
@@ -85,14 +88,17 @@ impl Instans {
         }
     }
 
+    #[must_use]
     pub fn from_epoch_seconds(seconds: i64, praecisio: InstansPraecisio) -> Self {
         Self::from_nanos(seconds.saturating_mul(NANOS_PER_SECOND), praecisio)
     }
 
+    #[must_use]
     pub fn from_epoch_millis(millis: i64, praecisio: InstansPraecisio) -> Self {
         Self::from_nanos(millis.saturating_mul(NANOS_PER_MILLI), praecisio)
     }
 
+    #[must_use]
     pub fn from_epoch_micros(micros: i64, praecisio: InstansPraecisio) -> Self {
         Self::from_nanos(micros.saturating_mul(NANOS_PER_MICRO), praecisio)
     }
@@ -103,6 +109,7 @@ impl Instans {
     /// can carry the same RFC3339 wire after generic text/JSON transport.
     /// `Valor::Numerus` is interpreted as epoch units matching the requested
     /// precision. Other variants fail — use `vel` at the `↦` site for recovery.
+    #[must_use]
     pub fn try_from_valor(valor: &Valor, praecisio: InstansPraecisio) -> Option<Self> {
         match valor {
             Valor::Instans(text) | Valor::Textus(text) => {
@@ -123,20 +130,24 @@ impl Instans {
         }
     }
 
+    #[must_use]
     pub fn nanos(&self) -> i64 {
         self.nanos
     }
 
+    #[must_use]
     pub fn praecisio(&self) -> InstansPraecisio {
         self.praecisio
     }
 
     /// Re-tag at a new precision, applying truncation when narrowing.
+    #[must_use]
     pub fn ad_praecisionem(self, praecisio: InstansPraecisio) -> Self {
         Self::from_nanos(self.nanos, praecisio)
     }
 
     /// Compare two instants at the coarser of their declared precisions.
+    #[must_use]
     pub fn partial_cmp_at_coarser(self, other: Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp_at_coarser(other))
     }
@@ -149,6 +160,7 @@ impl Instans {
     }
 
     /// Emit RFC3339 UTC (`Z`) at the value's declared precision.
+    #[must_use]
     pub fn to_rfc3339(self) -> String {
         format_rfc3339_utc(self.nanos, self.praecisio)
     }
@@ -207,10 +219,10 @@ fn civil_datetime_nanos(
     fraction_nanos: i64,
 ) -> Option<i64> {
     let day_nanos = days_from_civil(year, month, day).checked_mul(NANOS_PER_DAY)?;
-    let seconds_of_day = (hour as i64)
+    let seconds_of_day = i64::from(hour)
         .checked_mul(SECONDS_PER_HOUR)?
-        .checked_add((minute as i64).checked_mul(SECONDS_PER_MINUTE)?)?
-        .checked_add(second as i64)?;
+        .checked_add(i64::from(minute).checked_mul(SECONDS_PER_MINUTE)?)?
+        .checked_add(i64::from(second))?;
     let time_nanos = seconds_of_day
         .checked_mul(NANOS_PER_SECOND)?
         .checked_add(fraction_nanos)?;
@@ -218,7 +230,7 @@ fn civil_datetime_nanos(
 }
 
 fn offset_minutes_to_nanos(offset_minutes: i32) -> Option<i64> {
-    (offset_minutes as i64)
+    i64::from(offset_minutes)
         .checked_mul(60)?
         .checked_mul(NANOS_PER_SECOND)
 }
@@ -277,7 +289,7 @@ fn parse_time_and_offset(rest: &str) -> Option<(u32, u32, u32, i64, i32)> {
             return None;
         }
         let digits = &rest[start..cursor];
-        let padded = format!("{:0<9}", digits);
+        let padded = format!("{digits:0<9}");
         padded.get(0..9)?.parse().ok()?
     } else {
         0
@@ -371,7 +383,7 @@ fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
     let day_i = day as i32;
     let doy = (153 * (if month > 2 { month_i - 3 } else { month_i + 9 }) + 2) / 5 + day_i - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era as i64 * 146_097 + doe as i64 - 719_468
+    i64::from(era) * 146_097 + i64::from(doe) - 719_468
 }
 
 /// Civil date from days since 1970-01-01 (Howard Hinnant).

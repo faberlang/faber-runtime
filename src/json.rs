@@ -40,10 +40,12 @@ impl Json {
         Self::try_from(Valor::Tabula(fields))
     }
 
+    #[must_use]
     pub fn as_valor(&self) -> &Valor {
         &self.0
     }
 
+    #[must_use]
     pub fn as_object(&self) -> &BTreeMap<String, Valor> {
         let Valor::Tabula(fields) = &self.0 else {
             unreachable!("Json is validated with an object root");
@@ -51,10 +53,12 @@ impl Json {
         fields
     }
 
+    #[must_use]
     pub fn into_valor(self) -> Valor {
         self.0
     }
 
+    #[must_use]
     pub fn to_wire(&self) -> String {
         render_valor(&self.0)
     }
@@ -92,10 +96,12 @@ impl JsonError {
         }
     }
 
+    #[must_use]
     pub fn path(&self) -> &str {
         &self.path
     }
 
+    #[must_use]
     pub fn kind(&self) -> &JsonErrorKind {
         &self.kind
     }
@@ -327,7 +333,7 @@ impl<'a> Parser<'a> {
     fn parse_unicode_escape(&mut self, path: &str) -> Result<char, JsonError> {
         let high = self.parse_hex_quad(path)?;
         if !(0xd800..=0xdbff).contains(&high) {
-            return char::from_u32(high as u32)
+            return char::from_u32(u32::from(high))
                 .ok_or_else(|| self.syntax(path, "invalid unicode scalar"));
         }
 
@@ -341,7 +347,7 @@ impl<'a> Parser<'a> {
         if !(0xdc00..=0xdfff).contains(&low) {
             return Err(self.syntax(path, "high surrogate without low surrogate"));
         }
-        let scalar = 0x10000 + (((high - 0xd800) as u32) << 10) + ((low - 0xdc00) as u32);
+        let scalar = 0x10000 + (u32::from(high - 0xd800) << 10) + u32::from(low - 0xdc00);
         char::from_u32(scalar).ok_or_else(|| self.syntax(path, "invalid unicode scalar"))
     }
 

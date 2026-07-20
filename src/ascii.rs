@@ -5,11 +5,13 @@
 pub struct Ascii(String);
 
 impl Ascii {
+    #[must_use]
     pub fn new(value: &str) -> Self {
         debug_assert!(value.is_ascii());
         Self(value.to_owned())
     }
 
+    #[must_use]
     pub fn try_from_textus(text: &str) -> Option<Self> {
         if text.is_ascii() {
             Some(Self(text.to_owned()))
@@ -22,6 +24,7 @@ impl Ascii {
     /// on any byte ≥ 128, independent of UTF-8 validity. Going through `textus`
     /// first would conflate ASCII validity with UTF-8 validity. This validates
     /// ASCII directly and constructs the carrier.
+    #[must_use]
     pub fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
         if bytes.is_ascii() {
             // SAFETY: ASCII is a strict subset of UTF-8, so any ASCII byte
@@ -33,6 +36,7 @@ impl Ascii {
         }
     }
 
+    #[must_use]
     pub fn to_textus(&self) -> String {
         self.0.clone()
     }

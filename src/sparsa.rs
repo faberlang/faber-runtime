@@ -71,6 +71,7 @@ impl<T: Clone + Default + PartialEq> Sparsa<T> {
     }
 
     /// Build sparse storage from a dense tensor, dropping exact default values.
+    #[must_use]
     pub fn from_tensor(dense: &Tensor<T>) -> Self {
         let shape = dense.magnitudines();
         let entries = entries_from_dense_values(&shape, dense.planata());
@@ -78,11 +79,13 @@ impl<T: Clone + Default + PartialEq> Sparsa<T> {
     }
 
     /// Rank (number of dimensions).
+    #[must_use]
     pub fn longitudo(&self) -> i64 {
         self.shape.len() as i64
     }
 
     /// Shape dimensions.
+    #[must_use]
     pub fn magnitudines(&self) -> Vec<i64> {
         self.shape.clone()
     }
@@ -90,6 +93,7 @@ impl<T: Clone + Default + PartialEq> Sparsa<T> {
     /// Total logical element count (`prod(dims)`).
     ///
     /// Returns `None` on overflow.
+    #[must_use]
     pub fn element_count(&self) -> Option<usize> {
         tensor_shape_element_count(&self.shape)
     }

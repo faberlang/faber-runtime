@@ -27,6 +27,7 @@ pub fn display_fractus<T: FractusDisplay>(value: T) -> String {
     }
 }
 
+#[must_use]
 pub fn display_bivalens(value: bool) -> &'static str {
     if value {
         "verum"
@@ -35,6 +36,7 @@ pub fn display_bivalens(value: bool) -> &'static str {
     }
 }
 
+#[must_use]
 pub fn display_text_payload(value: &str) -> &str {
     value
 }
@@ -67,21 +69,17 @@ pub fn display_valor(value: &Valor) -> String {
 }
 
 pub fn display_option<T: Display>(value: Option<&T>) -> String {
-    value
-        .map(ToString::to_string)
-        .unwrap_or_else(|| "nihil".to_owned())
+    value.map_or_else(|| "nihil".to_owned(), ToString::to_string)
 }
 
 pub fn display_option_bivalens(value: Option<bool>) -> &'static str {
-    value.map(display_bivalens).unwrap_or("nihil")
+    value.map_or("nihil", display_bivalens)
 }
 
 pub fn display_option_fractus<T: FractusDisplay>(value: Option<T>) -> String {
-    value
-        .map(display_fractus)
-        .unwrap_or_else(|| "nihil".to_owned())
+    value.map_or_else(|| "nihil".to_owned(), display_fractus)
 }
 
 pub fn display_option_vacuum<T>(value: Option<T>) -> &'static str {
-    value.map(|_| "vacuum").unwrap_or("nihil")
+    value.map_or("nihil", |_| "vacuum")
 }

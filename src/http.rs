@@ -12,6 +12,7 @@ pub struct Replicatio {
 }
 
 impl Replicatio {
+    #[must_use]
     pub fn new(status: i64, corpus_octeti: Vec<u8>, capita: HashMap<String, String>) -> Self {
         let corpus = String::from_utf8_lossy(&corpus_octeti).into_owned();
         Self {
@@ -22,32 +23,36 @@ impl Replicatio {
         }
     }
 
+    #[must_use]
     pub fn status(&self) -> i64 {
         self.status
     }
 
+    #[must_use]
     pub fn corpus(&self) -> String {
         self.corpus.clone()
     }
 
+    #[must_use]
     pub fn corpus_octeti(&self) -> Vec<u8> {
         self.corpus_octeti.clone()
     }
 
     pub fn corpus_json(&self) -> Valor {
-        crate::Json::parse(&self.corpus)
-            .map(Valor::from)
-            .unwrap_or(Valor::Nihil)
+        crate::Json::parse(&self.corpus).map_or(Valor::Nihil, Valor::from)
     }
 
+    #[must_use]
     pub fn capita(&self) -> HashMap<String, String> {
         self.capita.clone()
     }
 
+    #[must_use]
     pub fn caput(&self, nomen: String) -> Option<String> {
         self.capita.get(&nomen.to_ascii_lowercase()).cloned()
     }
 
+    #[must_use]
     pub fn bene(&self) -> bool {
         (200..=299).contains(&self.status)
     }

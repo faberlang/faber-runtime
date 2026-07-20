@@ -141,6 +141,7 @@ fn intersection_kind_at_point<T: PartialOrd + Copy>(
 
 impl Intervallum<i64> {
     /// Clamp `value` into this interval (refinement-target conversio: result is `numerus`).
+    #[must_use]
     pub fn coercere(&self, value: i64) -> i64 {
         if self.continet(&value) {
             return value;
@@ -155,6 +156,7 @@ impl Intervallum<i64> {
     }
 
     /// Range-to-range clamp: each bound coerced into `target`; result inherits `target.kind`.
+    #[must_use]
     pub fn coercere_intervallum(&self, target: &Self) -> Self {
         Self {
             initium: target.coercere(self.initium),
@@ -164,6 +166,7 @@ impl Intervallum<i64> {
     }
 
     /// Materialize interval values into an eager list (honors declared inclusivity).
+    #[must_use]
     pub fn ad_lista(&self) -> Vec<i64> {
         let step = if self.initium <= self.finis { 1 } else { -1 };
         let mut out = Vec::new();
@@ -195,6 +198,7 @@ impl Intervallum<i64> {
     }
 
     /// Discrete span count for `numerus` intervals (same cardinality as `ad_lista()`).
+    #[must_use]
     pub fn longitudo(&self) -> i64 {
         let span = if self.initium <= self.finis {
             self.finis.saturating_sub(self.initium)
@@ -208,6 +212,7 @@ impl Intervallum<i64> {
     }
 
     /// Materialize interval values into a 1-d tensor (honors declared inclusivity).
+    #[must_use]
     pub fn ad_tensor(&self) -> Tensor<i64> {
         Tensor::linea(self.ad_lista())
     }

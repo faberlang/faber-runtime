@@ -40,10 +40,12 @@ pub const ERR_DIVIDE_NON_FINITE_INPUT: &str = "tensor division input must be fin
 pub const ERR_DIVIDE_ZERO_DENOMINATOR: &str = "tensor division denominator must be non-zero";
 pub const ERR_DIVIDE_NON_FINITE_RESULT: &str = "tensor division result must be finite";
 
+#[must_use]
 pub fn tensor_dim_non_negative(value: i64) -> bool {
     value >= 0
 }
 
+#[must_use]
 pub fn tensor_shape_element_count(shape: &[i64]) -> Option<usize> {
     shape.iter().try_fold(1_usize, |acc, dim| {
         let dim = usize::try_from(*dim).ok()?;
@@ -51,10 +53,12 @@ pub fn tensor_shape_element_count(shape: &[i64]) -> Option<usize> {
     })
 }
 
+#[must_use]
 pub fn tensor_shape_has_element_count(shape: &[i64], actual: usize) -> bool {
     tensor_shape_element_count(shape) == Some(actual)
 }
 
+#[must_use]
 pub fn tensor_flat_offset(shape: &[i64], index: &[i64]) -> Option<usize> {
     if shape.len() != index.len() {
         return None;
@@ -124,18 +128,22 @@ impl<T: Clone + Default> Tensor<T> {
     }
 
     /// Rank-0 tensor: one default-initialized element slot.
+    #[must_use]
     pub fn vacua() -> Self {
         Self::from_contiguous(vec![T::default()], Vec::new())
     }
 
+    #[must_use]
     pub fn longitudo(&self) -> i64 {
         self.shape.len() as i64
     }
 
+    #[must_use]
     pub fn magnitudines(&self) -> Vec<i64> {
         self.shape.iter().map(|&d| d as i64).collect()
     }
 
+    #[must_use]
     pub fn element_count(&self) -> usize {
         element_count_usize(&self.shape)
     }
@@ -153,6 +161,7 @@ impl<T: Clone + Default> Tensor<T> {
         Ok(Self::from_contiguous(data, dims))
     }
 
+    #[must_use]
     pub fn planata(&self) -> Vec<T> {
         let data = tensor_data(&self.data);
         self.logical_offsets()
@@ -224,6 +233,7 @@ impl<T: Clone + Default> Tensor<T> {
         })
     }
 
+    #[must_use]
     pub fn materialize(&self) -> Self {
         Self::from_contiguous(self.planata(), self.shape.clone())
     }
@@ -455,6 +465,7 @@ where
 
     /// Sum of all elements. Integer overflow is the author's responsibility
     /// (per the tensor arithmetic goal non-goals); widen with `↦` first if needed.
+    #[must_use]
     pub fn summa(&self) -> T {
         self.planata()
             .into_iter()
@@ -484,6 +495,7 @@ where
 
 impl Tensor<f32> {
     /// Elementwise negation preserving tensor shape.
+    #[must_use]
     pub fn neg(&self) -> Tensor<f32> {
         Tensor::from_contiguous(
             self.planata().into_iter().map(|value| -value).collect(),
@@ -492,6 +504,7 @@ impl Tensor<f32> {
     }
 
     /// Elementwise scalar multiplication preserving tensor shape.
+    #[must_use]
     pub fn scala(&self, factor: f32) -> Tensor<f32> {
         Tensor::from_contiguous(
             self.planata()

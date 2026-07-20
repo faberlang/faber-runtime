@@ -231,6 +231,7 @@ pub const DIAGNOSTIC_SYMBOLS_V1: &[(&str, &str, &str)] = &[
     ("vide", "i64", "__faber_rt_v1_diagnostic_vide_i64"),
 ];
 
+#[must_use]
 pub fn diagnostic_symbol_v1(kind: &str, carrier: &str) -> Option<&'static str> {
     DIAGNOSTIC_SYMBOLS_V1
         .iter()
@@ -248,6 +249,7 @@ pub struct FaberRtSliceV1 {
 }
 
 impl FaberRtSliceV1 {
+    #[must_use]
     pub const fn from_static(bytes: &'static [u8]) -> Self {
         Self {
             data: bytes.as_ptr(),
@@ -263,6 +265,7 @@ pub struct FaberRtStatusV1 {
 }
 
 impl FaberRtStatusV1 {
+    #[must_use]
     pub const fn is_ok(self) -> bool {
         self.code == STATUS_OK.code
     }
@@ -276,6 +279,7 @@ pub struct FaberRtPtrResultV1 {
 }
 
 impl FaberRtPtrResultV1 {
+    #[must_use]
     pub const fn failure(status: FaberRtStatusV1) -> Self {
         Self {
             status,

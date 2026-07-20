@@ -65,6 +65,7 @@ impl PackedU4Layout {
     pub const BIT_ORDER: PackedBitOrder = PackedBitOrder::LowNibbleFirst;
     pub const WIDENED_TYPE: PackedWidenedType = PackedWidenedType::F32;
 
+    #[must_use]
     pub const fn toy_u4() -> Self {
         Self {
             element_width_bits: Self::ELEMENT_WIDTH_BITS,
@@ -105,18 +106,22 @@ impl PackedU4Block {
         })
     }
 
+    #[must_use]
     pub const fn layout(&self) -> PackedU4Layout {
         PackedU4Layout::toy_u4()
     }
 
+    #[must_use]
     pub fn packed_bytes(&self) -> &[u8] {
         &self.bytes
     }
 
+    #[must_use]
     pub fn scale(&self) -> f32 {
         self.scale
     }
 
+    #[must_use]
     pub fn zero_point(&self) -> u8 {
         self.zero_point
     }
@@ -128,6 +133,7 @@ impl PackedU4Block {
         Ok(self.extract_in_bounds(index))
     }
 
+    #[must_use]
     pub fn dequantize(&self) -> Vec<f32> {
         (0..PackedU4Layout::BLOCK_VALUES)
             .map(|index| {
@@ -155,6 +161,7 @@ impl PackedU4Block {
     }
 }
 
+#[must_use]
 pub fn packed_u4_tensor_integration_rows() -> &'static [PackedTensorIntegrationRow] {
     PACKED_U4_TENSOR_INTEGRATION_ROWS
 }

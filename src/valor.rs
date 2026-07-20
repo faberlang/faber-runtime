@@ -20,6 +20,7 @@ pub enum Valor {
 }
 
 impl Valor {
+    #[must_use]
     pub fn is_nihil(&self) -> bool {
         matches!(self, Valor::Nihil)
     }

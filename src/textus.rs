@@ -7,6 +7,7 @@ const SCALAR_INVARIANT_MULTI: &str = "scalar textus invariant: multi-scalar";
 ///
 /// WHY: chorda interval predicates compare scalar bounds, not lexicographic cords.
 /// Typecheck must prove one scalar before this runs.
+#[must_use]
 pub fn unicode_scalar_value(s: &str) -> u32 {
     let mut chars = s.chars();
     let scalar = chars.next().expect(SCALAR_INVARIANT_EMPTY);
