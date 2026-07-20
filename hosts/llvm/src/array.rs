@@ -433,6 +433,7 @@ pub(super) unsafe fn read_value(
     })
 }
 
+#[allow(clippy::similar_names)]
 pub(super) unsafe fn write_value(value: RuntimeValue, output: *mut c_void) -> bool {
     match value {
         RuntimeValue::I1(value) => unsafe { write_typed(output, value) },
@@ -451,6 +452,7 @@ pub(super) unsafe fn write_value(value: RuntimeValue, output: *mut c_void) -> bo
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 unsafe fn read_typed<T: Copy>(value: *const c_void) -> Option<T> {
     let value = value.cast::<T>();
     (!value.is_null() && value.is_aligned()).then(|| unsafe { value.read() })

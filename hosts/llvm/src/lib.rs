@@ -218,6 +218,7 @@ struct RuntimeContext {
 /// `out_context` must be writable. When `argc` is positive, `argv` must point
 /// to `argc` valid C strings. A successful context must be shut down exactly
 /// once with [`__faber_rt_v1_shutdown`].
+#[allow(clippy::similar_names)]
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_init(
     argc: c_int,
@@ -712,6 +713,7 @@ extern "C" {
 
 #[cfg(not(test))]
 #[no_mangle]
+#[allow(clippy::similar_names)]
 /// C process entry owned by the LLVM host runtime.
 ///
 /// # Safety
@@ -719,7 +721,7 @@ extern "C" {
 /// The platform launcher must provide the normal C `argc`/`argv` contract.
 pub unsafe extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
     let mut context = ptr::null_mut();
-    let init = __faber_rt_v1_init(argc, argv, &mut context);
+    let init = __faber_rt_v1_init(argc, argv, &raw mut context);
     if !init.is_ok() {
         return init.code;
     }

@@ -5,7 +5,11 @@ use super::convert::store_valor;
 use super::format::text_value;
 use super::valor_aggregate::{runtime_value_to_valor, valor_to_runtime_value};
 use super::RuntimeContext;
-use faber::host_abi::*;
+use faber::host_abi::{
+    FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, FaberRtValueKindV1,
+    STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_ASCII, VALUE_KIND_INSTANS,
+    VALUE_KIND_OPTION_I64,
+};
 use faber::{FromValor, Instans, Valor};
 use std::collections::BTreeMap;
 use std::ffi::{c_void, CStr};
@@ -195,15 +199,16 @@ fn genus_valor_to_value(
             runtime.ascii.push(bytes);
             Some(RuntimeValue::Ptr(handle))
         }
-        VALUE_KIND_OPTION_I64 => match valor {
-            Valor::Nihil => Some(RuntimeValue::Ptr(std::ptr::null_mut())),
-            _ => {
+        VALUE_KIND_OPTION_I64 => {
+            if valor == &Valor::Nihil {
+                Some(RuntimeValue::Ptr(std::ptr::null_mut()))
+            } else {
                 let value = super::StableBox::new(i64::from_valor(valor)?);
                 let handle = value.handle();
                 runtime.numeric_boxes.push(value);
                 Some(RuntimeValue::Ptr(handle))
             }
-        },
+        }
         VALUE_KIND_INSTANS => {
             let value = super::StableBox::new(Instans::from_valor(valor)?);
             let handle = value.handle();

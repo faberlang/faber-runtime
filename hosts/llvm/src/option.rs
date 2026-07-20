@@ -110,14 +110,13 @@ pub unsafe extern "C" fn __faber_rt_v1_option_get_or(
         if option.kind != kind {
             return STATUS_INVALID_ARGUMENT;
         }
-        let value = match option.value {
-            Some(value) => value,
-            None => {
-                let Some(value) = (unsafe { read_value(kind, fallback) }) else {
-                    return STATUS_INVALID_ARGUMENT;
-                };
-                value
-            }
+        let value = if let Some(value) = option.value {
+            value
+        } else {
+            let Some(value) = (unsafe { read_value(kind, fallback) }) else {
+                return STATUS_INVALID_ARGUMENT;
+            };
+            value
         };
         if !(unsafe { write_value(value, output) }) {
             return STATUS_INVALID_ARGUMENT;

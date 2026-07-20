@@ -4,7 +4,7 @@ use std::ffi::{c_void, CStr};
 #[test]
 fn init_write_and_shutdown_round_trip() {
     let mut context = ptr::null_mut();
-    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) };
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
     assert_eq!(status, STATUS_OK);
     assert!(!context.is_null());
     let status =
@@ -30,7 +30,7 @@ fn invalid_slice_fails_closed() {
 #[test]
 fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
     let mut context = ptr::null_mut();
-    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) };
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
     assert_eq!(status, STATUS_OK);
 
     assert_eq!(
@@ -63,7 +63,7 @@ fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
     );
     let text = FaberRtSliceV1::from_static(b"nota text");
     assert_eq!(
-        unsafe { __faber_rt_v1_diagnostic_nota_text(context, &text) },
+        unsafe { __faber_rt_v1_diagnostic_nota_text(context, &raw const text) },
         STATUS_OK
     );
     assert_eq!(
@@ -83,7 +83,7 @@ fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
         STATUS_UNSUPPORTED
     );
     assert_eq!(
-        unsafe { __faber_rt_v1_diagnostic_mone_text(context, &text) },
+        unsafe { __faber_rt_v1_diagnostic_mone_text(context, &raw const text) },
         STATUS_OK
     );
     assert_eq!(
@@ -99,7 +99,7 @@ fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
         STATUS_UNSUPPORTED
     );
     assert_eq!(
-        unsafe { __faber_rt_v1_diagnostic_vide_text(context, &text) },
+        unsafe { __faber_rt_v1_diagnostic_vide_text(context, &raw const text) },
         STATUS_OK
     );
     assert_eq!(
@@ -116,7 +116,7 @@ fn diagnostic_family_reports_scalar_and_opaque_dispositions() {
 #[test]
 fn assertion_family_returns_handled_statuses() {
     let mut context = ptr::null_mut();
-    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) };
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
     assert_eq!(status, STATUS_OK);
 
     assert_eq!(unsafe { __faber_rt_v1_assert(context, 1) }, STATUS_OK);
@@ -142,7 +142,7 @@ fn assertion_family_returns_handled_statuses() {
 #[test]
 fn scalar_format_family_renders_and_owns_text() {
     let mut context = ptr::null_mut();
-    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) };
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
     assert_eq!(status, STATUS_OK);
 
     let one = unsafe {
@@ -207,7 +207,7 @@ fn scalar_format_family_renders_and_owns_text() {
     };
     let mut length = -1;
     let length_status =
-        unsafe { __faber_rt_v1_text_length(context, paired.value.cast(), &mut length) };
+        unsafe { __faber_rt_v1_text_length(context, paired.value.cast(), &raw mut length) };
 
     assert_eq!(one.status, STATUS_OK);
     assert_eq!(reordered.status, STATUS_OK);
@@ -224,37 +224,37 @@ fn scalar_format_family_renders_and_owns_text() {
         invalid,
         FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT)
     );
-    assert_eq!(unsafe { &*one.value.cast::<RuntimeText>() }._value, "n=42");
+    assert_eq!(unsafe { &*one.value.cast::<RuntimeText>() }.value, "n=42");
     assert_eq!(
-        unsafe { &*boolean.value.cast::<RuntimeText>() }._value,
+        unsafe { &*boolean.value.cast::<RuntimeText>() }.value,
         "b=verum"
     );
     assert_eq!(
-        unsafe { &*reordered.value.cast::<RuntimeText>() }._value,
+        unsafe { &*reordered.value.cast::<RuntimeText>() }.value,
         "7/3/§9"
     );
     assert_eq!(
-        unsafe { &*float.value.cast::<RuntimeText>() }._value,
+        unsafe { &*float.value.cast::<RuntimeText>() }.value,
         "x=1.5"
     );
     assert_eq!(
-        unsafe { &*paired.value.cast::<RuntimeText>() }._value,
+        unsafe { &*paired.value.cast::<RuntimeText>() }.value,
         "n=42 + x=1.5"
     );
     assert_eq!(
-        unsafe { &*single.value.cast::<RuntimeText>() }._value,
+        unsafe { &*single.value.cast::<RuntimeText>() }.value,
         "[n=42]"
     );
     assert_eq!(
-        unsafe { &*mixed.value.cast::<RuntimeText>() }._value,
+        unsafe { &*mixed.value.cast::<RuntimeText>() }.value,
         "n=42:9"
     );
     assert_eq!(
-        unsafe { &*mixed_bool.value.cast::<RuntimeText>() }._value,
+        unsafe { &*mixed_bool.value.cast::<RuntimeText>() }.value,
         "n=42:9:verum"
     );
     assert_eq!(
-        unsafe { &*three.value.cast::<RuntimeText>() }._value,
+        unsafe { &*three.value.cast::<RuntimeText>() }.value,
         "1/2/3"
     );
 
@@ -265,7 +265,7 @@ fn scalar_format_family_renders_and_owns_text() {
 fn text_query_and_transformation_family_preserves_unicode_semantics() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let text = FaberRtSliceV1::from_static("  Rōma/AVĒ  ".as_bytes());
@@ -276,50 +276,73 @@ fn text_query_and_transformation_family_preserves_unicode_semantics() {
     let mut answer = 0;
 
     assert_eq!(
-        unsafe { __faber_rt_v1_text_is_empty(context, &empty, &mut answer) },
+        unsafe { __faber_rt_v1_text_is_empty(context, &raw const empty, &raw mut answer) },
         STATUS_OK
     );
     assert_eq!(answer, 1);
     assert_eq!(
-        unsafe { __faber_rt_v1_text_contains(context, &text, &roma, &mut answer) },
+        unsafe {
+            __faber_rt_v1_text_contains(context, &raw const text, &raw const roma, &raw mut answer)
+        },
         STATUS_OK
     );
     assert_eq!(answer, 1);
     assert_eq!(
-        unsafe { __faber_rt_v1_text_starts_with(context, &text, &empty, &mut answer) },
+        unsafe {
+            __faber_rt_v1_text_starts_with(
+                context,
+                &raw const text,
+                &raw const empty,
+                &raw mut answer,
+            )
+        },
         STATUS_OK
     );
     assert_eq!(answer, 1);
     assert_eq!(
-        unsafe { __faber_rt_v1_text_ends_with(context, &text, &empty, &mut answer) },
+        unsafe {
+            __faber_rt_v1_text_ends_with(
+                context,
+                &raw const text,
+                &raw const empty,
+                &raw mut answer,
+            )
+        },
         STATUS_OK
     );
     assert_eq!(answer, 1);
 
-    let trimmed = unsafe { __faber_rt_v1_text_trim(context, &text) };
+    let trimmed = unsafe { __faber_rt_v1_text_trim(context, &raw const text) };
     let lower = unsafe { __faber_rt_v1_text_lowercase(context, trimmed.value.cast()) };
     let upper = unsafe { __faber_rt_v1_text_uppercase(context, lower.value.cast()) };
     let sliced = unsafe { __faber_rt_v1_text_slice(context, trimmed.value.cast(), 1, 5) };
-    let replaced =
-        unsafe { __faber_rt_v1_text_replace(context, trimmed.value.cast(), &ave, &roma) };
-    let split = unsafe { __faber_rt_v1_text_split(context, trimmed.value.cast(), &slash) };
+    let replaced = unsafe {
+        __faber_rt_v1_text_replace(
+            context,
+            trimmed.value.cast(),
+            &raw const ave,
+            &raw const roma,
+        )
+    };
+    let split =
+        unsafe { __faber_rt_v1_text_split(context, trimmed.value.cast(), &raw const slash) };
     for result in [trimmed, lower, upper, sliced, replaced, split] {
         assert_eq!(result.status, STATUS_OK);
     }
     assert_eq!(
-        unsafe { &*trimmed.value.cast::<RuntimeText>() }._value,
+        unsafe { &*trimmed.value.cast::<RuntimeText>() }.value,
         "Rōma/AVĒ"
     );
     assert_eq!(
-        unsafe { &*lower.value.cast::<RuntimeText>() }._value,
+        unsafe { &*lower.value.cast::<RuntimeText>() }.value,
         "rōma/avē"
     );
     assert_eq!(
-        unsafe { &*upper.value.cast::<RuntimeText>() }._value,
+        unsafe { &*upper.value.cast::<RuntimeText>() }.value,
         "RŌMA/AVĒ"
     );
     assert_eq!(
-        unsafe { &*sliced.value.cast::<RuntimeText>() }._value,
+        unsafe { &*sliced.value.cast::<RuntimeText>() }.value,
         "ōma/"
     );
     assert_eq!(
@@ -331,7 +354,7 @@ fn text_query_and_transformation_family_preserves_unicode_semantics() {
         STATUS_INVALID_ARGUMENT
     );
     assert_eq!(
-        unsafe { &*replaced.value.cast::<RuntimeText>() }._value,
+        unsafe { &*replaced.value.cast::<RuntimeText>() }.value,
         "Rōma/Rōma"
     );
     let split = unsafe { &*split.value.cast::<RuntimeArray>() };
@@ -342,7 +365,7 @@ fn text_query_and_transformation_family_preserves_unicode_semantics() {
         .iter()
         .map(|value| match value {
             array::RuntimeValue::Ptr(value) => {
-                unsafe { &*value.cast::<RuntimeText>() }._value.as_str()
+                unsafe { &*value.cast::<RuntimeText>() }.value.as_str()
             }
             _ => panic!("split produced non-text carrier"),
         })
@@ -355,15 +378,15 @@ fn text_query_and_transformation_family_preserves_unicode_semantics() {
 fn text_concat_family_owns_contextual_text_result() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let first = FaberRtSliceV1::from_static("salve".as_bytes());
     let second = FaberRtSliceV1::from_static(" munde".as_bytes());
-    let result = unsafe { __faber_rt_v1_text_concat(context, &first, &second) };
+    let result = unsafe { __faber_rt_v1_text_concat(context, &raw const first, &raw const second) };
     assert!(result.status.is_ok());
     assert_eq!(
-        unsafe { &*result.value.cast::<RuntimeText>() }._value,
+        unsafe { &*result.value.cast::<RuntimeText>() }.value,
         "salve munde"
     );
     unsafe { __faber_rt_v1_shutdown(context) };
@@ -373,7 +396,7 @@ fn text_concat_family_owns_contextual_text_result() {
 fn text_scalar_conversion_family_honors_width_radix_recovery_status() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let hex = FaberRtSliceV1::from_static(b"ff");
@@ -391,7 +414,7 @@ fn text_scalar_conversion_family_honors_width_radix_recovery_status() {
         unsafe {
             __faber_rt_v1_text_parse_integer(
                 context,
-                &hex,
+                &raw const hex,
                 16,
                 VALUE_KIND_I32,
                 std::ptr::from_mut(&mut i32_value).cast(),
@@ -404,7 +427,7 @@ fn text_scalar_conversion_family_honors_width_radix_recovery_status() {
         unsafe {
             __faber_rt_v1_text_parse_integer(
                 context,
-                &negative,
+                &raw const negative,
                 10,
                 VALUE_KIND_I8,
                 std::ptr::from_mut(&mut i8_value).cast(),
@@ -417,7 +440,7 @@ fn text_scalar_conversion_family_honors_width_radix_recovery_status() {
         unsafe {
             __faber_rt_v1_text_parse_float(
                 context,
-                &decimal,
+                &raw const decimal,
                 VALUE_KIND_F64,
                 std::ptr::from_mut(&mut f64_value).cast(),
             )
@@ -429,7 +452,7 @@ fn text_scalar_conversion_family_honors_width_radix_recovery_status() {
         unsafe {
             __faber_rt_v1_text_parse_integer(
                 context,
-                &invalid,
+                &raw const invalid,
                 10,
                 VALUE_KIND_I64,
                 std::ptr::from_mut(&mut i64_value).cast(),
@@ -438,7 +461,7 @@ fn text_scalar_conversion_family_honors_width_radix_recovery_status() {
         STATUS_INVALID_ARGUMENT
     );
     assert_eq!(
-        unsafe { __faber_rt_v1_text_truthy(context, &empty, &mut truthy) },
+        unsafe { __faber_rt_v1_text_truthy(context, &raw const empty, &raw mut truthy) },
         STATUS_OK
     );
     assert_eq!(truthy, 0);
@@ -449,7 +472,7 @@ fn text_scalar_conversion_family_honors_width_radix_recovery_status() {
 fn scalar_text_conversion_family_preserves_rust_conversion_spellings() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
 
@@ -460,13 +483,10 @@ fn scalar_text_conversion_family_preserves_rust_conversion_spellings() {
     assert_eq!(zero.status, STATUS_OK);
     assert_eq!(truth.status, STATUS_OK);
     assert_eq!(falsehood.status, STATUS_OK);
-    assert_eq!(unsafe { &*zero.value.cast::<RuntimeText>() }._value, "0.0");
+    assert_eq!(unsafe { &*zero.value.cast::<RuntimeText>() }.value, "0.0");
+    assert_eq!(unsafe { &*truth.value.cast::<RuntimeText>() }.value, "true");
     assert_eq!(
-        unsafe { &*truth.value.cast::<RuntimeText>() }._value,
-        "true"
-    );
-    assert_eq!(
-        unsafe { &*falsehood.value.cast::<RuntimeText>() }._value,
+        unsafe { &*falsehood.value.cast::<RuntimeText>() }.value,
         "false"
     );
 
@@ -474,17 +494,17 @@ fn scalar_text_conversion_family_preserves_rust_conversion_spellings() {
     let nonempty = c"yes";
     let mut answer = 0;
     assert_eq!(
-        unsafe { __faber_rt_v1_ascii_truthy(context, empty.as_ptr(), &mut answer) },
+        unsafe { __faber_rt_v1_ascii_truthy(context, empty.as_ptr(), &raw mut answer) },
         STATUS_OK
     );
     assert_eq!(answer, 0);
     assert_eq!(
-        unsafe { __faber_rt_v1_ascii_truthy(context, nonempty.as_ptr(), &mut answer) },
+        unsafe { __faber_rt_v1_ascii_truthy(context, nonempty.as_ptr(), &raw mut answer) },
         STATUS_OK
     );
     assert_eq!(answer, 1);
     assert_eq!(
-        unsafe { __faber_rt_v1_ascii_truthy(context, ptr::null(), &mut answer) },
+        unsafe { __faber_rt_v1_ascii_truthy(context, ptr::null(), &raw mut answer) },
         STATUS_INVALID_ARGUMENT
     );
 
@@ -495,7 +515,7 @@ fn scalar_text_conversion_family_preserves_rust_conversion_spellings() {
 fn typed_map_and_set_family_preserves_value_semantics() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let map = unsafe { __faber_rt_v1_map_new(context, VALUE_KIND_TEXT, VALUE_KIND_I64) };
@@ -528,7 +548,7 @@ fn typed_map_and_set_family_preserves_value_semantics() {
                 map.value,
                 VALUE_KIND_TEXT,
                 std::ptr::from_ref(&equal_handle).cast(),
-                &mut answer,
+                &raw mut answer,
             )
         },
         STATUS_OK
@@ -563,7 +583,7 @@ fn typed_map_and_set_family_preserves_value_semantics() {
         .is_none());
     let mut length = 0i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_map_length(context, map.value, &mut length) },
+        unsafe { __faber_rt_v1_map_length(context, map.value, &raw mut length) },
         STATUS_OK
     );
     assert_eq!(length, 1);
@@ -594,14 +614,14 @@ fn typed_map_and_set_family_preserves_value_semantics() {
                 map.value,
                 VALUE_KIND_TEXT,
                 std::ptr::from_ref(&equal_handle).cast(),
-                &mut answer,
+                &raw mut answer,
             )
         },
         STATUS_OK
     );
     assert_eq!(answer, 1);
     assert_eq!(
-        unsafe { __faber_rt_v1_map_is_empty(context, map.value, &mut answer) },
+        unsafe { __faber_rt_v1_map_is_empty(context, map.value, &raw mut answer) },
         STATUS_OK
     );
     assert_eq!(answer, 1);
@@ -655,14 +675,14 @@ fn typed_map_and_set_family_preserves_value_semantics() {
     );
     assert_eq!(
         unsafe {
-            __faber_rt_v1_set_is_subset(context, intersection.value, union.value, &mut answer)
+            __faber_rt_v1_set_is_subset(context, intersection.value, union.value, &raw mut answer)
         },
         STATUS_OK
     );
     assert_eq!(answer, 1);
     assert_eq!(
         unsafe {
-            __faber_rt_v1_set_is_superset(context, union.value, intersection.value, &mut answer)
+            __faber_rt_v1_set_is_superset(context, union.value, intersection.value, &raw mut answer)
         },
         STATUS_OK
     );
@@ -675,7 +695,7 @@ fn typed_map_and_set_family_preserves_value_semantics() {
                 left.value,
                 VALUE_KIND_I64,
                 std::ptr::from_ref(&two).cast(),
-                &mut answer,
+                &raw mut answer,
             )
         },
         STATUS_OK
@@ -688,18 +708,18 @@ fn typed_map_and_set_family_preserves_value_semantics() {
                 left.value,
                 VALUE_KIND_I64,
                 std::ptr::from_ref(&two).cast(),
-                &mut answer,
+                &raw mut answer,
             )
         },
         STATUS_OK
     );
     assert_eq!(
-        unsafe { __faber_rt_v1_set_length(context, left.value, &mut length) },
+        unsafe { __faber_rt_v1_set_length(context, left.value, &raw mut length) },
         STATUS_OK
     );
     assert_eq!(length, 2);
     assert_eq!(
-        unsafe { __faber_rt_v1_set_is_empty(context, left.value, &mut answer) },
+        unsafe { __faber_rt_v1_set_is_empty(context, left.value, &raw mut answer) },
         STATUS_OK
     );
     assert_eq!(answer, 0);
@@ -709,7 +729,7 @@ fn typed_map_and_set_family_preserves_value_semantics() {
 #[test]
 fn scalar_text_conversion_family_owns_canonical_values() {
     let mut context = ptr::null_mut();
-    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) };
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
     assert_eq!(status, STATUS_OK);
 
     let integer = unsafe { __faber_rt_v1_text_i64(context, -42) };
@@ -722,19 +742,16 @@ fn scalar_text_conversion_family_owns_canonical_values() {
     assert_eq!(boolean.status, STATUS_OK);
     assert_eq!(false_boolean.status, STATUS_OK);
     assert_eq!(
-        unsafe { &*integer.value.cast::<RuntimeText>() }._value,
+        unsafe { &*integer.value.cast::<RuntimeText>() }.value,
         "-42"
     );
+    assert_eq!(unsafe { &*float.value.cast::<RuntimeText>() }.value, "3.25");
     assert_eq!(
-        unsafe { &*float.value.cast::<RuntimeText>() }._value,
-        "3.25"
-    );
-    assert_eq!(
-        unsafe { &*boolean.value.cast::<RuntimeText>() }._value,
+        unsafe { &*boolean.value.cast::<RuntimeText>() }.value,
         "true"
     );
     assert_eq!(
-        unsafe { &*false_boolean.value.cast::<RuntimeText>() }._value,
+        unsafe { &*false_boolean.value.cast::<RuntimeText>() }.value,
         "false"
     );
 
@@ -744,7 +761,7 @@ fn scalar_text_conversion_family_owns_canonical_values() {
 #[test]
 fn scalar_valor_conversion_family_owns_typed_values() {
     let mut context = ptr::null_mut();
-    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) };
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
     assert_eq!(status, STATUS_OK);
 
     let integer = unsafe { __faber_rt_v1_valor_i64(context, -42) };
@@ -765,7 +782,7 @@ fn scalar_valor_conversion_family_owns_typed_values() {
     );
 
     let text = FaberRtSliceV1::from_static(b"salve");
-    let boxed_text = unsafe { __faber_rt_v1_valor_text(context, &text) };
+    let boxed_text = unsafe { __faber_rt_v1_valor_text(context, &raw const text) };
     let boxed_ascii = unsafe { __faber_rt_v1_valor_ascii(context, c"roma".as_ptr()) };
     let boxed_nihil = unsafe { __faber_rt_v1_valor_nihil(context) };
     assert_eq!(
@@ -785,15 +802,15 @@ fn scalar_valor_conversion_family_owns_typed_values() {
     let mut float_out = 0.0;
     let mut boolean_out = 0;
     assert_eq!(
-        unsafe { __faber_rt_v1_valor_get_i64(context, integer.value.cast(), &mut integer_out) },
+        unsafe { __faber_rt_v1_valor_get_i64(context, integer.value.cast(), &raw mut integer_out) },
         STATUS_OK
     );
     assert_eq!(
-        unsafe { __faber_rt_v1_valor_get_f64(context, integer.value.cast(), &mut float_out) },
+        unsafe { __faber_rt_v1_valor_get_f64(context, integer.value.cast(), &raw mut float_out) },
         STATUS_OK
     );
     assert_eq!(
-        unsafe { __faber_rt_v1_valor_get_i1(context, boolean.value.cast(), &mut boolean_out) },
+        unsafe { __faber_rt_v1_valor_get_i1(context, boolean.value.cast(), &raw mut boolean_out) },
         STATUS_OK
     );
     assert_eq!((integer_out, float_out, boolean_out), (-42, -42.0, 1));
@@ -815,11 +832,13 @@ fn scalar_valor_conversion_family_owns_typed_values() {
         STATUS_OK
     );
 
-    let mismatch =
-        unsafe { __faber_rt_v1_valor_get_i64(context, boxed_text.value.cast(), &mut integer_out) };
+    let mismatch = unsafe {
+        __faber_rt_v1_valor_get_i64(context, boxed_text.value.cast(), &raw mut integer_out)
+    };
     assert_eq!(mismatch, STATUS_INVALID_ARGUMENT);
-    let foreign =
-        unsafe { __faber_rt_v1_valor_get_i64(context, ptr::dangling::<Valor>(), &mut integer_out) };
+    let foreign = unsafe {
+        __faber_rt_v1_valor_get_i64(context, ptr::dangling::<Valor>(), &raw mut integer_out)
+    };
     assert_eq!(foreign, STATUS_INVALID_ARGUMENT);
 
     unsafe { __faber_rt_v1_shutdown(context) };
@@ -829,12 +848,12 @@ fn scalar_valor_conversion_family_owns_typed_values() {
 fn aggregate_valor_conversion_round_trips_octeti_array_and_map() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
 
     let bytes = FaberRtSliceV1::from_static(&[0xde, 0xad]);
-    let octeti = unsafe { __faber_rt_v1_octeti_new(context, &bytes) };
+    let octeti = unsafe { __faber_rt_v1_octeti_new(context, &raw const bytes) };
     let octeti_valor = unsafe { __faber_rt_v1_valor_octeti(context, octeti.value) };
     assert_eq!(
         unsafe { &*octeti_valor.value.cast::<Valor>() },
@@ -927,18 +946,18 @@ fn aggregate_valor_conversion_round_trips_octeti_array_and_map() {
 fn octeti_family_mutates_indexes_and_converts_text() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let text = FaberRtSliceV1::from_static(b"hi");
-    let bytes = unsafe { __faber_rt_v1_octeti_from_text(context, &text) };
+    let bytes = unsafe { __faber_rt_v1_octeti_from_text(context, &raw const text) };
     assert_eq!(
         unsafe { __faber_rt_v1_octeti_append(context, bytes.value, b'!') },
         STATUS_OK
     );
     let mut length = 0_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_octeti_length(context, bytes.value, &mut length) },
+        unsafe { __faber_rt_v1_octeti_length(context, bytes.value, &raw mut length) },
         STATUS_OK
     );
     assert_eq!(length, 3);
@@ -976,12 +995,13 @@ fn octeti_family_mutates_indexes_and_converts_text() {
 fn instans_family_preserves_precision_and_valor_provenance() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let wire = FaberRtSliceV1::from_static(b"1979-05-27T07:32:00.123456Z");
-    let micros =
-        unsafe { __faber_rt_v1_instans_from_text(context, &wire, INSTANS_PRECISION_MICROS) };
+    let micros = unsafe {
+        __faber_rt_v1_instans_from_text(context, &raw const wire, INSTANS_PRECISION_MICROS)
+    };
     let millis =
         unsafe { __faber_rt_v1_instans_retag(context, micros.value, INSTANS_PRECISION_MILLIS) };
     let rendered = unsafe { __faber_rt_v1_instans_get_text(context, millis.value) };
@@ -990,7 +1010,7 @@ fn instans_family_preserves_precision_and_valor_provenance() {
         unsafe { std::slice::from_raw_parts(rendered.data, rendered.len as usize) },
         b"1979-05-27T07:32:00.123Z"
     );
-    let valor = unsafe { __faber_rt_v1_valor_text(context, &wire) };
+    let valor = unsafe { __faber_rt_v1_valor_text(context, &raw const wire) };
     let seconds = unsafe {
         __faber_rt_v1_instans_from_valor(context, valor.value.cast(), INSTANS_PRECISION_SECONDS)
     };
@@ -1007,7 +1027,7 @@ fn instans_family_preserves_precision_and_valor_provenance() {
 fn genus_valor_field_table_boxes_and_extracts_atomically() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let name_text = FaberRtSliceV1::from_static(b"name");
@@ -1102,7 +1122,7 @@ fn genus_valor_field_table_boxes_and_extracts_atomically() {
 fn array_family_round_trips_every_value_kind_and_spreads() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
 
@@ -1145,7 +1165,7 @@ fn array_family_round_trips_every_value_kind_and_spreads() {
 
         let mut length = -1_i64;
         assert_eq!(
-            unsafe { __faber_rt_v1_array_length(context, array.value, &mut length) },
+            unsafe { __faber_rt_v1_array_length(context, array.value, &raw mut length) },
             STATUS_OK
         );
         assert_eq!(length, 1);
@@ -1228,7 +1248,7 @@ fn array_family_round_trips_every_value_kind_and_spreads() {
 fn array_family_rejects_foreign_handles_kinds_and_bounds() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
@@ -1324,7 +1344,7 @@ fn array_family_rejects_foreign_handles_kinds_and_bounds() {
 fn array_value_preserving_methods_clone_query_reverse_and_range() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
@@ -1351,14 +1371,14 @@ fn array_value_preserving_methods_clone_query_reverse_and_range() {
                 array.value,
                 VALUE_KIND_I64,
                 std::ptr::from_ref(&three).cast(),
-                &mut output,
+                &raw mut output,
             )
         },
         STATUS_OK
     );
     assert_eq!(output, 1);
     assert_eq!(
-        unsafe { __faber_rt_v1_array_is_empty(context, array.value, &mut output) },
+        unsafe { __faber_rt_v1_array_is_empty(context, array.value, &raw mut output) },
         STATUS_OK
     );
     assert_eq!(output, 0);
@@ -1404,7 +1424,7 @@ fn assert_array_i64(
 ) {
     let mut length = -1_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_array_length(context, array, &mut length) },
+        unsafe { __faber_rt_v1_array_length(context, array, &raw mut length) },
         STATUS_OK
     );
     assert_eq!(usize::try_from(length), Ok(expected.len()));
@@ -1430,7 +1450,7 @@ fn assert_array_i64(
 fn array_option_methods_cover_access_empty_and_removal() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
@@ -1483,7 +1503,7 @@ fn option_i64(option: &RuntimeOption) -> Option<i64> {
 fn option_family_produces_queries_unwraps_and_coalesces_shared_handles() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let value = 42_i64;
@@ -1582,7 +1602,7 @@ fn option_family_produces_queries_unwraps_and_coalesces_shared_handles() {
 fn array_numeric_family_preserves_signedness_orders_and_sums() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
 
@@ -1691,7 +1711,7 @@ fn array_numeric_family_preserves_signedness_orders_and_sums() {
 fn tensor_core_carrier_creates_shapes_indexes_and_slices() {
     let mut context = std::ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &raw mut context) },
         STATUS_OK
     );
 
@@ -1731,7 +1751,7 @@ fn tensor_core_carrier_creates_shapes_indexes_and_slices() {
 
     let mut rank = -1_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_tensor_rank(context, tensor.value, &mut rank) },
+        unsafe { __faber_rt_v1_tensor_rank(context, tensor.value, &raw mut rank) },
         STATUS_OK
     );
     assert_eq!(rank, 2);
@@ -1740,7 +1760,7 @@ fn tensor_core_carrier_creates_shapes_indexes_and_slices() {
     assert_eq!(dims.status, STATUS_OK);
     let mut length = 0_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_array_length(context, dims.value, &mut length) },
+        unsafe { __faber_rt_v1_array_length(context, dims.value, &raw mut length) },
         STATUS_OK
     );
     assert_eq!(length, 2);
@@ -1796,7 +1816,7 @@ fn tensor_core_carrier_creates_shapes_indexes_and_slices() {
     assert_eq!(flat2.status, STATUS_OK);
     let mut flat_len = 0_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_array_length(context, flat2.value, &mut flat_len) },
+        unsafe { __faber_rt_v1_array_length(context, flat2.value, &raw mut flat_len) },
         STATUS_OK
     );
     assert_eq!(flat_len, 3);
@@ -1805,7 +1825,7 @@ fn tensor_core_carrier_creates_shapes_indexes_and_slices() {
     assert_eq!(empty.status, STATUS_OK);
     let mut empty_rank = -1_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_tensor_rank(context, empty.value, &mut empty_rank) },
+        unsafe { __faber_rt_v1_tensor_rank(context, empty.value, &raw mut empty_rank) },
         STATUS_OK
     );
     assert_eq!(empty_rank, 0);
@@ -1851,7 +1871,7 @@ fn tensor_core_carrier_creates_shapes_indexes_and_slices() {
     assert_eq!(reshaped.status, STATUS_OK);
     let mut reshaped_rank = 0_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_tensor_rank(context, reshaped.value, &mut reshaped_rank) },
+        unsafe { __faber_rt_v1_tensor_rank(context, reshaped.value, &raw mut reshaped_rank) },
         STATUS_OK
     );
     assert_eq!(reshaped_rank, 2);
@@ -1863,7 +1883,7 @@ fn tensor_core_carrier_creates_shapes_indexes_and_slices() {
 fn tensor_arithmetic_family_adds_matmuls_and_reduces() {
     let mut context = std::ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &raw mut context) },
         STATUS_OK
     );
 
@@ -2006,7 +2026,7 @@ fn tensor_arithmetic_family_adds_matmuls_and_reduces() {
     assert_eq!(product.status, STATUS_OK);
     let mut rank = 0_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_tensor_rank(context, product.value, &mut rank) },
+        unsafe { __faber_rt_v1_tensor_rank(context, product.value, &raw mut rank) },
         STATUS_OK
     );
     assert_eq!(rank, 2);
@@ -2188,7 +2208,7 @@ fn host_tensor_from_i64_values(
 fn tensor_host_arithmetic_boundary_supports_f32_f64_i32_i64() {
     let mut context = std::ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &raw mut context) },
         STATUS_OK
     );
 
@@ -2223,11 +2243,12 @@ fn tensor_host_arithmetic_boundary_supports_f32_f64_i32_i64() {
 fn tensor_host_rejects_kinds_without_arithmetic_dispatch_at_admission() {
     let mut context = std::ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let shape = host_tensor_shape(context, &[1]);
     let one_i16 = 1_i16;
+    #[allow(clippy::similar_names)]
     let one_u32 = 1_u32;
     let one_f16_bits = 0x3c00_u16;
     let one_i1 = 1_u8;
@@ -2267,7 +2288,7 @@ fn tensor_host_rejects_kinds_without_arithmetic_dispatch_at_admission() {
 fn tensor_host_add_broadcasts_zero_extent_without_panic() {
     let mut context = std::ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &raw mut context) },
         STATUS_OK
     );
 
@@ -2330,7 +2351,7 @@ fn tensor_host_add_broadcasts_zero_extent_without_panic() {
     assert_eq!(flat.status, STATUS_OK);
     let mut flat_len = -1_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_array_length(context, flat.value, &mut flat_len) },
+        unsafe { __faber_rt_v1_array_length(context, flat.value, &raw mut flat_len) },
         STATUS_OK
     );
     assert_eq!(flat_len, 0);
@@ -2342,7 +2363,7 @@ fn tensor_host_add_broadcasts_zero_extent_without_panic() {
 fn tensor_convert_widens_and_narrows_element_kinds() {
     let mut context = std::ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let shape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
@@ -2387,7 +2408,7 @@ fn tensor_convert_widens_and_narrows_element_kinds() {
     assert_eq!(flat2.status, STATUS_OK);
     let mut length = 0_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_array_length(context, flat2.value, &mut length) },
+        unsafe { __faber_rt_v1_array_length(context, flat2.value, &raw mut length) },
         STATUS_OK
     );
     assert_eq!(length, 2);
@@ -2398,7 +2419,7 @@ fn tensor_convert_widens_and_narrows_element_kinds() {
 fn sparse_core_carrier_sets_gets_and_densifies() {
     let mut context = std::ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let shape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
@@ -2460,7 +2481,7 @@ fn sparse_core_carrier_sets_gets_and_densifies() {
     assert_eq!(got, 4.0);
     let mut count = 0_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_sparse_nonzero(context, sparse.value, &mut count) },
+        unsafe { __faber_rt_v1_sparse_nonzero(context, sparse.value, &raw mut count) },
         STATUS_OK
     );
     assert_eq!(count, 1);
@@ -2468,7 +2489,7 @@ fn sparse_core_carrier_sets_gets_and_densifies() {
     assert_eq!(dense.status, STATUS_OK);
     let mut rank = 0_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_tensor_rank(context, dense.value, &mut rank) },
+        unsafe { __faber_rt_v1_tensor_rank(context, dense.value, &raw mut rank) },
         STATUS_OK
     );
     assert_eq!(rank, 2);
@@ -2476,7 +2497,7 @@ fn sparse_core_carrier_sets_gets_and_densifies() {
     assert_eq!(back.status, STATUS_OK);
     let mut count2 = 0_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_sparse_nonzero(context, back.value, &mut count2) },
+        unsafe { __faber_rt_v1_sparse_nonzero(context, back.value, &raw mut count2) },
         STATUS_OK
     );
     assert_eq!(count2, 1);
@@ -2487,7 +2508,7 @@ fn sparse_core_carrier_sets_gets_and_densifies() {
 fn regex_conversion_preserves_pattern_text() {
     let mut context = std::ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let digits = b"\\d+\0";
@@ -2495,7 +2516,7 @@ fn regex_conversion_preserves_pattern_text() {
         data: digits.as_ptr().cast_mut().cast(),
         len: 3,
     };
-    let regex = unsafe { __faber_rt_v1_regex_from_text(context, &slice) };
+    let regex = unsafe { __faber_rt_v1_regex_from_text(context, &raw const slice) };
     assert_eq!(regex.status, STATUS_OK);
     let text = unsafe { __faber_rt_v1_regex_get_text(context, regex.value) };
     assert_eq!(text.status, STATUS_OK);
@@ -2510,7 +2531,7 @@ fn regex_conversion_preserves_pattern_text() {
 fn set_array_collection_conversion_dedupes() {
     let mut context = ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
@@ -2523,7 +2544,7 @@ fn set_array_collection_conversion_dedupes() {
                     context,
                     array.value,
                     VALUE_KIND_I64,
-                    &mut slot as *mut _ as *const _,
+                    &raw mut slot as *const _,
                 )
             },
             STATUS_OK
@@ -2533,7 +2554,7 @@ fn set_array_collection_conversion_dedupes() {
     assert_eq!(set.status, STATUS_OK);
     let mut length = 0_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_set_length(context, set.value, &mut length) },
+        unsafe { __faber_rt_v1_set_length(context, set.value, &raw mut length) },
         STATUS_OK
     );
     assert_eq!(length, 3);
@@ -2541,7 +2562,7 @@ fn set_array_collection_conversion_dedupes() {
     assert_eq!(back.status, STATUS_OK);
     length = 0;
     assert_eq!(
-        unsafe { __faber_rt_v1_array_length(context, back.value, &mut length) },
+        unsafe { __faber_rt_v1_array_length(context, back.value, &raw mut length) },
         STATUS_OK
     );
     assert_eq!(length, 3);
@@ -2552,7 +2573,7 @@ fn set_array_collection_conversion_dedupes() {
 fn interval_carrier_algebra_and_materialize() {
     let mut context = std::ptr::null_mut();
     assert_eq!(
-        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &mut context) },
+        unsafe { __faber_rt_v1_init(0, std::ptr::null(), &raw mut context) },
         STATUS_OK
     );
     let morning = unsafe { __faber_rt_v1_interval_new(context, 0, 6, 0) };
@@ -2569,27 +2590,27 @@ fn interval_carrier_algebra_and_materialize() {
                 context,
                 overlap.value,
                 VALUE_KIND_PTR,
-                &mut present as *mut u8 as *mut _,
+                (&raw mut present).cast(),
             )
         },
         STATUS_OK
     );
     assert_eq!(present, 1);
-    let mut interval_ptr = std::ptr::null_mut();
+    let mut interval_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
     assert_eq!(
         unsafe {
             __faber_rt_v1_option_get(
                 context,
                 overlap.value,
                 VALUE_KIND_PTR,
-                &mut interval_ptr as *mut _ as *mut _,
+                (&raw mut interval_ptr).cast(),
             )
         },
         STATUS_OK
     );
     let mut length = 0_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_interval_length(context, interval_ptr, &mut length) },
+        unsafe { __faber_rt_v1_interval_length(context, interval_ptr, &raw mut length) },
         STATUS_OK
     );
     assert_eq!(length, 2);
@@ -2606,7 +2627,7 @@ fn interval_carrier_algebra_and_materialize() {
                 context,
                 no_union.value,
                 VALUE_KIND_PTR,
-                &mut present as *mut u8 as *mut _,
+                (&raw mut present).cast(),
             )
         },
         STATUS_OK
@@ -2616,13 +2637,13 @@ fn interval_carrier_algebra_and_materialize() {
     let half = unsafe { __faber_rt_v1_interval_new(context, 0, 10, 0) };
     let mut clamped = 0_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_interval_clamp_i64(context, 15, half.value, &mut clamped) },
+        unsafe { __faber_rt_v1_interval_clamp_i64(context, 15, half.value, &raw mut clamped) },
         STATUS_OK
     );
     assert_eq!(clamped, 9);
     let mut contains = 0_u8;
     assert_eq!(
-        unsafe { __faber_rt_v1_interval_contains(context, half.value, 5, &mut contains) },
+        unsafe { __faber_rt_v1_interval_contains(context, half.value, 5, &raw mut contains) },
         STATUS_OK
     );
     assert_eq!(contains, 1);
@@ -2631,7 +2652,7 @@ fn interval_carrier_algebra_and_materialize() {
     assert_eq!(list.status, STATUS_OK);
     let mut list_len = 0_i64;
     assert_eq!(
-        unsafe { __faber_rt_v1_array_length(context, list.value, &mut list_len) },
+        unsafe { __faber_rt_v1_array_length(context, list.value, &raw mut list_len) },
         STATUS_OK
     );
     assert_eq!(list_len, 10);
@@ -2645,7 +2666,7 @@ fn interval_carrier_algebra_and_materialize() {
     assert_eq!(narrow.status, STATUS_OK);
     length = 0;
     assert_eq!(
-        unsafe { __faber_rt_v1_interval_length(context, narrow.value, &mut length) },
+        unsafe { __faber_rt_v1_interval_length(context, narrow.value, &raw mut length) },
         STATUS_OK
     );
     assert_eq!(length, 41);

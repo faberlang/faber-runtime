@@ -734,7 +734,7 @@ fn tensor_mean_value(tensor: &RuntimeTensor) -> Option<RuntimeValue> {
     match tensor.kind {
         faber::host_abi::VALUE_KIND_F32 => {
             let sum = to_tensor_f32(tensor)?.summa();
-            Some(RuntimeValue::F32((sum as f64 / n) as f32))
+            Some(RuntimeValue::F32((f64::from(sum) / n) as f32))
         }
         faber::host_abi::VALUE_KIND_F64 => {
             let sum = to_tensor_f64(tensor)?.summa();
@@ -816,6 +816,7 @@ fn cast_runtime_value(
     }
 }
 
+#[allow(clippy::match_same_arms)]
 fn value_as_f64(value: RuntimeValue, kind: FaberRtValueKindV1) -> Option<f64> {
     Some(match (kind, value) {
         (faber::host_abi::VALUE_KIND_I1, RuntimeValue::I1(v)) => f64::from(v),
@@ -834,6 +835,7 @@ fn value_as_f64(value: RuntimeValue, kind: FaberRtValueKindV1) -> Option<f64> {
     })
 }
 
+#[allow(clippy::match_same_arms)]
 fn value_as_i128(value: RuntimeValue, kind: FaberRtValueKindV1) -> Option<i128> {
     Some(match (kind, value) {
         (faber::host_abi::VALUE_KIND_I1, RuntimeValue::I1(v)) => i128::from(v),

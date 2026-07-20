@@ -310,7 +310,7 @@ pub unsafe extern "C" fn __faber_rt_v1_set_add(
             return STATUS_INVALID_ARGUMENT;
         }
         if !contains(set.kind, &set.values, value) {
-            set.values.push(value)
+            set.values.push(value);
         }
         STATUS_OK
     })
@@ -578,7 +578,7 @@ fn push_unique(
     value: RuntimeValue,
 ) -> Vec<RuntimeValue> {
     if !contains(kind, &values, value) {
-        values.push(value)
+        values.push(value);
     }
     values
 }

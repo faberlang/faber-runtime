@@ -3,7 +3,11 @@
 use super::convert::with_valor;
 use super::format::{store_text, text_value};
 use super::RuntimeContext;
-use faber::host_abi::*;
+use faber::host_abi::{
+    FaberRtContextV1, FaberRtInstansPrecisionV1, FaberRtPtrResultV1, FaberRtSliceV1,
+    INSTANS_PRECISION_MICROS, INSTANS_PRECISION_MILLIS, INSTANS_PRECISION_NANOS,
+    INSTANS_PRECISION_SECONDS, STATUS_INVALID_ARGUMENT, STATUS_PANIC,
+};
 use faber::{Instans, InstansPraecisio, Valor};
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};

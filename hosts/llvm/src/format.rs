@@ -260,10 +260,7 @@ pub(super) fn store_text(context: *mut FaberRtContextV1, value: String) -> Faber
         data: value.as_ptr(),
         len: value.len() as u64,
     };
-    let text = super::StableBox::new(RuntimeText {
-        slice,
-        _value: value,
-    });
+    let text = super::StableBox::new(RuntimeText { slice, value });
     let handle = text.handle();
     runtime.texts.push(text);
     FaberRtPtrResultV1::success(handle)
@@ -306,5 +303,5 @@ fn render_template(template: &str, args: &[String]) -> String {
 #[repr(C)]
 pub(super) struct RuntimeText {
     pub(super) slice: FaberRtSliceV1,
-    pub(super) _value: String,
+    pub(super) value: String,
 }
