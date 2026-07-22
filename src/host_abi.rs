@@ -157,6 +157,11 @@ pub const SYMBOL_INTERVAL_CLAMP_I64: &str = "__faber_rt_v1_interval_clamp_i64";
 pub const SYMBOL_INTERVAL_CLAMP: &str = "__faber_rt_v1_interval_clamp";
 pub const SYMBOL_INTERVAL_MATERIALIZE_ARRAY: &str = "__faber_rt_v1_interval_materialize_array";
 pub const SYMBOL_INTERVAL_MATERIALIZE_TENSOR: &str = "__faber_rt_v1_interval_materialize_tensor";
+pub const SYMBOL_GRADIENT_CREATE: &str = "__faber_rt_v1_gradient_create";
+pub const SYMBOL_GRADIENT_ACCUMULATE: &str = "__faber_rt_v1_gradient_accumulate";
+pub const SYMBOL_GRADIENT_READ: &str = "__faber_rt_v1_gradient_read";
+pub const SYMBOL_GRADIENT_ZERO: &str = "__faber_rt_v1_gradient_zero";
+
 pub const SYMBOL_PROGRAM_ENTRY: &str = "__faber_program_entry_v1";
 
 pub type FaberRtValueKindV1 = u32;

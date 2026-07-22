@@ -2,6 +2,32 @@ use super::*;
 use core::mem::{align_of, size_of};
 use std::collections::BTreeSet;
 
+/// Coherence: every `radix-host-abi` gradient symbol string matches the
+/// corresponding `faber::host_abi` gradient symbol string.
+///
+/// The runtime (`faber-runtime`) mirrors the ABI contract table owned by
+/// `radix-host-abi`. This test catches drift between the two crates at
+/// test time in a dev build.
+#[test]
+fn gradient_symbols_cohere_with_radix_host_abi() {
+    assert_eq!(
+        radix_host_abi::SYMBOL_GRADIENT_CREATE,
+        SYMBOL_GRADIENT_CREATE,
+    );
+    assert_eq!(
+        radix_host_abi::SYMBOL_GRADIENT_ACCUMULATE,
+        SYMBOL_GRADIENT_ACCUMULATE,
+    );
+    assert_eq!(
+        radix_host_abi::SYMBOL_GRADIENT_READ,
+        SYMBOL_GRADIENT_READ,
+    );
+    assert_eq!(
+        radix_host_abi::SYMBOL_GRADIENT_ZERO,
+        SYMBOL_GRADIENT_ZERO,
+    );
+}
+
 #[test]
 fn host_abi_v1_carriers_have_stable_host_layout() {
     assert_eq!(size_of::<FaberRtSliceV1>(), 16);
@@ -143,6 +169,37 @@ fn host_abi_v1_symbol_namespace_is_versioned() {
         LLVM_PTR_RESULT_TYPE_DEFINITION,
         "%FaberRtPtrResultV1 = type { i32, ptr }"
     );
+}
+
+#[test]
+fn host_abi_v1_gradient_symbol_family_is_complete() {
+    for symbol in [
+        SYMBOL_GRADIENT_CREATE,
+        SYMBOL_GRADIENT_ACCUMULATE,
+        SYMBOL_GRADIENT_READ,
+        SYMBOL_GRADIENT_ZERO,
+    ] {
+        assert!(symbol.starts_with("__faber_rt_v1_gradient_"), "{symbol}");
+    }
+    let expected = [
+        "SYMBOL_GRADIENT_CREATE",
+        "SYMBOL_GRADIENT_ACCUMULATE",
+        "SYMBOL_GRADIENT_READ",
+        "SYMBOL_GRADIENT_ZERO",
+    ];
+    let mut seen: Vec<&str> = expected
+        .iter()
+        .map(|name| match *name {
+            "SYMBOL_GRADIENT_CREATE" => SYMBOL_GRADIENT_CREATE,
+            "SYMBOL_GRADIENT_ACCUMULATE" => SYMBOL_GRADIENT_ACCUMULATE,
+            "SYMBOL_GRADIENT_READ" => SYMBOL_GRADIENT_READ,
+            "SYMBOL_GRADIENT_ZERO" => SYMBOL_GRADIENT_ZERO,
+            _ => unreachable!(),
+        })
+        .collect();
+    seen.sort();
+    seen.dedup();
+    assert_eq!(seen.len(), 4, "gradient symbols must all be distinct");
 }
 
 #[test]

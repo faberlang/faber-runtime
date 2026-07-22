@@ -10,6 +10,7 @@ mod option;
 mod regex_rt;
 mod solum;
 mod sparsa;
+mod gradient;
 mod tensor;
 mod text;
 mod valor_aggregate;
@@ -113,6 +114,11 @@ use std::ops::{Deref, DerefMut};
 use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 use std::ptr;
+#[cfg(test)]
+use gradient::{
+    __faber_rt_v1_gradient_accumulate, __faber_rt_v1_gradient_create,
+    __faber_rt_v1_gradient_read, __faber_rt_v1_gradient_zero,
+};
 use tensor::RuntimeTensor;
 #[cfg(test)]
 use tensor::{
@@ -207,6 +213,7 @@ struct RuntimeContext {
     sets: Vec<StableBox<RuntimeSet>>,
     tensors: Vec<StableBox<RuntimeTensor>>,
     sparses: Vec<StableBox<RuntimeSparse>>,
+    gradients: Vec<StableBox<gradient::GradientStorage>>,
     regexes: Vec<StableBox<faber::Regex>>,
     intervals: Vec<StableBox<faber::Intervallum<i64>>>,
 }
@@ -253,6 +260,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             sets: Vec::new(),
             tensors: Vec::new(),
             sparses: Vec::new(),
+            gradients: Vec::new(),
             regexes: Vec::new(),
             intervals: Vec::new(),
         });
