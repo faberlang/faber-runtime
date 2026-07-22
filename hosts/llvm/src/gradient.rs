@@ -83,22 +83,6 @@ fn store_gradient(
     FaberRtPtrResultV1::success(handle)
 }
 
-fn store_gradient_view(
-    runtime: &mut RuntimeContext,
-    gradient: &GradientStorage,
-) -> FaberRtPtrResultV1 {
-    let view = GradientViewV1 {
-        data: gradient.data.as_ptr(),
-        len: gradient.data.len() as u64,
-        shape: gradient.shape.as_ptr(),
-        rank: gradient.shape.len() as u64,
-    };
-    let boxed = StableBox::new(view);
-    let handle = boxed.handle();
-    runtime.gradient_views.push(boxed);
-    FaberRtPtrResultV1::success(handle)
-}
-
 fn checked_element_count(shape: &[i64]) -> Option<usize> {
     shape.iter().try_fold(1usize, |acc, d| acc.checked_mul(*d as usize))
 }
@@ -204,7 +188,16 @@ pub unsafe extern "C" fn __faber_rt_v1_gradient_read(
         let Some(gradient) = find_gradient(runtime, handle) else {
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
-        store_gradient_view(runtime, gradient)
+        let view = GradientViewV1 {
+            data: gradient.data.as_ptr(),
+            len: gradient.data.len() as u64,
+            shape: gradient.shape.as_ptr(),
+            rank: gradient.shape.len() as u64,
+        };
+        let boxed = StableBox::new(view);
+        let handle = boxed.handle();
+        runtime.gradient_views.push(boxed);
+        FaberRtPtrResultV1::success(handle)
     })
 }
 
