@@ -191,20 +191,29 @@ Failure rows covered by the current proof:
 
 ## Raw And Tape-Owned `sectio` View Gradient Policy
 
-Raw `Tensor::sectio` views remain fail-closed at `AutogradTape::leaf`. The
-current `Tensor` view carries shared storage, shape, strides, offset, and a
-`view` marker, but it does not carry autograd parent identity or the slice
-operation that produced it. If `leaf` accepted such a raw view, the tape could
-only create a detached leaf for the slice-shaped tensor; backward would have no
-sound way to scatter the slice gradient into the parent tensor's gradient slot.
+The full view/alias autograd policy is now codified in the canonical product
+law document:
 
-The supported proof path is `AutogradTape::sectio(parent, start, end)`, which
-takes an existing `AutogradValue` parent, validates the same axis-0 bounds as
-`Tensor::sectio`, records parent identity plus the start bound, returns a
-slice-shaped `AutogradValue`, and scatter-adds upstream values into the parent
-gradient at the recorded offsets. Current tests cover parent-gradient
-scatter-add, overlapping view accumulation, invalid bounds without recording,
-cross-tape rejection, raw-view leaf rejection, saved forward snapshots, and
-continued acceptance of `sectio(...).materialize()` as a detached materialized
-leaf. This remains an internal dense proof path, not a host ABI or generated
-gradient claim.
+> **[`view-alias-autograd-policy.md`](view-alias-autograd-policy.md)**
+
+Summary of the fail-closed leaf rule, tape-owned `sectio` rule, and AIR
+consistency statement (full detail in the policy document):
+
+- **Fail-closed leaf rule:** Raw views (`view: true`) are rejected at
+  `AutogradTape::leaf()` with `AutogradError::Unsupported(UnsupportedAutogradOp::View)`.
+  Users call `.materialize()` or `AutogradTape::sectio(parent, start, end)`.
+- **Tape-owned `sectio` rule:** `AutogradTape::sectio(parent, start, end)` is
+  the only supported tape-owned view operation. Records parent identity plus
+  start bound; backward scatter-adds into the parent gradient at the recorded
+  offsets. Axis-0 only.
+- **AIR consistency:** AIR-generated backward functions have no view concept.
+  AIR is pure-functional; the result contract produces fresh gradient tensors
+  per field. Under G-A-01 Option A, the tape view policy is deprecated and
+  survives as an oracle/debug path only.
+- **Eight tests** cover the full boundary (raw-view rejection, materialized
+  acceptance, snapshot semantics, parent-edge recording, scatter-add,
+  overlapping accumulation, invalid-bounds rejection, cross-tape rejection).
+
+The canonical policy document at `view-alias-autograd-policy.md` is the
+authoritative reference. This inventory section summarizes the boundary;
+do not duplicate policy prose here.
