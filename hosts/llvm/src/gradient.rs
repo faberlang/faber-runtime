@@ -5,6 +5,10 @@
 //! Storage uses `StableBox` pointer handles (same pattern as [`tensor`]).
 //! Accumulate validates shape/dtype match at the byte level; the caller
 //! (generated backward code) is responsible for end-to-end correctness.
+//!
+//! [`gradient_read`] returns a handle to a `#[repr(C)]` [`GradientViewV1`]
+//! carrier instead of a raw pointer to the Rust struct — safe to dereference
+//! from C/LLVM code.
 
 use super::{RuntimeContext, StableBox};
 use faber::host_abi::{
@@ -17,6 +21,19 @@ pub(super) struct GradientStorage {
     pub(super) data: Vec<f32>,
     pub(super) shape: Vec<i64>,
     pub(super) kind: FaberRtValueKindV1,
+}
+
+/// `#[repr(C)]` view carrier returned by [`gradient_read`].
+///
+/// Exposes gradient data as flat `f32` pointer + element count and shape as
+/// `i64` pointer + rank. Safe to dereference from C/LLVM — no Rust layout
+/// or Vec internals leak across the ABI boundary.
+#[repr(C)]
+pub(super) struct GradientViewV1 {
+    pub(super) data: *const f32,
+    pub(super) len: u64,
+    pub(super) shape: *const i64,
+    pub(super) rank: u64,
 }
 
 fn ffi_ptr(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrResultV1 {
@@ -63,6 +80,22 @@ fn store_gradient(
     let gradient = StableBox::new(GradientStorage { data, shape, kind });
     let handle = gradient.handle();
     runtime.gradients.push(gradient);
+    FaberRtPtrResultV1::success(handle)
+}
+
+fn store_gradient_view(
+    runtime: &mut RuntimeContext,
+    gradient: &GradientStorage,
+) -> FaberRtPtrResultV1 {
+    let view = GradientViewV1 {
+        data: gradient.data.as_ptr(),
+        len: gradient.data.len() as u64,
+        shape: gradient.shape.as_ptr(),
+        rank: gradient.shape.len() as u64,
+    };
+    let boxed = StableBox::new(view);
+    let handle = boxed.handle();
+    runtime.gradient_views.push(boxed);
     FaberRtPtrResultV1::success(handle)
 }
 
@@ -152,12 +185,13 @@ pub unsafe extern "C" fn __faber_rt_v1_gradient_accumulate(
     })
 }
 
-/// Return an opaque handle to the gradient storage.
+/// Return a `#[repr(C)]` [`GradientViewV1`] carrier referencing the gradient
+/// storage data.
 ///
-/// The returned pointer references the stable `GradientStorage` backing
-/// allocation. The caller (LLVM backend code) can access `.data` and `.shape`
-/// through the struct layout. Returns `FaberRtPtrResultV1::failure` on unknown
-/// handle.
+/// The returned handle points to a stable allocation with flat `f32` data
+/// pointer + length and `i64` shape pointer + rank — safe to dereference from
+/// C/LLVM without exposing Rust layout or Vec internals. Returns
+/// `FaberRtPtrResultV1::failure` on unknown handle.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_gradient_read(
     context: *mut FaberRtContextV1,
@@ -170,7 +204,7 @@ pub unsafe extern "C" fn __faber_rt_v1_gradient_read(
         let Some(gradient) = find_gradient(runtime, handle) else {
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
-        FaberRtPtrResultV1::success(std::ptr::from_ref(gradient).cast_mut().cast())
+        store_gradient_view(runtime, gradient)
     })
 }
 

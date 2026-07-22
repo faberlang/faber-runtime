@@ -214,6 +214,7 @@ struct RuntimeContext {
     tensors: Vec<StableBox<RuntimeTensor>>,
     sparses: Vec<StableBox<RuntimeSparse>>,
     gradients: Vec<StableBox<gradient::GradientStorage>>,
+    gradient_views: Vec<StableBox<gradient::GradientViewV1>>,
     regexes: Vec<StableBox<faber::Regex>>,
     intervals: Vec<StableBox<faber::Intervallum<i64>>>,
 }
@@ -261,6 +262,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             tensors: Vec::new(),
             sparses: Vec::new(),
             gradients: Vec::new(),
+            gradient_views: Vec::new(),
             regexes: Vec::new(),
             intervals: Vec::new(),
         });

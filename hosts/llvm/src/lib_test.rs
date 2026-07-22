@@ -2687,3 +2687,84 @@ fn interval_carrier_algebra_and_materialize() {
     assert_eq!(length, 41);
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn gradient_create_accumulate_read_zero_round_trip() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+
+    // Create a gradient with shape [2, 3].
+    let shape = [2_i64, 3];
+    let gradient =
+        unsafe { __faber_rt_v1_gradient_create(context, shape.as_ptr(), 2, VALUE_KIND_F32) };
+    assert_eq!(gradient.status, STATUS_OK);
+    assert!(!gradient.value.is_null());
+
+    // Accumulate incoming data: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0].
+    let incoming: [f32; 6] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_gradient_accumulate(
+                context,
+                gradient.value,
+                incoming.as_ptr(),
+                shape.as_ptr(),
+                2,
+            )
+        },
+        STATUS_OK
+    );
+
+    // Read the gradient view and verify data through the repr(C) carrier.
+    let view = unsafe { __faber_rt_v1_gradient_read(context, gradient.value) };
+    assert_eq!(view.status, STATUS_OK);
+    let view_ptr = view.value.cast::<gradient::GradientViewV1>();
+    let view_ref = unsafe { &*view_ptr };
+    assert_eq!(unsafe { std::slice::from_raw_parts(view_ref.data, view_ref.len as usize) }, incoming);
+    assert_eq!(unsafe { std::slice::from_raw_parts(view_ref.shape, view_ref.rank as usize) }, shape);
+
+    // Accumulate again: same shape, different values.
+    let more: [f32; 6] = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0];
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_gradient_accumulate(
+                context,
+                gradient.value,
+                more.as_ptr(),
+                shape.as_ptr(),
+                2,
+            )
+        },
+        STATUS_OK
+    );
+
+    // Read again — view should reflect the accumulated values.
+    let view2 = unsafe { __faber_rt_v1_gradient_read(context, gradient.value) };
+    assert_eq!(view2.status, STATUS_OK);
+    let view2_ptr = view2.value.cast::<gradient::GradientViewV1>();
+    let view2_ref = unsafe { &*view2_ptr };
+    let expected: [f32; 6] = [11.0, 22.0, 33.0, 44.0, 55.0, 66.0];
+    assert_eq!(unsafe { std::slice::from_raw_parts(view2_ref.data, view2_ref.len as usize) }, expected);
+
+    // Zero the gradient.
+    assert_eq!(
+        unsafe { __faber_rt_v1_gradient_zero(context, gradient.value) },
+        STATUS_OK
+    );
+
+    // Read after zero — all elements should be 0.0.
+    let view3 = unsafe { __faber_rt_v1_gradient_read(context, gradient.value) };
+    assert_eq!(view3.status, STATUS_OK);
+    let view3_ptr = view3.value.cast::<gradient::GradientViewV1>();
+    let view3_ref = unsafe { &*view3_ptr };
+    let zeros: [f32; 6] = [0.0; 6];
+    assert_eq!(unsafe { std::slice::from_raw_parts(view3_ref.data, view3_ref.len as usize) }, zeros);
+
+    // Verify shape is still preserved after zero.
+    assert_eq!(unsafe { std::slice::from_raw_parts(view3_ref.shape, view3_ref.rank as usize) }, shape);
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
