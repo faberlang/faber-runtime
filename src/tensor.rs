@@ -41,6 +41,9 @@ pub const ERR_DIVIDE_ZERO_DENOMINATOR: &str = "tensor division denominator must 
 pub const ERR_DIVIDE_NON_FINITE_RESULT: &str = "tensor division result must be finite";
 pub(crate) const ERR_RELU_NON_FINITE_INPUT: &str =
     "ReLU requires finite input; NaN or inf was given.";
+pub(crate) const ERR_SQRT_NON_FINITE_INPUT: &str =
+    "Sqrt requires finite input; NaN or inf was given.";
+pub(crate) const ERR_SQRT_NEGATIVE_INPUT: &str = "Sqrt requires non-negative input.";
 
 #[must_use]
 pub fn tensor_dim_non_negative(value: i64) -> bool {
@@ -593,6 +596,30 @@ impl Tensor<f32> {
         }
         Ok(Tensor::from_contiguous(
             self.planata().into_iter().map(|value| value.max(0.0)).collect(),
+            self.shape.clone(),
+        ))
+    }
+
+    /// Elementwise square root with domain validation.
+    ///
+    /// Rejects non-finite inputs (NaN, inf) and negative inputs per the
+    /// domain-sensitive primitive policy.  Returns `sqrt(x)` for all valid
+    /// finite non-negative inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any element is NaN, infinite, or negative.
+    pub fn sqrt(&self) -> Result<Tensor<f32>, &'static str> {
+        for &value in self.planata().iter() {
+            if !value.is_finite() {
+                return Err(ERR_SQRT_NON_FINITE_INPUT);
+            }
+            if value < 0.0 {
+                return Err(ERR_SQRT_NEGATIVE_INPUT);
+            }
+        }
+        Ok(Tensor::from_contiguous(
+            self.planata().into_iter().map(|value| value.sqrt()).collect(),
             self.shape.clone(),
         ))
     }

@@ -625,3 +625,45 @@ fn test_autograd_relu_gradient() {
 
     assert_gradient_close(&actual, &reference);
 }
+
+fn sqrt_loss(params: &[f32]) -> f32 {
+    params.iter().map(|&v| v.sqrt()).sum::<f32>() / params.len() as f32
+}
+
+fn sqrt_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(params, &[params.len() as i64]));
+
+    let activated = tape.sqrt(&x).expect("sqrt records");
+    let loss = tape.media(&activated).expect("media reduces");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    gradients.gradient(x.id()).expect("x gradient").planata()
+}
+
+#[test]
+fn test_autograd_sqrt_gradient() {
+    let params = vec![0.25f32, 1.0, 4.0];
+    let reference = finite_difference_gradient(&params, sqrt_loss);
+    let actual = sqrt_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
+#[test]
+fn test_autograd_sqrt_gradient_at_zero() {
+    let mut tape = AutogradTape::new();
+    let params = vec![0.0f32];
+    let x = leaf(&mut tape, tensor(&params, &[1]));
+
+    let sqrt = tape.sqrt(&x).expect("sqrt at zero is valid forward");
+    let loss = tape.summa(&sqrt).expect("scalar loss");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    let grad_x = gradients.gradient(x.id()).expect("x gradient");
+    assert!(
+        grad_x.planata()[0].is_infinite(),
+        "gradient at sqrt(0) should be inf per domain policy, got {}",
+        grad_x.planata()[0]
+    );
+}

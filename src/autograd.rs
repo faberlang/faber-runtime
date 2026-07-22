@@ -37,6 +37,7 @@ pub(crate) enum AutogradOp {
     Div,
     Neg,
     Relu,
+    Sqrt,
     Matmul,
     Scala { factor: u32 },
     Forma,
@@ -185,6 +186,15 @@ impl AutogradTape {
             .relu()
             .map_err(AutogradError::Tensor)?;
         Ok(self.record(AutogradOp::Relu, vec![value.id], tensor))
+    }
+
+    pub(crate) fn sqrt(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(value)?;
+        let tensor = self
+            .value(value.id)?
+            .sqrt()
+            .map_err(AutogradError::Tensor)?;
+        Ok(self.record(AutogradOp::Sqrt, vec![value.id], tensor))
     }
 
     pub(crate) fn matmul(
@@ -417,6 +427,31 @@ impl AutogradTape {
                     let grad = upstream
                         .multiplica(&mask_tensor)
                         .map_err(AutogradError::Tensor)?;
+                    gradients.accumulate(parent, grad)?;
+                }
+                AutogradOp::Sqrt => {
+                    let &[parent] = node.parents.as_slice() else {
+                        return Err(AutogradError::MissingNode);
+                    };
+                    // VJP: d/dx sqrt(x) = 1/(2*sqrt(x))
+                    // At x=0 forward_output=0 so 1/(2*0)=inf per domain policy.
+                    let forward_output = self.value(node.id)?;
+                    let grad_shape = upstream.magnitudines();
+                    let grad_data: Vec<f32> = upstream
+                        .planata()
+                        .into_iter()
+                        .zip(forward_output.planata().into_iter())
+                        .map(|(up, fwd)| {
+                            let denom = 2.0 * fwd;
+                            if denom == 0.0 {
+                                f32::INFINITY
+                            } else {
+                                up / denom
+                            }
+                        })
+                        .collect();
+                    let grad =
+                        Tensor::structa(grad_data, &grad_shape).map_err(AutogradError::Tensor)?;
                     gradients.accumulate(parent, grad)?;
                 }
                 AutogradOp::Matmul => {
