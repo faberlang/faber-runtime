@@ -39,6 +39,8 @@ pub const ERR_MEDIA_EMPTY: &str = "tensor media (mean) requires at least one ele
 pub const ERR_DIVIDE_NON_FINITE_INPUT: &str = "tensor division input must be finite";
 pub const ERR_DIVIDE_ZERO_DENOMINATOR: &str = "tensor division denominator must be non-zero";
 pub const ERR_DIVIDE_NON_FINITE_RESULT: &str = "tensor division result must be finite";
+pub(crate) const ERR_RELU_NON_FINITE_INPUT: &str =
+    "ReLU requires finite input; NaN or inf was given.";
 
 #[must_use]
 pub fn tensor_dim_non_negative(value: i64) -> bool {
@@ -573,6 +575,26 @@ impl Tensor<f32> {
             self.planata().into_iter().map(|value| -value).collect(),
             self.shape.clone(),
         )
+    }
+
+    /// Elementwise rectified linear unit: max(0, x).
+    ///
+    /// Rejects non-finite inputs (NaN, inf) per the domain-sensitive primitive
+    /// policy.  No other domain constraints.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any element is NaN or infinite.
+    pub fn relu(&self) -> Result<Tensor<f32>, &'static str> {
+        for &value in self.planata().iter() {
+            if !value.is_finite() {
+                return Err(ERR_RELU_NON_FINITE_INPUT);
+            }
+        }
+        Ok(Tensor::from_contiguous(
+            self.planata().into_iter().map(|value| value.max(0.0)).collect(),
+            self.shape.clone(),
+        ))
     }
 
     /// Elementwise scalar multiplication preserving tensor shape.

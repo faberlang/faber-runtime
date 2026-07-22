@@ -36,6 +36,7 @@ pub(crate) enum AutogradOp {
     Mul,
     Div,
     Neg,
+    Relu,
     Matmul,
     Scala { factor: u32 },
     Forma,
@@ -175,6 +176,15 @@ impl AutogradTape {
         self.ensure_member(value)?;
         let tensor = self.value(value.id)?.neg();
         Ok(self.record(AutogradOp::Neg, vec![value.id], tensor))
+    }
+
+    pub(crate) fn relu(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(value)?;
+        let tensor = self
+            .value(value.id)?
+            .relu()
+            .map_err(AutogradError::Tensor)?;
+        Ok(self.record(AutogradOp::Relu, vec![value.id], tensor))
     }
 
     pub(crate) fn matmul(
@@ -388,6 +398,26 @@ impl AutogradTape {
                         return Err(AutogradError::MissingNode);
                     };
                     gradients.accumulate(parent, upstream.neg())?;
+                }
+                AutogradOp::Relu => {
+                    let &[parent] = node.parents.as_slice() else {
+                        return Err(AutogradError::MissingNode);
+                    };
+                    // VJP: grad * (forward_output > 0), i.e. gradient passes
+                    // through where forward was positive, zero otherwise.
+                    // Since forward_output is relu(x), forward_output > 0 iff x > 0.
+                    let forward_output = self.value(node.id)?;
+                    let mask: Vec<f32> = forward_output
+                        .planata()
+                        .into_iter()
+                        .map(|v| if v > 0.0 { 1.0 } else { 0.0 })
+                        .collect();
+                    let mask_tensor = Tensor::structa(mask, &forward_output.magnitudines())
+                        .map_err(AutogradError::Tensor)?;
+                    let grad = upstream
+                        .multiplica(&mask_tensor)
+                        .map_err(AutogradError::Tensor)?;
+                    gradients.accumulate(parent, grad)?;
                 }
                 AutogradOp::Matmul => {
                     let &[lhs, rhs] = parent_pair(node)?;

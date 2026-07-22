@@ -601,3 +601,27 @@ fn finite_difference_reference_checks_same_shape_vector_loss() {
 
     assert_gradient_close(&gradient, &expected);
 }
+
+fn relu_sum_mean_loss(params: &[f32]) -> f32 {
+    params.iter().map(|&v| v.max(0.0)).sum::<f32>() / params.len() as f32
+}
+
+fn relu_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(params, &[params.len() as i64]));
+
+    let activated = tape.relu(&x).expect("relu records");
+    let loss = tape.media(&activated).expect("media reduces");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    gradients.gradient(x.id()).expect("x gradient").planata()
+}
+
+#[test]
+fn test_autograd_relu_gradient() {
+    let params = vec![-2.0f32, -1.0, -0.5, 1.0, 2.0];
+    let reference = finite_difference_gradient(&params, relu_sum_mean_loss);
+    let actual = relu_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
