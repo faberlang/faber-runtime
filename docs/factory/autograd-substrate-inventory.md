@@ -50,6 +50,10 @@ runtime:
   autograd VJPs and finite-difference tests at
   `src/autograd_reference_test.rs::test_autograd_relu_gradient` and
   `test_autograd_sqrt_gradient`.
+  LayerNorm (analytical VJP per Ba et al. 2016) is implemented with oracle
+  verification at `src/autograd_reference_test.rs::test_autograd_layernorm_gradient`.
+  Combined with ReLU and Sqrt, the Activations/layernorm/softmax/attention coverage
+  moves from approximately 20% to 35%.
   Exp, Log, Gelu, Softmax, sin, cos, tanh remain pending.
 - No general raw-view autograd policy for Rust `sectio` views. The current proof
   policy supports tape-owned axis-0 `sectio` from an existing `AutogradValue`
@@ -76,6 +80,7 @@ claims.
 | 2 | Numeric unary primitives (activation v1) | `Tensor<f32>::neg` and `AutogradTape::neg` prove shape-preserving unary linearity with VJP `-upstream`. `Tensor::forma` remains the reshape proof. ReLU (`max(0, x)`) and Sqrt (`sqrt(x)`) are now implemented with domain policy from `radix/docs/design/domain-primitive-policy.md`, autograd VJPs, and finite-difference coverage. Exp, Log, Gelu, Softmax, sin, cos, tanh remain pending (deferred). | Pick any next domain-sensitive primitive only after non-finite/domain behavior is specified; prove tensor forward plus tape VJP against finite differences. | No math-library surface, activation library, or PyTorch unary parity. |
 | 3 | Training-loss reductions beyond scalar `summa` / non-empty f32 `media` | `summa` and `media` are covered for scalar-loss backward; current session oracle uses mean-squared loss. | Add one named reduction only if the Tensor forward API exists and its scalar seed rule is local; otherwise keep using `media((prediction-target)^2)` as the reference loss. | No optimizer/session API and no reduction host ABI gradient handle. |
 | 4 | Higher-rank matmul / batched linear algebra | Rank-2 `Tensor::matmul` plus `transpose_rank2` support the current dense linear oracle. `Tensor::permute` is materialized and tape-owned only. | Do not widen until shape policy, broadcast semantics, and AIR/generated-gradient ownership are named; first gate should be a design/test packet, not code. | No broader matmul, device execution, or generated-gradient claim. |
+| 5 | LayerNorm (analytical VJP) | `Tensor<f32>::layernorm` with domain validation; `AutogradOp::LayerNorm` with Ba et al. 2016 VJP; finite-difference oracle verified. | Keep runtime-local unless promoted to host ABI or generated-gradient; no device-native kernel. | No AIR/compiler-owned gradient, host ABI gradient handle, or device-native kernel. |
 
 ## Division And Reciprocal Forward Gate
 
