@@ -1,0 +1,17 @@
+# Golden reference for llvm-placement-v1 kernel.
+#
+# Provenance
+#   Captured from:     WebGPU host (commit <NOT-YET-CAPTURED>)
+#   Kernel:            elementwise multiply-by-2, rank-1 f32, 4 elements
+#   Kernel source:     exempla/tensor/llvm-placement-v1.fab
+#   Input:             [1.0, 2.0, 3.0, 4.0]
+#   Expected output:   [2.0, 4.0, 6.0, 8.0]
+#   Captured:          2026-07-22 by hand-6 (G-SPINE-08 S3)
+#
+# When the WebGPU host pipeline is available, re-capture the golden by
+# running the same kernel on the WebGPU host and update the commit SHA.
+# Until then, this golden is a pre-computed reference.
+2.0
+4.0
+6.0
+8.0

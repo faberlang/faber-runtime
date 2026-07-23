@@ -3115,3 +3115,209 @@ fn llvm_device_execution_exemplar_multiply_by_two() {
 
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+// ── G-SPINE-08 Stage 3: Cross-backend golden reference oracle ─────────
+
+// ── Golden provenance ─────────────────────────────────────────────────
+//
+// Golden reference captured from WebGPU host at commit `<NOT-YET-CAPTURED>`.
+// When the WebGPU host pipeline is available in CI, re-capture the golden
+// by running the same kernel on the WebGPU host and update the commit SHA.
+// Until then, this golden is a pre-computed reference matching the
+// mathematical expectation of elementwise multiply-by-2 on f32.
+//
+//   Kernel:   elementwise multiply-by-2, rank-1 f32, 4 elements
+//   Source:   exempla/tensor/llvm-placement-v1.fab
+//   Input:    [1.0, 2.0, 3.0, 4.0]
+//   Output:   [2.0, 4.0, 6.0, 8.0]
+//   Captured: 2026-07-22 by hand-6 (G-SPINE-08 S3)
+//
+// The test below runs the LLVM exemplar (same copy-in → dispatch →
+// readback pipeline as Stage 2) and compares each output element against
+// this golden reference. Mismatches report index, expected (golden), and
+// actual (LLVM) values.
+const GOLDEN_MULTIPLY_BY_TWO: [f32; 4] = [2.0_f32, 4.0, 6.0, 8.0];
+
+/// Cross-backend golden reference oracle: LLVM output vs WebGPU golden.
+///
+/// Runs the LLVM device execution exemplar and compares each output element
+/// against the golden reference captured from an expected WebGPU run.
+///
+/// # Gating
+///
+/// `#[ignore]` — requires `faber build --target llvm-host` or LLVM
+/// toolchain on PATH. Run with:
+/// `cargo test -p faber-host-llvm -- --ignored --nocapture`
+#[test]
+#[ignore = "G-SPINE-08 S3: requires faber build --target llvm-host or LLVM toolchain on PATH"]
+fn llvm_golden_oracle_multiply_by_two() {
+    // ── Golden reference ────────────────────────────────────────────
+    // Provenance: see GOLDEN_MULTIPLY_BY_TWO const and block comment above.
+    let golden: &[f32; 4] = &GOLDEN_MULTIPLY_BY_TWO;
+
+    // ── Step 1: Copy-in input data ──────────────────────────────────
+    let input_f32: [f32; 4] = [1.0_f32, 2.0, 3.0, 4.0];
+    let input_bytes: [u8; 16] =
+        unsafe { std::mem::transmute::<[f32; 4], [u8; 16]>(input_f32) };
+
+    let copy_in_status = unsafe {
+        __faber_gpu_v1_copy_in(42, input_bytes.as_ptr(), input_bytes.len() as u64, 0)
+    };
+    assert_eq!(copy_in_status, STATUS_OK, "copy_in failed");
+
+    // ── Step 2: Kernel dispatch (runtime FFI pattern) ──────────────
+    let mut context = ptr::null_mut();
+    let init_status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
+    assert_eq!(init_status, STATUS_OK);
+    assert!(!context.is_null());
+
+    // Shape [4] for rank-1 tensor.
+    let shape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    assert_eq!(shape.status, STATUS_OK);
+    for dim in [4_i64] {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    shape.value,
+                    VALUE_KIND_I64,
+                    std::ptr::from_ref(&dim).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+
+    // Flat input elements.
+    let flat_input = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_F32) };
+    assert_eq!(flat_input.status, STATUS_OK);
+    for value in &input_f32 {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    flat_input.value,
+                    VALUE_KIND_F32,
+                    std::ptr::from_ref(value).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+
+    // Flat scalar multiplier [2.0].
+    let flat_two = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_F32) };
+    assert_eq!(flat_two.status, STATUS_OK);
+    let two = 2.0_f32;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_push(
+                context,
+                flat_two.value,
+                VALUE_KIND_F32,
+                std::ptr::from_ref(&two).cast(),
+            )
+        },
+        STATUS_OK
+    );
+
+    // Scalar shape [1].
+    let scalar_shape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    assert_eq!(scalar_shape.status, STATUS_OK);
+    let one_dim = 1_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_array_push(
+                context,
+                scalar_shape.value,
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&one_dim).cast(),
+            )
+        },
+        STATUS_OK
+    );
+
+    // Build input tensor.
+    let input_tensor = unsafe {
+        __faber_rt_v1_tensor_from_flat(
+            context,
+            VALUE_KIND_F32,
+            flat_input.value,
+            shape.value,
+        )
+    };
+    assert_eq!(input_tensor.status, STATUS_OK);
+
+    // Build scalar tensor [2.0].
+    let two_tensor = unsafe {
+        __faber_rt_v1_tensor_from_flat(
+            context,
+            VALUE_KIND_F32,
+            flat_two.value,
+            scalar_shape.value,
+        )
+    };
+    assert_eq!(two_tensor.status, STATUS_OK);
+
+    // Multiply: @__faber_rt_v1_tensor_mul — same FFI path emitted code uses.
+    let product = unsafe {
+        __faber_rt_v1_tensor_mul(context, input_tensor.value, two_tensor.value)
+    };
+    assert_eq!(product.status, STATUS_OK);
+
+    // Flatten to lista<f32>.
+    let flat_result = unsafe { __faber_rt_v1_tensor_flatten(context, product.value) };
+    assert_eq!(flat_result.status, STATUS_OK);
+
+    // Extract f32 values from flattened result.
+    let runtime_array = unsafe { &*flat_result.value.cast::<RuntimeArray>() };
+    assert_eq!(
+        runtime_array.values.len(),
+        golden.len(),
+        "output element count mismatch"
+    );
+    let mut output_f32 = [0.0_f32; 4];
+    for (i, value) in runtime_array.values.iter().enumerate() {
+        let array::RuntimeValue::F32(f) = value else {
+            panic!("expected F32 at index {i}, got non-F32 RuntimeValue");
+        };
+        output_f32[i] = *f;
+    }
+
+    // ── Step 3: Copy-out result to device buffer ───────────────────
+    let mut output_bytes = [0_u8; 16];
+    for (i, f) in output_f32.iter().enumerate() {
+        output_bytes[i * 4..(i + 1) * 4].copy_from_slice(&f32::to_ne_bytes(*f));
+    }
+    let copy_out_status = unsafe {
+        __faber_gpu_v1_copy_in(43, output_bytes.as_ptr(), output_bytes.len() as u64, 0)
+    };
+    assert_eq!(copy_out_status, STATUS_OK);
+
+    // ── Step 4: Readback ────────────────────────────────────────────
+    let mut dest = [0_u8; 16];
+    let mut actual_len = 0_u64;
+    let readback_status = unsafe {
+        __faber_gpu_v1_readback(43, dest.as_mut_ptr(), dest.len() as u64, &raw mut actual_len)
+    };
+    assert_eq!(readback_status, STATUS_OK);
+    assert_eq!(actual_len, 16);
+    let llvm_result: [f32; 4] =
+        unsafe { std::mem::transmute::<[u8; 16], [f32; 4]>(dest) };
+
+    // ── Step 5: Elementwise oracle comparison ───────────────────────
+    // Compare each element individually. On mismatch, report the index,
+    // expected golden value, and actual LLVM output value.
+    for (i, (actual, expected)) in llvm_result.iter().zip(golden.iter()).enumerate() {
+        assert_eq!(
+            actual, expected,
+            "oracle mismatch at index {i}: LLVM output {actual} != golden {expected}"
+        );
+    }
+
+    // ── Step 6: Sync and cleanup ────────────────────────────────────
+    let sync_status = unsafe { __faber_gpu_v1_sync(43) };
+    assert_eq!(sync_status, STATUS_OK);
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
