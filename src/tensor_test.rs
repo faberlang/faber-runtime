@@ -9,7 +9,7 @@ use super::{
     ERR_LAYERNORM_RANK_TOO_HIGH, ERR_MATMUL_ARGUMENT_RANK, ERR_MATMUL_INNER_DIMENSION,
     ERR_MATMUL_RECEIVER_RANK, ERR_MEDIA_EMPTY, ERR_PERMUTE_AXIS_OUT_OF_RANGE,
     ERR_PERMUTE_DUPLICATE_AXIS, ERR_PERMUTE_NEGATIVE_AXIS, ERR_PERMUTE_RANK,
-    ERR_TRANSPOSE_RANK,
+    ERR_SOFTMAX_EMPTY_TENSOR, ERR_SOFTMAX_NON_FINITE_INPUT, ERR_TRANSPOSE_RANK,
 };
 
 #[test]
@@ -759,4 +759,90 @@ fn layernorm_rejects_invalid_epsilon() {
         input.layernorm(0, f32::NAN, None, None).unwrap_err(),
         ERR_LAYERNORM_EPSILON_INVALID
     );
+}
+
+// ---------------------------------------------------------------------------
+// Softmax forward tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn softmax_rejects_empty_tensor() {
+    let empty = Tensor::<f32>::structa(Vec::new(), &[0]).unwrap();
+    assert_eq!(empty.softmax().unwrap_err(), ERR_SOFTMAX_EMPTY_TENSOR);
+}
+
+#[test]
+fn softmax_rejects_non_finite_input() {
+    let input = Tensor::structa(vec![1.0f32, f32::NAN, 3.0], &[3]).unwrap();
+    assert_eq!(input.softmax().unwrap_err(), ERR_SOFTMAX_NON_FINITE_INPUT);
+
+    let input = Tensor::structa(vec![1.0f32, f32::INFINITY, 3.0], &[3]).unwrap();
+    assert_eq!(input.softmax().unwrap_err(), ERR_SOFTMAX_NON_FINITE_INPUT);
+}
+
+#[test]
+fn softmax_rank1_sums_to_one() {
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
+    let output = input.softmax().unwrap();
+    let data = output.planata();
+    let sum: f32 = data.iter().sum();
+    assert!((sum - 1.0).abs() < 1e-6, "sum must be 1.0, got {sum}");
+}
+
+#[test]
+fn softmax_rank2_sums_to_one_per_row() {
+    let input = Tensor::structa(
+        vec![1.0f32, 2.0, 3.0, 1.0, 2.0, 3.0],
+        &[2, 3],
+    )
+    .unwrap();
+    let output = input.softmax().unwrap();
+    let data = output.planata();
+    let row0_sum: f32 = data[0..3].iter().sum();
+    let row1_sum: f32 = data[3..6].iter().sum();
+    assert!((row0_sum - 1.0).abs() < 1e-6, "row 0 sum must be 1.0, got {row0_sum}");
+    assert!((row1_sum - 1.0).abs() < 1e-6, "row 1 sum must be 1.0, got {row1_sum}");
+}
+
+#[test]
+fn softmax_rank1_correct_values() {
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
+    let output = input.softmax().unwrap();
+    let data = output.planata();
+    // softmax([1, 2, 3]) ≈ [0.09003057, 0.24472847, 0.66524096]
+    let expected = [0.090_030_57, 0.244_728_47, 0.665_240_96];
+    for i in 0..3 {
+        assert!(
+            (data[i] - expected[i]).abs() < 1e-6,
+            "item {i}: got {}, expected {}",
+            data[i],
+            expected[i]
+        );
+    }
+}
+
+#[test]
+fn softmax_rank2_identical_rows() {
+    let input = Tensor::structa(
+        vec![1.0f32, 2.0, 3.0, 1.0, 2.0, 3.0],
+        &[2, 3],
+    )
+    .unwrap();
+    let output = input.softmax().unwrap();
+    let data = output.planata();
+    // Both rows are identical since inputs are identical.
+    for i in 0..3 {
+        assert!(
+            (data[i] - data[i + 3]).abs() < 1e-10,
+            "rows must be identical; item {i}"
+        );
+    }
+}
+
+#[test]
+fn softmax_preserves_shape() {
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+    let output = input.softmax().unwrap();
+    assert_eq!(output.longitudo(), 2);
+    assert_eq!(output.element_count(), 6);
 }

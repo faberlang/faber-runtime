@@ -46,6 +46,9 @@ pub(crate) const ERR_SQRT_NON_FINITE_INPUT: &str =
 pub(crate) const ERR_SQRT_NEGATIVE_INPUT: &str = "Sqrt requires non-negative input.";
 pub(crate) const ERR_GELU_NON_FINITE_INPUT: &str =
     "Gelu input must be finite; NaN or inf was given.";
+pub(crate) const ERR_SOFTMAX_NON_FINITE_INPUT: &str =
+    "Softmax input must be finite; NaN or inf was given.";
+pub(crate) const ERR_SOFTMAX_EMPTY_TENSOR: &str = "Softmax requires non-empty tensor.";
 pub const ERR_LAYERNORM_NON_FINITE_INPUT: &str =
     "layernorm requires finite input; NaN or inf was given.";
 pub const ERR_LAYERNORM_EMPTY_TENSOR: &str = "layernorm requires non-empty tensor.";
@@ -666,6 +669,56 @@ impl Tensor<f32> {
                 .collect(),
             self.shape.clone(),
         ))
+    }
+
+    /// Softmax: exp(x_i - max(x)) / sum(exp(x_j - max(x))) with numerical
+    /// stability. Operates on rank-1 (vector) or rank-2 (batched row-wise,
+    /// axis 1 — the last axis).
+    ///
+    /// Rejects non-finite inputs (NaN, inf) and empty tensors per the
+    /// domain-sensitive primitive policy. No VJP — Softmax backward is
+    /// deferred to a follow-on goal.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any element is NaN or infinite, or if the tensor
+    /// is empty.
+    pub fn softmax(&self) -> Result<Tensor<f32>, &'static str> {
+        if self.element_count() == 0 {
+            return Err(ERR_SOFTMAX_EMPTY_TENSOR);
+        }
+        for &value in self.planata().iter() {
+            if !value.is_finite() {
+                return Err(ERR_SOFTMAX_NON_FINITE_INPUT);
+            }
+        }
+        let rank = self.shape.len();
+        // v1: rank-1 (single axis) or rank-2 (axis 1 — the last axis).
+        let last_dim = self.shape[rank - 1] as usize;
+        let batch = self.element_count() / last_dim;
+
+        let mut out_data = Vec::with_capacity(self.element_count());
+        for b in 0..batch {
+            let base = b * last_dim;
+            // Find max for numerical stability.
+            let mut max_val = f32::NEG_INFINITY;
+            for i in 0..last_dim {
+                max_val = max_val.max(self.planata()[base + i]);
+            }
+            // Compute exp(x_i - max) and sum.
+            let mut exps = Vec::with_capacity(last_dim);
+            let mut exp_sum = 0.0_f32;
+            for i in 0..last_dim {
+                let exp_val = (self.planata()[base + i] - max_val).exp();
+                exps.push(exp_val);
+                exp_sum += exp_val;
+            }
+            // Normalize.
+            for exp_val in exps {
+                out_data.push(exp_val / exp_sum);
+            }
+        }
+        Ok(Tensor::from_contiguous(out_data, self.shape.clone()))
     }
 
     /// Elementwise scalar multiplication preserving tensor shape.
