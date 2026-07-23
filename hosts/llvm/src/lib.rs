@@ -10,6 +10,7 @@ mod option;
 mod regex_rt;
 mod solum;
 mod sparsa;
+mod gpu_placement;
 mod gradient;
 mod tensor;
 mod text;
@@ -118,6 +119,10 @@ use std::ptr;
 use gradient::{
     __faber_rt_v1_gradient_accumulate, __faber_rt_v1_gradient_create,
     __faber_rt_v1_gradient_read, __faber_rt_v1_gradient_zero,
+};
+#[cfg(test)]
+use gpu_placement::{
+    __faber_gpu_v1_copy_in, __faber_gpu_v1_readback, __faber_gpu_v1_sync,
 };
 use tensor::RuntimeTensor;
 #[cfg(test)]

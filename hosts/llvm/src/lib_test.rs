@@ -2768,3 +2768,138 @@ fn gradient_create_accumulate_read_zero_round_trip() {
 
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn gpu_placement_copy_in_readback_round_trip() {
+    let input: [u8; 16] =
+        unsafe { std::mem::transmute::<[f32; 4], [u8; 16]>([1.0_f32, 2.0, 3.0, 4.0]) };
+
+    let status = unsafe {
+        __faber_gpu_v1_copy_in(42, input.as_ptr(), input.len() as u64, 0)
+    };
+    assert_eq!(status, STATUS_OK);
+
+    let mut dest = [0_u8; 16];
+    let mut actual_len = 0_u64;
+    let status = unsafe {
+        __faber_gpu_v1_readback(42, dest.as_mut_ptr(), dest.len() as u64, &raw mut actual_len)
+    };
+    assert_eq!(status, STATUS_OK);
+    assert_eq!(actual_len, 16);
+    assert_eq!(dest, input);
+
+    let result: [f32; 4] = unsafe { std::mem::transmute::<[u8; 16], [f32; 4]>(dest) };
+    assert_eq!(result, [1.0_f32, 2.0, 3.0, 4.0]);
+}
+
+#[test]
+fn gpu_placement_copy_in_overwrites_existing_buffer() {
+    let first: [u8; 4] = unsafe { std::mem::transmute::<f32, [u8; 4]>(42.0_f32) };
+    let second: [u8; 4] = unsafe { std::mem::transmute::<f32, [u8; 4]>(99.0_f32) };
+
+    unsafe { __faber_gpu_v1_copy_in(1, first.as_ptr(), 4, 0) };
+    unsafe { __faber_gpu_v1_copy_in(1, second.as_ptr(), 4, 0) };
+
+    let mut dest = [0_u8; 4];
+    let mut actual_len = 0_u64;
+    let status =
+        unsafe { __faber_gpu_v1_readback(1, dest.as_mut_ptr(), 4, &raw mut actual_len) };
+    assert_eq!(status, STATUS_OK);
+    assert_eq!(actual_len, 4);
+
+    let value: f32 = unsafe { std::mem::transmute::<[u8; 4], f32>(dest) };
+    assert_eq!(value, 99.0_f32);
+}
+
+#[test]
+fn gpu_placement_readback_unknown_buffer_fails() {
+    let mut dest = [0_u8; 4];
+    let mut actual_len = 0_u64;
+    let status =
+        unsafe { __faber_gpu_v1_readback(999, dest.as_mut_ptr(), 4, &raw mut actual_len) };
+    assert_eq!(status, STATUS_INVALID_ARGUMENT);
+}
+
+#[test]
+fn gpu_placement_readback_capacity_too_small_fails() {
+    let input: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+    unsafe { __faber_gpu_v1_copy_in(77, input.as_ptr(), 8, 0) };
+
+    let mut dest = [0_u8; 4];
+    let mut actual_len = 0_u64;
+    let status =
+        unsafe { __faber_gpu_v1_readback(77, dest.as_mut_ptr(), 4, &raw mut actual_len) };
+    assert_eq!(status, STATUS_IO_ERROR);
+}
+
+#[test]
+fn gpu_placement_copy_in_null_ptr_with_positive_length_fails() {
+    let status =
+        unsafe { __faber_gpu_v1_copy_in(1, std::ptr::null(), 8, 0) };
+    assert_eq!(status, STATUS_INVALID_ARGUMENT);
+}
+
+#[test]
+fn gpu_placement_copy_in_zero_length_allocates_empty_buffer() {
+    let status = unsafe { __faber_gpu_v1_copy_in(0, std::ptr::null(), 0, 0) };
+    assert_eq!(status, STATUS_OK);
+
+    let mut dest = [0_u8; 1];
+    let mut actual_len = 0_u64;
+    let status =
+        unsafe { __faber_gpu_v1_readback(0, dest.as_mut_ptr(), 1, &raw mut actual_len) };
+    assert_eq!(status, STATUS_OK);
+    assert_eq!(actual_len, 0);
+}
+
+#[test]
+fn gpu_placement_readback_null_dest_fails() {
+    let mut actual_len = 0_u64;
+    let status =
+        unsafe { __faber_gpu_v1_readback(1, std::ptr::null_mut(), 8, &raw mut actual_len) };
+    assert_eq!(status, STATUS_INVALID_ARGUMENT);
+}
+
+#[test]
+fn gpu_placement_readback_null_actual_len_fails() {
+    let mut dest = [0_u8; 4];
+    let status = unsafe { __faber_gpu_v1_readback(1, dest.as_mut_ptr(), 4, std::ptr::null_mut()) };
+    assert_eq!(status, STATUS_INVALID_ARGUMENT);
+}
+
+#[test]
+fn gpu_placement_sync_is_noop_and_returns_ok() {
+    let status = unsafe { __faber_gpu_v1_sync(0) };
+    assert_eq!(status, STATUS_OK);
+
+    let status = unsafe { __faber_gpu_v1_sync(u64::MAX) };
+    assert_eq!(status, STATUS_OK);
+}
+
+#[test]
+fn gpu_placement_multiple_buffers_independent() {
+    let a: [u8; 4] = unsafe { std::mem::transmute::<[f32; 1], [u8; 4]>([10.0_f32]) };
+    let b: [u8; 4] = unsafe { std::mem::transmute::<[f32; 1], [u8; 4]>([20.0_f32]) };
+
+    unsafe { __faber_gpu_v1_copy_in(100, a.as_ptr(), 4, 0) };
+    unsafe { __faber_gpu_v1_copy_in(200, b.as_ptr(), 4, 0) };
+
+    let mut dest_a = [0_u8; 4];
+    let mut len_a = 0_u64;
+    let mut dest_b = [0_u8; 4];
+    let mut len_b = 0_u64;
+
+    assert_eq!(
+        unsafe { __faber_gpu_v1_readback(100, dest_a.as_mut_ptr(), 4, &raw mut len_a) },
+        STATUS_OK
+    );
+    assert_eq!(
+        unsafe { __faber_gpu_v1_readback(200, dest_b.as_mut_ptr(), 4, &raw mut len_b) },
+        STATUS_OK
+    );
+
+    assert_eq!(len_a, 4);
+    assert_eq!(len_b, 4);
+    assert_eq!(dest_a, a);
+    assert_eq!(dest_b, b);
+}
