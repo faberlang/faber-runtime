@@ -273,7 +273,7 @@ dependencies = [
 
 [[package]]
 name = "radix-host-abi"
-version = "0.76.0"
+version = "0.77.0"
 
 [[package]]
 name = "ring"

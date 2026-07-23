@@ -46,6 +46,14 @@ pub(crate) const ERR_SQRT_NON_FINITE_INPUT: &str =
 pub(crate) const ERR_SQRT_NEGATIVE_INPUT: &str = "Sqrt requires non-negative input.";
 pub(crate) const ERR_GELU_NON_FINITE_INPUT: &str =
     "Gelu input must be finite; NaN or inf was given.";
+pub(crate) const ERR_EXP_NON_FINITE_INPUT: &str =
+    "Exp input must be finite; NaN or inf was given.";
+pub(crate) const ERR_EXP_OVERFLOW: &str = "Exp overflow: output is non-finite.";
+pub(crate) const ERR_LOG_NON_FINITE_INPUT: &str =
+    "Log input must be finite; NaN or inf was given.";
+pub(crate) const ERR_LOG_NON_POSITIVE_INPUT: &str = "Log requires positive input.";
+pub(crate) const ERR_LOG_NON_FINITE_RESULT: &str =
+    "Log produced non-finite result.";
 pub(crate) const ERR_SOFTMAX_NON_FINITE_INPUT: &str =
     "Softmax input must be finite; NaN or inf was given.";
 pub(crate) const ERR_SOFTMAX_EMPTY_TENSOR: &str = "Softmax requires non-empty tensor.";
@@ -669,6 +677,61 @@ impl Tensor<f32> {
                 .collect(),
             self.shape.clone(),
         ))
+    }
+
+    /// Elementwise natural exponentiation: e^x.
+    ///
+    /// Rejects non-finite inputs (NaN, inf) and rejects results that overflow
+    /// to infinity per the domain-sensitive primitive policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any input element is NaN or infinite, or if any
+    /// result overflows to a non-finite value.
+    pub fn exp(&self) -> Result<Tensor<f32>, &'static str> {
+        for &value in self.planata().iter() {
+            if !value.is_finite() {
+                return Err(ERR_EXP_NON_FINITE_INPUT);
+            }
+        }
+        let mut data = Vec::with_capacity(self.element_count());
+        for &value in self.planata().iter() {
+            let result = value.exp();
+            if !result.is_finite() {
+                return Err(ERR_EXP_OVERFLOW);
+            }
+            data.push(result);
+        }
+        Ok(Tensor::from_contiguous(data, self.shape.clone()))
+    }
+
+    /// Elementwise natural logarithm: ln(x).
+    ///
+    /// Rejects non-finite inputs (NaN, inf), non-positive inputs (x ≤ 0),
+    /// and non-finite results per the domain-sensitive primitive policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any input element is NaN, infinite, or zero/negative,
+    /// or if any result is non-finite.
+    pub fn log(&self) -> Result<Tensor<f32>, &'static str> {
+        for &value in self.planata().iter() {
+            if !value.is_finite() {
+                return Err(ERR_LOG_NON_FINITE_INPUT);
+            }
+            if value <= 0.0 {
+                return Err(ERR_LOG_NON_POSITIVE_INPUT);
+            }
+        }
+        let mut data = Vec::with_capacity(self.element_count());
+        for &value in self.planata().iter() {
+            let result = value.ln();
+            if !result.is_finite() {
+                return Err(ERR_LOG_NON_FINITE_RESULT);
+            }
+            data.push(result);
+        }
+        Ok(Tensor::from_contiguous(data, self.shape.clone()))
     }
 
     /// Softmax: exp(x_i - max(x)) / sum(exp(x_j - max(x))) with numerical
