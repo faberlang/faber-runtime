@@ -1,10 +1,15 @@
 use super::{
     tensor_flat_offset, tensor_shape_element_count, tensor_shape_has_element_count, Tensor,
     ERR_BROADCAST_SHAPE, ERR_DIVIDE_NON_FINITE_INPUT, ERR_DIVIDE_NON_FINITE_RESULT,
-    ERR_DIVIDE_ZERO_DENOMINATOR, ERR_ELEMENT_COUNT_OVERFLOW, ERR_MATMUL_ARGUMENT_RANK,
-    ERR_MATMUL_INNER_DIMENSION, ERR_MATMUL_RECEIVER_RANK, ERR_MEDIA_EMPTY,
-    ERR_PERMUTE_AXIS_OUT_OF_RANGE, ERR_PERMUTE_DUPLICATE_AXIS, ERR_PERMUTE_NEGATIVE_AXIS,
-    ERR_PERMUTE_RANK, ERR_TRANSPOSE_RANK,
+    ERR_DIVIDE_ZERO_DENOMINATOR, ERR_ELEMENT_COUNT_OVERFLOW,
+    ERR_LAYERNORM_AXIS_OUT_OF_RANGE, ERR_LAYERNORM_BETA_NON_FINITE,
+    ERR_LAYERNORM_BETA_SHAPE_MISMATCH, ERR_LAYERNORM_EMPTY_TENSOR,
+    ERR_LAYERNORM_EPSILON_INVALID, ERR_LAYERNORM_GAMMA_NON_FINITE,
+    ERR_LAYERNORM_GAMMA_SHAPE_MISMATCH, ERR_LAYERNORM_NON_FINITE_INPUT,
+    ERR_LAYERNORM_RANK_TOO_HIGH, ERR_MATMUL_ARGUMENT_RANK, ERR_MATMUL_INNER_DIMENSION,
+    ERR_MATMUL_RECEIVER_RANK, ERR_MEDIA_EMPTY, ERR_PERMUTE_AXIS_OUT_OF_RANGE,
+    ERR_PERMUTE_DUPLICATE_AXIS, ERR_PERMUTE_NEGATIVE_AXIS, ERR_PERMUTE_RANK,
+    ERR_TRANSPOSE_RANK,
 };
 
 #[test]
@@ -534,4 +539,197 @@ fn matmul_rejects_overflowing_result_shape_before_allocation() {
     let b = Tensor::<f32>::crea(&[0, 2], 0.0).expect("zero-element argument");
 
     assert_eq!(a.matmul(&b).unwrap_err(), ERR_ELEMENT_COUNT_OVERFLOW);
+}
+
+#[test]
+fn layernorm_matches_reference_rank2_axis1_no_affine() {
+    // 2×3 input, axis=1 (normalize each row)
+    let input =
+        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+    let result = input.layernorm(1, 1e-5, None, None).unwrap();
+
+    assert_eq!(result.magnitudines(), vec![2, 3]);
+
+    // Row 0: mean=2.0, var=(1+0+1)/3=0.6667, inv_std≈1.22474
+    // Expected row 0: [-1.2247, 0.0, 1.2247]
+    // Row 1: mean=5.0, var=0.6667, same inv_std
+    // Expected row 1: [-1.2247, 0.0, 1.2247]
+    let result_data = result.planata();
+    let expected: Vec<f32> =
+        vec![-1.2247449, 0.0, 1.2247449, -1.2247449, 0.0, 1.2247449];
+    for (a, e) in result_data.iter().zip(expected.iter()) {
+        assert!(
+            (a - e).abs() < 1e-4,
+            "layernorm output {a} differs from expected {e}"
+        );
+    }
+}
+
+#[test]
+fn layernorm_matches_reference_rank2_axis1_with_affine() {
+    let input =
+        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+    let gamma = Tensor::structa(vec![1.0f32, 2.0, 0.5], &[3]).unwrap();
+    let beta = Tensor::structa(vec![0.0f32, 0.1, -0.2], &[3]).unwrap();
+
+    let result = input.layernorm(1, 1e-5, Some(&gamma), Some(&beta)).unwrap();
+    assert_eq!(result.magnitudines(), vec![2, 3]);
+
+    let result_data = result.planata();
+    let row0: Vec<f32> = vec![
+        (-1.224_744_9 * 1.0) + 0.0,
+        0.0 * 2.0 + 0.1,
+        1.224_744_9 * 0.5 + (-0.2),
+    ];
+    let row1: Vec<f32> = vec![
+        (-1.224_744_9 * 1.0) + 0.0,
+        0.0 * 2.0 + 0.1,
+        1.224_744_9 * 0.5 + (-0.2),
+    ];
+
+    for (a, e) in result_data.iter().zip(row0.iter().chain(row1.iter())) {
+        assert!(
+            (a - e).abs() < 1e-4,
+            "affine layernorm output {a} differs from expected {e}"
+        );
+    }
+}
+
+#[test]
+fn layernorm_rank1_no_affine() {
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
+    let result = input.layernorm(0, 1e-5, None, None).unwrap();
+
+    assert_eq!(result.magnitudines(), vec![3]);
+    // mean=2.0, var=(1+0+1)/3=0.6667, inv_std≈1.2247
+    let expected = vec![-1.2247449f32, 0.0, 1.2247449];
+    for (a, e) in result.planata().iter().zip(expected.iter()) {
+        assert!(
+            (a - e).abs() < 1e-4,
+            "rank-1 layernorm output {a} differs from expected {e}"
+        );
+    }
+}
+
+#[test]
+fn layernorm_rank2_axis0_no_affine() {
+    // 2×3 input, axis=0 (normalize each column independently)
+    let input =
+        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+    let result = input.layernorm(0, 1e-5, None, None).unwrap();
+
+    assert_eq!(result.magnitudines(), vec![2, 3]);
+    let result_data = result.planata();
+
+    // Col 0: [1, 4], mean=2.5, centered=[-1.5, 1.5], var=(2.25+2.25)/2=2.25, inv_std≈0.66667
+    // Expected col 0: [-1.0/√(0.444...), 1.0/√(0.444...)] = [-1.0, 1.0]
+    // Col 1: [2, 5], mean=3.5, centered=[-1.5, 1.5], var=2.25, inv_std≈0.66667
+    // Expected col 1: [-1.0, 1.0]
+    // Col 2: [3, 6], mean=4.5, same pattern
+    // Expected: [-1, -1, -1, 1, 1, 1]
+    let expected = vec![-1.0f32, -1.0, -1.0, 1.0, 1.0, 1.0];
+    for (a, e) in result_data.iter().zip(expected.iter()) {
+        assert!(
+            (a - e).abs() < 1e-4,
+            "axis-0 layernorm output {a} differs from expected {e}"
+        );
+    }
+}
+
+#[test]
+fn layernorm_rejects_non_finite_input() {
+    let input = Tensor::structa(vec![1.0f32, f32::NAN, 3.0], &[3]).unwrap();
+    assert_eq!(
+        input.layernorm(0, 1e-5, None, None).unwrap_err(),
+        ERR_LAYERNORM_NON_FINITE_INPUT
+    );
+}
+
+#[test]
+fn layernorm_rejects_empty_tensor() {
+    let input = Tensor::structa(vec![], &[0]).unwrap();
+    assert_eq!(
+        input.layernorm(0, 1e-5, None, None).unwrap_err(),
+        ERR_LAYERNORM_EMPTY_TENSOR
+    );
+}
+
+#[test]
+fn layernorm_rejects_rank_too_high() {
+    let input =
+        Tensor::structa(vec![1.0f32; 8], &[2, 2, 2]).unwrap();
+    assert_eq!(
+        input.layernorm(0, 1e-5, None, None).unwrap_err(),
+        ERR_LAYERNORM_RANK_TOO_HIGH
+    );
+}
+
+#[test]
+fn layernorm_rejects_axis_out_of_range() {
+    let input = Tensor::structa(vec![1.0f32, 2.0], &[2]).unwrap();
+    assert_eq!(
+        input.layernorm(1, 1e-5, None, None).unwrap_err(),
+        ERR_LAYERNORM_AXIS_OUT_OF_RANGE
+    );
+}
+
+#[test]
+fn layernorm_rejects_gamma_shape_mismatch() {
+    let input =
+        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+    let gamma = Tensor::structa(vec![1.0f32], &[1]).unwrap();
+    assert_eq!(
+        input.layernorm(1, 1e-5, Some(&gamma), None).unwrap_err(),
+        ERR_LAYERNORM_GAMMA_SHAPE_MISMATCH
+    );
+}
+
+#[test]
+fn layernorm_rejects_beta_shape_mismatch() {
+    let input =
+        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+    let beta = Tensor::structa(vec![1.0f32], &[1]).unwrap();
+    assert_eq!(
+        input.layernorm(1, 1e-5, None, Some(&beta)).unwrap_err(),
+        ERR_LAYERNORM_BETA_SHAPE_MISMATCH
+    );
+}
+
+#[test]
+fn layernorm_rejects_non_finite_gamma() {
+    let input =
+        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+    let gamma = Tensor::structa(vec![f32::NAN, 1.0], &[2]).unwrap();
+    assert_eq!(
+        input.layernorm(1, 1e-5, Some(&gamma), None).unwrap_err(),
+        ERR_LAYERNORM_GAMMA_NON_FINITE
+    );
+}
+
+#[test]
+fn layernorm_rejects_non_finite_beta() {
+    let input =
+        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+    let beta = Tensor::structa(vec![f32::INFINITY, 0.0], &[2]).unwrap();
+    assert_eq!(
+        input.layernorm(1, 1e-5, None, Some(&beta)).unwrap_err(),
+        ERR_LAYERNORM_BETA_NON_FINITE
+    );
+}
+
+#[test]
+fn layernorm_rejects_invalid_epsilon() {
+    let input = Tensor::structa(vec![1.0f32, 2.0], &[2]).unwrap();
+    assert_eq!(
+        input.layernorm(0, 0.0, None, None).unwrap_err(),
+        ERR_LAYERNORM_EPSILON_INVALID
+    );
+    assert_eq!(
+        input.layernorm(0, -1.0, None, None).unwrap_err(),
+        ERR_LAYERNORM_EPSILON_INVALID
+    );
+    assert_eq!(
+        input.layernorm(0, f32::NAN, None, None).unwrap_err(),
+        ERR_LAYERNORM_EPSILON_INVALID
+    );
 }

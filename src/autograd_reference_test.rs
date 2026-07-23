@@ -667,3 +667,89 @@ fn test_autograd_sqrt_gradient_at_zero() {
         grad_x.planata()[0]
     );
 }
+
+fn layernorm_no_affine_loss(params: &[f32]) -> f32 {
+    let x = Tensor::structa(params.to_vec(), &[2, 3]).expect("x tensor");
+    let result = x.layernorm(1, 1e-5, None, None).unwrap();
+    result.media().unwrap()
+}
+
+fn layernorm_no_affine_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(params, &[2, 3]));
+    let y = tape.layernorm(&x, 1, 1e-5, None, None).expect("layernorm records");
+    let loss = tape.media(&y).expect("media reduces");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+    gradients.gradient(x.id()).expect("x gradient").planata()
+}
+
+#[test]
+fn test_autograd_layernorm_gradient_no_affine() {
+    let params = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+    let reference = finite_difference_gradient(&params, layernorm_no_affine_loss);
+    let actual = layernorm_no_affine_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
+fn layernorm_with_affine_loss(params: &[f32]) -> f32 {
+    // params layout: [x: 6 elements, gamma: 3 elements, beta: 3 elements]
+    let x = Tensor::structa(params[0..6].to_vec(), &[2, 3]).expect("x tensor");
+    let gamma = Tensor::structa(params[6..9].to_vec(), &[3]).expect("gamma tensor");
+    let beta = Tensor::structa(params[9..12].to_vec(), &[3]).expect("beta tensor");
+    let result = x.layernorm(1, 1e-5, Some(&gamma), Some(&beta)).unwrap();
+    result.media().unwrap()
+}
+
+fn layernorm_with_affine_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(&params[0..6], &[2, 3]));
+    let gamma = leaf(&mut tape, tensor(&params[6..9], &[3]));
+    let beta = leaf(&mut tape, tensor(&params[9..12], &[3]));
+
+    let y = tape
+        .layernorm(&x, 1, 1e-5, Some(&gamma), Some(&beta))
+        .expect("layernorm records");
+    let loss = tape.media(&y).expect("media reduces");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    let mut actual = Vec::with_capacity(params.len());
+    actual.extend(gradients.gradient(x.id()).expect("x gradient").planata());
+    actual.extend(gradients.gradient(gamma.id()).expect("gamma gradient").planata());
+    actual.extend(gradients.gradient(beta.id()).expect("beta gradient").planata());
+    actual
+}
+
+#[test]
+fn test_autograd_layernorm_gradient_with_affine() {
+    // x: [1,2,3]  [4,5,6]  gamma: [1.0, 0.5, 2.0]  beta: [0.0, 0.1, -0.2]
+    let params = vec![
+        1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, // x: 2×3
+        1.0, 0.5, 2.0, // gamma
+        0.0, 0.1, -0.2, // beta
+    ];
+    let reference = finite_difference_gradient(&params, layernorm_with_affine_loss);
+    let actual = layernorm_with_affine_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
+#[test]
+fn test_autograd_layernorm_gradient_rank1() {
+    let params = vec![1.0f32, 2.0, 3.0];
+
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(&params, &[3]));
+    let y = tape.layernorm(&x, 0, 1e-5, None, None).expect("layernorm records");
+    let loss = tape.media(&y).expect("media reduces");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    let actual = gradients.gradient(x.id()).expect("x gradient").planata();
+    let reference = finite_difference_gradient(&params, |p| {
+        let t = Tensor::structa(p.to_vec(), &[3]).unwrap();
+        let result = t.layernorm(0, 1e-5, None, None).unwrap();
+        result.media().unwrap()
+    });
+
+    assert_gradient_close(&actual, &reference);
+}

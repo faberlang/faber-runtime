@@ -44,6 +44,18 @@ pub(crate) const ERR_RELU_NON_FINITE_INPUT: &str =
 pub(crate) const ERR_SQRT_NON_FINITE_INPUT: &str =
     "Sqrt requires finite input; NaN or inf was given.";
 pub(crate) const ERR_SQRT_NEGATIVE_INPUT: &str = "Sqrt requires non-negative input.";
+pub const ERR_LAYERNORM_NON_FINITE_INPUT: &str =
+    "layernorm requires finite input; NaN or inf was given.";
+pub const ERR_LAYERNORM_EMPTY_TENSOR: &str = "layernorm requires non-empty tensor.";
+pub const ERR_LAYERNORM_RANK_TOO_HIGH: &str = "layernorm requires rank-1 or rank-2 tensor.";
+pub const ERR_LAYERNORM_AXIS_OUT_OF_RANGE: &str = "layernorm axis out of range.";
+pub const ERR_LAYERNORM_GAMMA_SHAPE_MISMATCH: &str = "layernorm gamma shape does not match input shape at normalization axis.";
+pub const ERR_LAYERNORM_BETA_SHAPE_MISMATCH: &str = "layernorm beta shape does not match input shape at normalization axis.";
+pub const ERR_LAYERNORM_GAMMA_NON_FINITE: &str =
+    "layernorm gamma must be finite; NaN or inf was given.";
+pub const ERR_LAYERNORM_BETA_NON_FINITE: &str =
+    "layernorm beta must be finite; NaN or inf was given.";
+pub const ERR_LAYERNORM_EPSILON_INVALID: &str = "layernorm epsilon must be > 0 and finite.";
 
 #[must_use]
 pub fn tensor_dim_non_negative(value: i64) -> bool {
@@ -687,6 +699,236 @@ impl Tensor<f32> {
         // SAFETY: intentional f32 mean; precision loss acceptable for large element counts.
         #[allow(clippy::cast_precision_loss)]
         Ok(self.summa() / count as f32)
+    }
+
+    /// Layer normalization over a specified axis.
+    ///
+    /// Computes `(x - mean) / sqrt(var + eps)` followed by optional affine
+    /// transform `result * gamma + beta`. Mean and variance are computed
+    /// over the normalization axis independently for each slice.
+    ///
+    /// Domain validation rejects non-finite input, empty tensors, rank > 2,
+    /// out-of-range axis, shape-mismatched gamma/beta, non-finite
+    /// gamma/beta, and invalid epsilon.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any domain constraint is violated.
+    pub fn layernorm(
+        &self,
+        axis: i64,
+        epsilon: f32,
+        gamma: Option<&Tensor<f32>>,
+        beta: Option<&Tensor<f32>>,
+    ) -> Result<Tensor<f32>, &'static str> {
+        // Domain validation
+        if !epsilon.is_finite() || epsilon <= 0.0 {
+            return Err(ERR_LAYERNORM_EPSILON_INVALID);
+        }
+        let rank = self.shape.len();
+        if self.element_count() == 0 {
+            return Err(ERR_LAYERNORM_EMPTY_TENSOR);
+        }
+        if rank > 2 {
+            return Err(ERR_LAYERNORM_RANK_TOO_HIGH);
+        }
+        if rank == 0 {
+            return Err(ERR_LAYERNORM_RANK_TOO_HIGH);
+        }
+        let axis_usize = parse_non_negative(axis, ERR_LAYERNORM_AXIS_OUT_OF_RANGE)?;
+        if axis_usize >= rank {
+            return Err(ERR_LAYERNORM_AXIS_OUT_OF_RANGE);
+        }
+
+        let input_data = self.planata();
+        for &value in &input_data {
+            if !value.is_finite() {
+                return Err(ERR_LAYERNORM_NON_FINITE_INPUT);
+            }
+        }
+
+        // Validate gamma
+        if let Some(g) = gamma {
+            let g_data = g.planata();
+            if g.shape.len() != 1 || g.shape[0] != self.shape[axis_usize] {
+                return Err(ERR_LAYERNORM_GAMMA_SHAPE_MISMATCH);
+            }
+            for &value in &g_data {
+                if !value.is_finite() {
+                    return Err(ERR_LAYERNORM_GAMMA_NON_FINITE);
+                }
+            }
+        }
+
+        // Validate beta
+        if let Some(b) = beta {
+            let b_data = b.planata();
+            if b.shape.len() != 1 || b.shape[0] != self.shape[axis_usize] {
+                return Err(ERR_LAYERNORM_BETA_SHAPE_MISMATCH);
+            }
+            for &value in &b_data {
+                if !value.is_finite() {
+                    return Err(ERR_LAYERNORM_BETA_NON_FINITE);
+                }
+            }
+        }
+
+        // Forward computation: manual shape-loops
+        if rank == 1 {
+            // Normalize over the entire vector
+            let cols = self.shape[0];
+            let _n = cols as f32;
+
+            // Compute mean
+            let mean: f64 = input_data.iter().map(|&v| v as f64).sum::<f64>() / cols as f64;
+            let mean = mean as f32;
+
+            // Compute variance
+            let var: f64 = input_data
+                .iter()
+                .map(|&v| {
+                    let d = v as f64 - mean as f64;
+                    d * d
+                })
+                .sum::<f64>()
+                / cols as f64;
+            let var = var as f32;
+
+            let inv_std = 1.0 / (var + epsilon).sqrt();
+
+            // Compute normalized and optionally affine
+            let gamma_data = gamma.map(|g| g.planata());
+            let beta_data = beta.map(|b| b.planata());
+            let result: Vec<f32> = input_data
+                .iter()
+                .enumerate()
+                .map(|(i, &v)| {
+                    let centered = v - mean;
+                    let norm = centered * inv_std;
+                    match (&gamma_data, &beta_data) {
+                        (Some(g), Some(b)) => norm * g[i] + b[i],
+                        (Some(g), None) => norm * g[i],
+                        (None, Some(b)) => norm + b[i],
+                        (None, None) => norm,
+                    }
+                })
+                .collect();
+            Ok(Tensor::from_contiguous(result, vec![cols]))
+        } else {
+            // rank == 2, axis 0 or 1
+            let rows = self.shape[0];
+            let cols = self.shape[1];
+
+            // For axis=1: normalize each row independently
+            // For axis=0: normalize each column independently
+            let normalize_along_cols = axis_usize == 1;
+
+            let result: Vec<f32> = if normalize_along_cols {
+                let _n = cols as f32;
+                let mut result = vec![0.0_f32; (rows * cols) as usize];
+
+                for r in 0..rows {
+                    let row_start = (r * cols) as usize;
+                    let row_end = row_start + cols as usize;
+                    let row_data = &input_data[row_start..row_end];
+
+                    // Mean
+                    let mean: f64 =
+                        row_data.iter().map(|&v| v as f64).sum::<f64>() / cols as f64;
+                    let mean = mean as f32;
+
+                    // Variance
+                    let var: f64 = row_data
+                        .iter()
+                        .map(|&v| {
+                            let d = v as f64 - mean as f64;
+                            d * d
+                        })
+                        .sum::<f64>()
+                        / cols as f64;
+                    let var = var as f32;
+
+                    let inv_std = 1.0 / (var + epsilon).sqrt();
+
+                    for c in 0..cols {
+                        let c = c as usize;
+                        let idx = row_start + c;
+                        let centered = input_data[idx] - mean;
+                        let norm = centered * inv_std;
+
+                        result[idx] = match (gamma, beta) {
+                            (Some(g), Some(b)) => {
+                                let gd = g.planata();
+                                let bd = b.planata();
+                                norm * gd[c] + bd[c]
+                            }
+                            (Some(g), None) => {
+                                let gd = g.planata();
+                                norm * gd[c]
+                            }
+                            (None, Some(b)) => {
+                                let bd = b.planata();
+                                norm + bd[c]
+                            }
+                            (None, None) => norm,
+                        };
+                    }
+                }
+                result
+            } else {
+                // axis=0: normalize each column independently
+                let _n = rows as f32;
+                let mut result = vec![0.0_f32; (rows * cols) as usize];
+
+                for c in 0..cols {
+                    let c = c as usize;
+                    // Collect column data
+                    let mut col_sum: f64 = 0.0;
+                    for r in 0..rows {
+                        col_sum += input_data[(r * cols) as usize + c] as f64;
+                    }
+                    let mean = (col_sum / rows as f64) as f32;
+
+                    let mut col_var: f64 = 0.0;
+                    for r in 0..rows {
+                        let v = input_data[(r * cols) as usize + c];
+                        let d = v as f64 - mean as f64;
+                        col_var += d * d;
+                    }
+                    let var = (col_var / rows as f64) as f32;
+                    let inv_std = 1.0 / (var + epsilon).sqrt();
+
+                    for r in 0..rows {
+                        let r = r as usize;
+                        let idx = r * cols as usize + c;
+                        let centered = input_data[idx] - mean;
+                        let norm = centered * inv_std;
+
+                        result[idx] = match (gamma, beta) {
+                            (Some(g), Some(b)) => {
+                                let gd = g.planata();
+                                let bd = b.planata();
+                                norm * gd[r * cols as usize + c] + bd[r * cols as usize + c]
+                            }
+                            (Some(_), None) => {
+                                // Gamma for axis=0: shape matches rows
+                                // For axis=0 normalization, gamma has shape[rows], apply per row
+                                let gd = gamma.unwrap().planata();
+                                norm * gd[r]
+                            }
+                            (None, Some(_)) => {
+                                let bd = beta.unwrap().planata();
+                                norm + bd[r]
+                            }
+                            (None, None) => norm,
+                        };
+                    }
+                }
+                result
+            };
+
+            Ok(Tensor::from_contiguous(result, vec![rows, cols]))
+        }
     }
 }
 
