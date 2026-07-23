@@ -668,6 +668,40 @@ fn test_autograd_sqrt_gradient_at_zero() {
     );
 }
 
+fn gelu_loss(params: &[f32]) -> f32 {
+    let alpha = (2.0_f32 / std::f32::consts::PI).sqrt();
+    let beta = 0.044_715_f32;
+    params
+        .iter()
+        .map(|&x| {
+            let cube = x * x * x;
+            0.5 * x * (1.0 + (alpha * (x + beta * cube)).tanh())
+        })
+        .sum::<f32>()
+        / params.len() as f32
+}
+
+fn gelu_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(params, &[params.len() as i64]));
+
+    let activated = tape.gelu(&x).expect("gelu records");
+    let loss = tape.media(&activated).expect("media reduces");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    gradients.gradient(x.id()).expect("x gradient").planata()
+}
+
+#[test]
+fn test_autograd_gelu_gradient() {
+    // Include negative values — Gelu is smooth everywhere.
+    let params = vec![-3.0f32, -1.5, -0.5, 0.0, 0.2, 1.0, 2.5];
+    let reference = finite_difference_gradient(&params, gelu_loss);
+    let actual = gelu_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
 fn layernorm_no_affine_loss(params: &[f32]) -> f32 {
     let x = Tensor::structa(params.to_vec(), &[2, 3]).expect("x tensor");
     let result = x.layernorm(1, 1e-5, None, None).unwrap();

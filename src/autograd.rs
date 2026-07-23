@@ -38,6 +38,7 @@ pub(crate) enum AutogradOp {
     Neg,
     Relu,
     Sqrt,
+    Gelu,
     LayerNorm { axis: i64, epsilon: u32, has_gamma: bool, has_beta: bool },
     Matmul,
     Scala { factor: u32 },
@@ -196,6 +197,15 @@ impl AutogradTape {
             .sqrt()
             .map_err(AutogradError::Tensor)?;
         Ok(self.record(AutogradOp::Sqrt, vec![value.id], tensor))
+    }
+
+    pub(crate) fn gelu(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(value)?;
+        let tensor = self
+            .value(value.id)?
+            .gelu()
+            .map_err(AutogradError::Tensor)?;
+        Ok(self.record(AutogradOp::Gelu, vec![value.id], tensor))
     }
 
     pub(crate) fn matmul(
@@ -492,6 +502,36 @@ impl AutogradTape {
                             } else {
                                 up / denom
                             }
+                        })
+                        .collect();
+                    let grad =
+                        Tensor::structa(grad_data, &grad_shape).map_err(AutogradError::Tensor)?;
+                    gradients.accumulate(parent, grad)?;
+                }
+                AutogradOp::Gelu => {
+                    let &[parent] = node.parents.as_slice() else {
+                        return Err(AutogradError::MissingNode);
+                    };
+                    // VJP: d/dx gelu(x) = 0.5*(1+tanh(t)) + 0.5*x*(1-tanh²(t))*α*(1+3β*x²)
+                    // where t = α*(x + β*x³), α = √(2/π), β = 0.044715.
+                    // Precompute tanh(t) and sech²(t) = 1 - tanh²(t) to simplify.
+                    let forward_input = self.value(parent)?;
+                    let alpha = (2.0_f32 / std::f32::consts::PI).sqrt();
+                    let beta = 0.044_715_f32;
+                    let grad_shape = upstream.magnitudines();
+                    let grad_data: Vec<f32> = upstream
+                        .planata()
+                        .into_iter()
+                        .zip(forward_input.planata().into_iter())
+                        .map(|(up, x)| {
+                            let cube = x * x * x;
+                            let t = alpha * (x + beta * cube);
+                            let tanh_t = t.tanh();
+                            let tanh_sq = tanh_t * tanh_t;
+                            let sech_sq = 1.0 - tanh_sq;
+                            let derivative = 0.5 * (1.0 + tanh_t)
+                                + 0.5 * x * sech_sq * alpha * (1.0 + 3.0 * beta * x * x);
+                            up * derivative
                         })
                         .collect();
                     let grad =

@@ -44,6 +44,8 @@ pub(crate) const ERR_RELU_NON_FINITE_INPUT: &str =
 pub(crate) const ERR_SQRT_NON_FINITE_INPUT: &str =
     "Sqrt requires finite input; NaN or inf was given.";
 pub(crate) const ERR_SQRT_NEGATIVE_INPUT: &str = "Sqrt requires non-negative input.";
+pub(crate) const ERR_GELU_NON_FINITE_INPUT: &str =
+    "Gelu input must be finite; NaN or inf was given.";
 pub const ERR_LAYERNORM_NON_FINITE_INPUT: &str =
     "layernorm requires finite input; NaN or inf was given.";
 pub const ERR_LAYERNORM_EMPTY_TENSOR: &str = "layernorm requires non-empty tensor.";
@@ -632,6 +634,36 @@ impl Tensor<f32> {
         }
         Ok(Tensor::from_contiguous(
             self.planata().into_iter().map(|value| value.sqrt()).collect(),
+            self.shape.clone(),
+        ))
+    }
+
+    /// Elementwise Gaussian Error Linear Unit using the tanh approximation.
+    ///
+    /// Computes `0.5 * x * (1 + tanh(α * (x + β * x³)))` where
+    /// α = √(2/π) and β = 0.044715. Error < 1e-6 vs exact Gelu.
+    /// Rejects non-finite inputs (NaN, inf) per the domain-sensitive primitive
+    /// policy. All finite f32 inputs are valid — no other domain constraints.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any element is NaN or infinite.
+    pub fn gelu(&self) -> Result<Tensor<f32>, &'static str> {
+        for &value in self.planata().iter() {
+            if !value.is_finite() {
+                return Err(ERR_GELU_NON_FINITE_INPUT);
+            }
+        }
+        let alpha = (2.0 / std::f32::consts::PI).sqrt();
+        let beta = 0.044_715;
+        Ok(Tensor::from_contiguous(
+            self.planata()
+                .into_iter()
+                .map(|x| {
+                    let cube = x * x * x;
+                    0.5 * x * (1.0 + (alpha * (x + beta * cube)).tanh())
+                })
+                .collect(),
             self.shape.clone(),
         ))
     }
