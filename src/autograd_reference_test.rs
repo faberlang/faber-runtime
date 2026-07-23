@@ -668,6 +668,54 @@ fn test_autograd_sqrt_gradient_at_zero() {
     );
 }
 
+fn exp_loss(params: &[f32]) -> f32 {
+    params.iter().map(|&v| v.exp()).sum::<f32>() / params.len() as f32
+}
+
+fn exp_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(params, &[params.len() as i64]));
+
+    let activated = tape.exp(&x).expect("exp records");
+    let loss = tape.media(&activated).expect("media reduces");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    gradients.gradient(x.id()).expect("x gradient").planata()
+}
+
+#[test]
+fn test_autograd_exp_gradient() {
+    let params = vec![-1.0f32, 0.0, 1.0, 2.0];
+    let reference = finite_difference_gradient(&params, exp_loss);
+    let actual = exp_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
+fn log_loss(params: &[f32]) -> f32 {
+    params.iter().map(|&v| v.ln()).sum::<f32>() / params.len() as f32
+}
+
+fn log_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(params, &[params.len() as i64]));
+
+    let activated = tape.log(&x).expect("log records");
+    let loss = tape.media(&activated).expect("media reduces");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    gradients.gradient(x.id()).expect("x gradient").planata()
+}
+
+#[test]
+fn test_autograd_log_gradient() {
+    let params = vec![0.25f32, 0.5, 1.0, 2.0, 4.0];
+    let reference = finite_difference_gradient(&params, log_loss);
+    let actual = log_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
 fn gelu_loss(params: &[f32]) -> f32 {
     let alpha = (2.0_f32 / std::f32::consts::PI).sqrt();
     let beta = 0.044_715_f32;

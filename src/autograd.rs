@@ -38,6 +38,8 @@ pub(crate) enum AutogradOp {
     Neg,
     Relu,
     Sqrt,
+    Exp,
+    Log,
     Gelu,
     LayerNorm { axis: i64, epsilon: u32, has_gamma: bool, has_beta: bool },
     Matmul,
@@ -197,6 +199,24 @@ impl AutogradTape {
             .sqrt()
             .map_err(AutogradError::Tensor)?;
         Ok(self.record(AutogradOp::Sqrt, vec![value.id], tensor))
+    }
+
+    pub(crate) fn exp(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(value)?;
+        let tensor = self
+            .value(value.id)?
+            .exp()
+            .map_err(AutogradError::Tensor)?;
+        Ok(self.record(AutogradOp::Exp, vec![value.id], tensor))
+    }
+
+    pub(crate) fn log(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(value)?;
+        let tensor = self
+            .value(value.id)?
+            .log()
+            .map_err(AutogradError::Tensor)?;
+        Ok(self.record(AutogradOp::Log, vec![value.id], tensor))
     }
 
     pub(crate) fn gelu(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
@@ -506,6 +526,27 @@ impl AutogradTape {
                         .collect();
                     let grad =
                         Tensor::structa(grad_data, &grad_shape).map_err(AutogradError::Tensor)?;
+                    gradients.accumulate(parent, grad)?;
+                }
+                AutogradOp::Exp => {
+                    let &[parent] = node.parents.as_slice() else {
+                        return Err(AutogradError::MissingNode);
+                    };
+                    // VJP: d/dx exp(x) = exp(x) = forward_output
+                    let forward_output = self.value(node.id)?;
+                    let grad = upstream
+                        .multiplica(forward_output)
+                        .map_err(AutogradError::Tensor)?;
+                    gradients.accumulate(parent, grad)?;
+                }
+                AutogradOp::Log => {
+                    let &[parent] = node.parents.as_slice() else {
+                        return Err(AutogradError::MissingNode);
+                    };
+                    // VJP: d/dx log(x) = 1/x = upstream / x
+                    // The parent's saved value is the input x (not log(x)).
+                    let input = self.value(parent)?;
+                    let grad = upstream.divide(input).map_err(AutogradError::Tensor)?;
                     gradients.accumulate(parent, grad)?;
                 }
                 AutogradOp::Gelu => {
