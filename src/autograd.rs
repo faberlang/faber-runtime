@@ -38,7 +38,7 @@ pub(crate) enum AutogradOp {
     Neg,
     Relu,
     Sqrt,
-    LayerNorm { axis: i64, epsilon: u32 },
+    LayerNorm { axis: i64, epsilon: u32, has_gamma: bool, has_beta: bool },
     Matmul,
     Scala { factor: u32 },
     Forma,
@@ -335,7 +335,7 @@ impl AutogradTape {
             )
             .map_err(AutogradError::Tensor)?;
 
-        Ok(self.record(AutogradOp::LayerNorm { axis, epsilon: epsilon.to_bits() }, parents, tensor))
+        Ok(self.record(AutogradOp::LayerNorm { axis, epsilon: epsilon.to_bits(), has_gamma: gamma.is_some(), has_beta: beta.is_some() }, parents, tensor))
     }
 
     pub(crate) fn reject_unsupported<T>(
@@ -595,12 +595,10 @@ impl AutogradTape {
                 }
                 // VJP: Ba, J. L., Kiros, J. R., & Hinton, G. E. (2016).
                 // Layer Normalization. arXiv:1607.06450.
-                AutogradOp::LayerNorm { axis, epsilon } => {
+                AutogradOp::LayerNorm { axis, epsilon, has_gamma, has_beta } => {
                     let epsilon = f32::from_bits(epsilon);
                     let parents = node.parents.as_slice();
                     let input_id = parents[0];
-                    let has_gamma = parents.len() >= 2;
-                    let has_beta = parents.len() >= 3;
 
                     let input = self.value(input_id)?;
                     // forward_output is the post-affine output z = y*γ + β

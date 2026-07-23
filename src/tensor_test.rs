@@ -637,6 +637,33 @@ fn layernorm_rank2_axis0_no_affine() {
 }
 
 #[test]
+fn layernorm_rank2_axis0_with_affine() {
+    // Regression test: (Some(g), Some(b)) arm indexed gamma/beta at
+    // flattened (r*cols+c) instead of row (r), causing panic for cols>1.
+    let input =
+        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+    let gamma = Tensor::structa(vec![2.0f32, 0.5], &[2]).unwrap();
+    let beta = Tensor::structa(vec![0.1f32, -0.1], &[2]).unwrap();
+    let result = input.layernorm(0, 1e-5, Some(&gamma), Some(&beta)).unwrap();
+
+    assert_eq!(result.magnitudines(), vec![2, 3]);
+    let result_data = result.planata();
+
+    // axis=0 normalizes each column independently.
+    // Pre-affine normalized y = [-1,-1,-1, 1,1,1] (same as no-affine test).
+    // gamma = [2.0, 0.5], beta = [0.1, -0.1]
+    // Row 0 (r=0): -1 * 2.0 + 0.1 = -1.9
+    // Row 1 (r=1):  1 * 0.5 + (-0.1) = 0.4
+    let expected = vec![-1.9f32, -1.9, -1.9, 0.4, 0.4, 0.4];
+    for (a, e) in result_data.iter().zip(expected.iter()) {
+        assert!(
+            (a - e).abs() < 1e-4,
+            "axis-0 affine layernorm output {a} differs from expected {e}"
+        );
+    }
+}
+
+#[test]
 fn layernorm_rejects_non_finite_input() {
     let input = Tensor::structa(vec![1.0f32, f32::NAN, 3.0], &[3]).unwrap();
     assert_eq!(

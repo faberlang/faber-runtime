@@ -908,7 +908,7 @@ impl Tensor<f32> {
                             (Some(g), Some(b)) => {
                                 let gd = g.planata();
                                 let bd = b.planata();
-                                norm * gd[r * cols as usize + c] + bd[r * cols as usize + c]
+                                norm * gd[r] + bd[r]
                             }
                             (Some(_), None) => {
                                 // Gamma for axis=0: shape matches rows

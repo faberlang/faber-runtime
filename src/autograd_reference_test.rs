@@ -753,3 +753,44 @@ fn test_autograd_layernorm_gradient_rank1() {
 
     assert_gradient_close(&actual, &reference);
 }
+
+fn layernorm_beta_only_loss(params: &[f32]) -> f32 {
+    // params layout: [x: 6 elements, beta: 3 elements] — no gamma
+    let x = Tensor::structa(params[0..6].to_vec(), &[2, 3]).expect("x tensor");
+    let beta = Tensor::structa(params[6..9].to_vec(), &[3]).expect("beta tensor");
+    let result = x.layernorm(1, 1e-5, None, Some(&beta)).unwrap();
+    result.media().unwrap()
+}
+
+fn layernorm_beta_only_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    // Regression test: (None, Some(beta)) must NOT treat beta as gamma.
+    // Before the fix, parents=[input_id, beta_id] was read as has_gamma=true,
+    // has_beta=false, silently treating beta as gamma and skipping dbeta.
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(&params[0..6], &[2, 3]));
+    let beta = leaf(&mut tape, tensor(&params[6..9], &[3]));
+
+    let y = tape
+        .layernorm(&x, 1, 1e-5, None, Some(&beta))
+        .expect("layernorm records");
+    let loss = tape.media(&y).expect("media reduces");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    let mut actual = Vec::with_capacity(params.len());
+    actual.extend(gradients.gradient(x.id()).expect("x gradient").planata());
+    actual.extend(gradients.gradient(beta.id()).expect("beta gradient").planata());
+    actual
+}
+
+#[test]
+fn test_autograd_layernorm_gradient_beta_only() {
+    // x: [1,2,3]  [4,5,6]  beta: [0.0, 0.1, -0.2]  (no gamma)
+    let params = vec![
+        1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, // x: 2×3
+        0.0, 0.1, -0.2, // beta only
+    ];
+    let reference = finite_difference_gradient(&params, layernorm_beta_only_loss);
+    let actual = layernorm_beta_only_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
