@@ -1000,3 +1000,46 @@ fn test_autograd_layernorm_gradient_gamma_only() {
 
     assert_gradient_close(&actual, &reference);
 }
+
+// ── Cross-entropy loss numeric oracle ──────────────────────────────────
+
+fn crux_entropia_loss(params: &[f32]) -> f32 {
+    // Fixed targets: [[1,0,0], [0,1,0]] one-hot for 2-batch, 3-class
+    let logits = Tensor::structa(params.to_vec(), &[2, 3]).expect("logits tensor");
+    let targets = Tensor::structa(
+        vec![1.0_f32, 0.0, 0.0, 0.0, 1.0, 0.0],
+        &[2, 3],
+    )
+    .expect("targets tensor");
+    logits.crux_entropia(&targets).expect("cross-entropy forward")
+}
+
+fn crux_entropia_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let logits = leaf(&mut tape, tensor(params, &[2, 3]));
+    let targets = leaf(
+        &mut tape,
+        tensor(&[1.0_f32, 0.0, 0.0, 0.0, 1.0, 0.0], &[2, 3]),
+    );
+
+    let loss = tape
+        .crux_entropia(&logits, &targets)
+        .expect("crux_entropia records");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    gradients
+        .gradient(logits.id())
+        .expect("logits gradient")
+        .planata()
+}
+
+#[test]
+fn test_autograd_crux_entropia_gradient() {
+    // Fixed logits: [[2.0, 1.0, 0.0], [1.0, 2.0, 1.0]]  (2-batch, 3-class)
+    // Fixed targets: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]  (one-hot)
+    let params = vec![2.0_f32, 1.0, 0.0, 1.0, 2.0, 1.0];
+    let reference = finite_difference_gradient(&params, crux_entropia_loss);
+    let actual = crux_entropia_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}

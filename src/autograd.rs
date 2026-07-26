@@ -43,6 +43,7 @@ pub(crate) enum AutogradOp {
     Gelu,
     LayerNorm { axis: i64, epsilon: u32, has_gamma: bool, has_beta: bool },
     Softmax,
+    CruxEntropia,
     Matmul,
     Scala { factor: u32 },
     Forma,
@@ -251,6 +252,33 @@ impl AutogradTape {
             .softmax()
             .map_err(AutogradError::Tensor)?;
         Ok(self.record(AutogradOp::Softmax, vec![value.id], tensor))
+    }
+
+    /// Cross-entropy loss tape method.
+    ///
+    /// Records logits and targets as parents, computes the scalar
+    /// forward loss, and records `AutogradOp::CruxEntropia` for VJP
+    /// computation during backward.
+    ///
+    /// VJP: dL/dlogits = upstream * (softmax(logits) - targets) / N
+    /// where N = last dimension (number of classes).
+    pub(crate) fn crux_entropia(
+        &mut self,
+        logits: &AutogradValue,
+        targets: &AutogradValue,
+    ) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(logits)?;
+        self.ensure_member(targets)?;
+        let loss = self
+            .value(logits.id)?
+            .crux_entropia(self.value(targets.id)?)
+            .map_err(AutogradError::Tensor)?;
+        let tensor = Tensor::structa(vec![loss], &[]).map_err(AutogradError::Tensor)?;
+        Ok(self.record(
+            AutogradOp::CruxEntropia,
+            vec![logits.id, targets.id],
+            tensor,
+        ))
     }
 
     pub(crate) fn matmul(
@@ -978,6 +1006,27 @@ impl AutogradTape {
                         .multiplica(&centered)
                         .map_err(AutogradError::Tensor)?;
                     gradients.accumulate(parent, grad)?;
+                }
+                AutogradOp::CruxEntropia => {
+                    let &[logits_id, _targets_id] = parent_pair(node)?;
+                    let logits = self.value(logits_id)?;
+                    let targets = self.value(_targets_id)?;
+                    let softmax = logits.softmax().map_err(AutogradError::Tensor)?;
+                    let upstream_scalar = rank_zero_scalar(&upstream)?;
+                    let last_dim = *logits
+                        .magnitudines()
+                        .last()
+                        .ok_or(AutogradError::ShapeMismatch)?;
+                    if last_dim <= 0 {
+                        return Err(AutogradError::ShapeMismatch);
+                    }
+                    #[allow(clippy::cast_precision_loss)]
+                    let n_f32 = last_dim as f32;
+                    let diff = softmax
+                        .subtrahe(targets)
+                        .map_err(AutogradError::Tensor)?;
+                    let grad = diff.scala(upstream_scalar / n_f32);
+                    gradients.accumulate(logits_id, grad)?;
                 }
             }
         }

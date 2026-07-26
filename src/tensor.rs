@@ -57,6 +57,18 @@ pub(crate) const ERR_LOG_NON_FINITE_RESULT: &str =
 pub(crate) const ERR_SOFTMAX_NON_FINITE_INPUT: &str =
     "Softmax input must be finite; NaN or inf was given.";
 pub(crate) const ERR_SOFTMAX_EMPTY_TENSOR: &str = "Softmax requires non-empty tensor.";
+pub(crate) const ERR_CRUX_ENTROPIA_NON_FINITE_INPUT: &str =
+    "Cross-entropy logits must be finite; NaN or inf was given.";
+pub(crate) const ERR_CRUX_ENTROPIA_EMPTY_TENSOR: &str =
+    "Cross-entropy requires non-empty tensor.";
+pub(crate) const ERR_CRUX_ENTROPIA_TARGET_NON_FINITE: &str =
+    "Cross-entropy targets must be finite; NaN or inf was given.";
+pub(crate) const ERR_CRUX_ENTROPIA_TARGET_RANGE: &str =
+    "Cross-entropy targets must be in [0, 1].";
+pub(crate) const ERR_CRUX_ENTROPIA_SHAPE_MISMATCH: &str =
+    "Cross-entropy logits and targets must have the same shape.";
+pub(crate) const ERR_CRUX_ENTROPIA_RANK: &str =
+    "Cross-entropy requires rank-1 or rank-2 tensor.";
 pub const ERR_LAYERNORM_NON_FINITE_INPUT: &str =
     "layernorm requires finite input; NaN or inf was given.";
 pub const ERR_LAYERNORM_EMPTY_TENSOR: &str = "layernorm requires non-empty tensor.";
@@ -782,6 +794,56 @@ impl Tensor<f32> {
             }
         }
         Ok(Tensor::from_contiguous(out_data, self.shape.clone()))
+    }
+
+    /// Cross-entropy loss with internal softmax over the last axis.
+    ///
+    /// Computes `-sum(targets * log(softmax(logits) + ε)) / N` where
+    /// ε = 1e-7 for numerical stability and N = last_dim (number of classes).
+    /// Operates on rank-1 (single example) or rank-2 (batched, row-wise).
+    ///
+    /// Domain validation: non-empty, finite logits, finite targets,
+    /// targets in [0, 1], matching shapes, rank 1 or 2.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if any domain constraint is violated.
+    pub fn crux_entropia(&self, targets: &Tensor<f32>) -> Result<f32, &'static str> {
+        if self.element_count() == 0 {
+            return Err(ERR_CRUX_ENTROPIA_EMPTY_TENSOR);
+        }
+        for &value in self.planata().iter() {
+            if !value.is_finite() {
+                return Err(ERR_CRUX_ENTROPIA_NON_FINITE_INPUT);
+            }
+        }
+        for &value in targets.planata().iter() {
+            if !value.is_finite() {
+                return Err(ERR_CRUX_ENTROPIA_TARGET_NON_FINITE);
+            }
+            if !(0.0..=1.0).contains(&value) {
+                return Err(ERR_CRUX_ENTROPIA_TARGET_RANGE);
+            }
+        }
+        if self.magnitudines() != targets.magnitudines() {
+            return Err(ERR_CRUX_ENTROPIA_SHAPE_MISMATCH);
+        }
+        let rank = self.shape.len();
+        if rank < 1 || rank > 2 {
+            return Err(ERR_CRUX_ENTROPIA_RANK);
+        }
+
+        let softmax = self.softmax()?;
+        let eps = 1e-7_f32;
+        let last_dim = self.shape[rank - 1] as f32;
+
+        let mut sum = 0.0_f32;
+        let softmax_data = softmax.planata();
+        let targets_data = targets.planata();
+        for (s, &t) in softmax_data.iter().zip(targets_data.iter()) {
+            sum -= t * (s + eps).ln();
+        }
+        Ok(sum / last_dim)
     }
 
     /// Elementwise scalar multiplication preserving tensor shape.

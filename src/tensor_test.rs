@@ -1,6 +1,8 @@
 use super::{
     tensor_flat_offset, tensor_shape_element_count, tensor_shape_has_element_count, Tensor,
-    ERR_BROADCAST_SHAPE, ERR_DIVIDE_NON_FINITE_INPUT, ERR_DIVIDE_NON_FINITE_RESULT,
+    ERR_BROADCAST_SHAPE, ERR_CRUX_ENTROPIA_EMPTY_TENSOR, ERR_CRUX_ENTROPIA_NON_FINITE_INPUT,
+    ERR_CRUX_ENTROPIA_SHAPE_MISMATCH, ERR_CRUX_ENTROPIA_TARGET_NON_FINITE,
+    ERR_CRUX_ENTROPIA_TARGET_RANGE, ERR_DIVIDE_NON_FINITE_INPUT, ERR_DIVIDE_NON_FINITE_RESULT,
     ERR_DIVIDE_ZERO_DENOMINATOR, ERR_ELEMENT_COUNT_OVERFLOW,
     ERR_LAYERNORM_AXIS_OUT_OF_RANGE, ERR_LAYERNORM_BETA_NON_FINITE,
     ERR_LAYERNORM_BETA_SHAPE_MISMATCH, ERR_LAYERNORM_EMPTY_TENSOR,
@@ -845,4 +847,75 @@ fn softmax_preserves_shape() {
     let output = input.softmax().unwrap();
     assert_eq!(output.longitudo(), 2);
     assert_eq!(output.element_count(), 6);
+}
+
+// ---------------------------------------------------------------------------
+// Cross-entropy forward tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn crux_entropia_rank2_correct_loss() {
+    let logits =
+        Tensor::structa(vec![2.0_f32, 1.0, 0.0, 1.0, 2.0, 1.0], &[2, 3]).unwrap();
+    let targets =
+        Tensor::structa(vec![1.0_f32, 0.0, 0.0, 0.0, 1.0, 0.0], &[2, 3]).unwrap();
+    let loss = logits.crux_entropia(&targets).unwrap();
+    // softmax row0 = [0.6652, 0.2447, 0.0900], row1 = [0.2119, 0.5761, 0.2119]
+    // CE: row0 = -log(0.6652+ε) ≈ 0.4076, row1 = -log(0.5761+ε) ≈ 0.5514
+    // Loss = (0.4076 + 0.5514) / 3 ≈ 0.3197
+    let expected = 0.3197_f32;
+    assert!(
+        (loss - expected).abs() < 1e-4,
+        "expected ~{expected}, got {loss}"
+    );
+}
+
+#[test]
+fn crux_entropia_rejects_empty_tensor() {
+    let empty = Tensor::<f32>::structa(Vec::new(), &[0]).unwrap();
+    let targets = Tensor::<f32>::structa(Vec::new(), &[0]).unwrap();
+    assert_eq!(
+        empty.crux_entropia(&targets).unwrap_err(),
+        ERR_CRUX_ENTROPIA_EMPTY_TENSOR
+    );
+}
+
+#[test]
+fn crux_entropia_rejects_non_finite_logits() {
+    let logits = Tensor::structa(vec![1.0_f32, f32::NAN, 3.0], &[3]).unwrap();
+    let targets = Tensor::structa(vec![1.0_f32, 0.0, 0.0], &[3]).unwrap();
+    assert_eq!(
+        logits.crux_entropia(&targets).unwrap_err(),
+        ERR_CRUX_ENTROPIA_NON_FINITE_INPUT
+    );
+}
+
+#[test]
+fn crux_entropia_rejects_non_finite_targets() {
+    let logits = Tensor::structa(vec![1.0_f32, 2.0, 3.0], &[3]).unwrap();
+    let targets = Tensor::structa(vec![1.0_f32, f32::INFINITY, 0.0], &[3]).unwrap();
+    assert_eq!(
+        logits.crux_entropia(&targets).unwrap_err(),
+        ERR_CRUX_ENTROPIA_TARGET_NON_FINITE
+    );
+}
+
+#[test]
+fn crux_entropia_rejects_target_out_of_range() {
+    let logits = Tensor::structa(vec![1.0_f32, 2.0, 3.0], &[3]).unwrap();
+    let targets = Tensor::structa(vec![1.5_f32, 0.0, 0.0], &[3]).unwrap();
+    assert_eq!(
+        logits.crux_entropia(&targets).unwrap_err(),
+        ERR_CRUX_ENTROPIA_TARGET_RANGE
+    );
+}
+
+#[test]
+fn crux_entropia_rejects_shape_mismatch() {
+    let logits = Tensor::structa(vec![1.0_f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+    let targets = Tensor::structa(vec![1.0_f32, 0.0, 0.0], &[3]).unwrap();
+    assert_eq!(
+        logits.crux_entropia(&targets).unwrap_err(),
+        ERR_CRUX_ENTROPIA_SHAPE_MISMATCH
+    );
 }
