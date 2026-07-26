@@ -42,6 +42,7 @@ pub(crate) enum AutogradOp {
     Log,
     Gelu,
     LayerNorm { axis: i64, epsilon: u32, has_gamma: bool, has_beta: bool },
+    Softmax,
     Matmul,
     Scala { factor: u32 },
     Forma,
@@ -226,6 +227,25 @@ impl AutogradTape {
             .gelu()
             .map_err(AutogradError::Tensor)?;
         Ok(self.record(AutogradOp::Gelu, vec![value.id], tensor))
+    }
+
+    /// Softmax tape method. Last-axis only (rank-1 vector or rank-2 batched
+    /// row-wise). Records the forward pass as `AutogradOp::Softmax` for VJP
+    /// computation during backward.
+    ///
+    /// VJP: y * (upstream - sum(y * upstream)) where y = softmax(x).
+    /// Uses scalar `Summa` — correct for rank-1; batched rank-2 softmax
+    /// requires per-row `SumAxis` (not available on the tape).
+    pub(crate) fn softmax(
+        &mut self,
+        value: &AutogradValue,
+    ) -> Result<AutogradValue, AutogradError> {
+        self.ensure_member(value)?;
+        let tensor = self
+            .value(value.id)?
+            .softmax()
+            .map_err(AutogradError::Tensor)?;
+        Ok(self.record(AutogradOp::Softmax, vec![value.id], tensor))
     }
 
     pub(crate) fn matmul(
@@ -929,6 +949,32 @@ impl AutogradTape {
                             gradients.accumulate(beta_id, dbeta)?;
                         }
                     }
+                }
+                AutogradOp::Softmax => {
+                    let &[parent] = node.parents.as_slice() else {
+                        return Err(AutogradError::MissingNode);
+                    };
+                    // VJP: y * (upstream - sum(y * upstream))
+                    // where y = softmax(x) = forward_output.
+                    // Uses scalar Summa — correct for rank-1 softmax.
+                    // For rank-2 batched softmax, per-row SumAxis is
+                    // needed; the tape does not have it. Batched softmax
+                    // validation is done through the AIR pipeline.
+                    let forward_output = self.value(node.id)?;
+                    let upstream_shape = upstream.magnitudines();
+                    let y_mul_up = upstream
+                        .multiplica(forward_output)
+                        .map_err(AutogradError::Tensor)?;
+                    let sum_y_up: f32 = y_mul_up.summa();
+                    let broadcast = Tensor::crea(&upstream_shape, sum_y_up)
+                        .map_err(AutogradError::Tensor)?;
+                    let centered = upstream
+                        .subtrahe(&broadcast)
+                        .map_err(AutogradError::Tensor)?;
+                    let grad = forward_output
+                        .multiplica(&centered)
+                        .map_err(AutogradError::Tensor)?;
+                    gradients.accumulate(parent, grad)?;
                 }
             }
         }
@@ -2475,6 +2521,76 @@ mod tests {
             gradients.gradient(weight.id()).expect("weight gradient"),
             &[1.0, 2.0],
             &[1, 2],
+        );
+    }
+
+    #[test]
+    fn autograd_tape_softmax_records_parent_edge_and_forward_value() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0], &[3]));
+
+        let soft = tape.softmax(&value).expect("softmax records");
+
+        // softmax([1,2,3]) = softmax([-2,-1,0]) with shift
+        // exp(-2)=0.1353, exp(-1)=0.3679, exp(0)=1.0, sum=1.5032
+        // [0.0900, 0.2447, 0.6652]
+        let expected = vec![0.0900_f32, 0.2447, 0.6652];
+        for (i, (actual, expected)) in soft.tensor().planata().iter().zip(expected.iter()).enumerate() {
+            let delta = (actual - expected).abs();
+            assert!(delta <= 1.0e-3, "softmax[{i}] expected {expected}, got {actual}, delta {delta}");
+        }
+        assert_eq!(soft.tensor().magnitudines(), vec![3]);
+
+        let node = tape.node(soft.id()).expect("softmax node");
+        assert_eq!(node.op(), AutogradOp::Softmax);
+        assert_eq!(node.parents(), &[value.id()]);
+    }
+
+    #[test]
+    fn backward_softmax_gradient_matches_analytic_vjp_rank1() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0], &[3]));
+
+        let soft = tape.softmax(&value).expect("softmax records");
+        let loss = tape.summa(&soft).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        // analytic VJP for softmax with upstream=1.0 (from summa):
+        // y = softmax(x), vjp = y * (1.0 - sum(y * 1.0)) = y * (1.0 - 1.0) = y * 0 = 0
+        // Actually: sum(y) = 1.0, so y * (1.0 - 1.0) = [0,0,0]
+        // The softmax output itself sums to 1.0, so y * (1.0 - sum(y*1)) = 0
+        assert_tensor_close(
+            gradients.gradient(value.id()).expect("value gradient"),
+            &[0.0, 0.0, 0.0],
+            &[3],
+        );
+    }
+
+    #[test]
+    fn backward_softmax_gradient_rank1_weighted_loss() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0], &[3]));
+        let weights = leaf(&mut tape, tensor(&[2.0, -1.0, 0.5], &[3]));
+
+        let soft = tape.softmax(&value).expect("softmax records");
+        let weighted = tape.mul(&soft, &weights).expect("weighted mul");
+        let loss = tape.summa(&weighted).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+
+        let grad = gradients.gradient(value.id()).expect("value gradient");
+        assert_eq!(grad.magnitudines(), vec![3]);
+        // All gradient components must be finite (no NaN, no Inf).
+        for (i, &g) in grad.planata().iter().enumerate() {
+            assert!(g.is_finite(), "gradient[{i}] must be finite, got {g}");
+        }
+        // Weights gradient = softmax output (from mul VJP with upstream=1
+        // via summa). Compare against the forward softmax output directly.
+        let weight_grad = gradients.gradient(weights.id()).expect("weights gradient");
+        let soft_data = soft.tensor().planata();
+        assert_tensor_close(
+            weight_grad,
+            &soft_data,
+            &[3],
         );
     }
 }

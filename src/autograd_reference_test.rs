@@ -879,3 +879,47 @@ fn test_autograd_layernorm_gradient_beta_only() {
 
     assert_gradient_close(&actual, &reference);
 }
+
+fn softmax_loss(params: &[f32]) -> f32 {
+    let x = Tensor::structa(params.to_vec(), &[params.len() as i64]).expect("x tensor");
+    let result = x.softmax().unwrap();
+    result.media().unwrap()
+}
+
+fn softmax_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(params, &[params.len() as i64]));
+
+    let activated = tape.softmax(&x).expect("softmax records");
+    let loss = tape.media(&activated).expect("media reduces");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    gradients.gradient(x.id()).expect("x gradient").planata()
+}
+
+#[test]
+fn test_autograd_softmax_gradient_rank1() {
+    let params = vec![1.0f32, 2.0, 3.0, 4.0, 5.0];
+    let reference = finite_difference_gradient(&params, softmax_loss);
+    let actual = softmax_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
+#[test]
+fn test_autograd_softmax_gradient_rank1_small() {
+    let params = vec![1.0f32, 2.0, 3.0];
+    let reference = finite_difference_gradient(&params, softmax_loss);
+    let actual = softmax_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
+#[test]
+fn test_autograd_softmax_gradient_rank1_negative() {
+    let params = vec![-1.0f32, 0.0, 1.0, 2.0];
+    let reference = finite_difference_gradient(&params, softmax_loss);
+    let actual = softmax_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
