@@ -34,7 +34,7 @@ pub use frame::{
 };
 pub use host_abi::{FaberRtContextV1, FaberRtExitV1, FaberRtSliceV1, FaberRtStatusV1};
 pub use instans::{Instans, InstansPraecisio};
-pub use intervallum::{Intervallum, IntervallumKind};
+pub use intervallum::{Intervallum, IntervallumKind, IntervallumNumeric, IntervallumWalk};
 pub use json::{Json, JsonError, JsonErrorKind};
 pub use packed_numeric::{
     packed_u4_tensor_integration_rows, PackedBitOrder, PackedTensorIntegrationOperation,

@@ -19,6 +19,80 @@ pub struct Intervallum<T> {
     pub kind: IntervallumKind,
 }
 
+// ---------------------------------------------------------------------------
+// Internal trait: abstracts over sized-integer operations for the walk impls
+// ---------------------------------------------------------------------------
+
+/// Sealed — sized-integer numeric helpers for `Intervallum` methods.
+pub trait IntervallumNumeric: PartialOrd + Copy + Sized {
+    const MAX: Self;
+    const MIN: Self;
+
+    fn one() -> Self;
+    fn zero() -> Self;
+
+    fn saturating_add(self, rhs: Self) -> Self;
+    fn saturating_sub(self, rhs: Self) -> Self;
+
+    /// Step one unit forward (toward +∞).  Wraps for unsigned underflow-safe
+    /// walking; callers guard against MAX beforehand.
+    fn walk_ascend(self) -> Self;
+
+    /// Step one unit backward (toward −∞).  Wraps for unsigned underflow-safe
+    /// walking; callers guard against MIN beforehand.
+    fn walk_descend(self) -> Self;
+
+    /// Convert to `i64` for cardinality / length returns.
+    fn to_i64(self) -> i64;
+}
+
+macro_rules! impl_intervallum_numeric_signed {
+    ($($ty:ty),+ $(,)?) => {
+        $(impl IntervallumNumeric for $ty {
+            const MAX: Self = <$ty>::MAX;
+            const MIN: Self = <$ty>::MIN;
+
+            fn one() -> Self { 1 }
+            fn zero() -> Self { 0 }
+
+            fn saturating_add(self, rhs: Self) -> Self { self.saturating_add(rhs) }
+            fn saturating_sub(self, rhs: Self) -> Self { self.saturating_sub(rhs) }
+
+            fn walk_ascend(self) -> Self { self + 1 }
+            fn walk_descend(self) -> Self { self - 1 }
+
+            fn to_i64(self) -> i64 { self as i64 }
+        })+
+    }
+}
+
+macro_rules! impl_intervallum_numeric_unsigned {
+    ($($ty:ty),+ $(,)?) => {
+        $(impl IntervallumNumeric for $ty {
+            const MAX: Self = <$ty>::MAX;
+            const MIN: Self = <$ty>::MIN;
+
+            fn one() -> Self { 1 }
+            fn zero() -> Self { 0 }
+
+            fn saturating_add(self, rhs: Self) -> Self { self.saturating_add(rhs) }
+            fn saturating_sub(self, rhs: Self) -> Self { self.saturating_sub(rhs) }
+
+            fn walk_ascend(self) -> Self { self + 1 }
+            fn walk_descend(self) -> Self { self.wrapping_sub(1) }
+
+            fn to_i64(self) -> i64 { self as i64 }
+        })+
+    }
+}
+
+impl_intervallum_numeric_signed!(i8, i16, i32, i64);
+impl_intervallum_numeric_unsigned!(u8, u16, u32, u64);
+
+// ---------------------------------------------------------------------------
+// Generic struct-level constructors
+// ---------------------------------------------------------------------------
+
 impl<T: PartialOrd + Copy> Intervallum<T> {
     pub fn exclusive(initium: T, finis: T) -> Self {
         Self {
@@ -64,43 +138,39 @@ impl<T: PartialOrd + Copy> Intervallum<T> {
 }
 
 fn max_bound<T: PartialOrd + Copy>(a: T, b: T) -> T {
-    if a >= b {
-        a
-    } else {
-        b
-    }
+    if a >= b { a } else { b }
 }
 
 fn min_bound<T: PartialOrd + Copy>(a: T, b: T) -> T {
-    if a <= b {
-        a
-    } else {
-        b
-    }
+    if a <= b { a } else { b }
 }
 
-impl Intervallum<i64> {
-    /// Clamp `value` into this interval (refinement-target conversio: result is `numerus`).
+// ---------------------------------------------------------------------------
+// Sized-integer directed walk + set operations (no Default bound needed)
+// ---------------------------------------------------------------------------
+
+impl<T: IntervallumNumeric> Intervallum<T> {
+    /// Clamp `value` into this interval (refinement-target conversio).
     ///
     /// For descending spans, the valid range runs from `initium` (high) down to
     /// `finis` (low); clamp maps out-of-range values to the nearest valid endpoint.
     #[must_use]
-    pub fn coercere(&self, value: i64) -> i64 {
+    pub fn coercere(&self, value: T) -> T {
         if self.continet(&value) {
             return value;
         }
         let ascending = self.initium <= self.finis;
-        let lo = self.initium.min(self.finis);
-        let hi = self.initium.max(self.finis);
+        let lo = min_bound(self.initium, self.finis);
+        let hi = max_bound(self.initium, self.finis);
 
         // When the excluded `finis` is the outward bound of the valid range,
         // the nearest valid point is one step inside from it.
         let lo_valid = match self.kind {
-            IntervallumKind::Exclusive if !ascending => lo.saturating_add(1),
+            IntervallumKind::Exclusive if !ascending => lo.saturating_add(T::one()),
             _ => lo,
         };
         let hi_valid = match self.kind {
-            IntervallumKind::Exclusive if ascending => hi.saturating_sub(1),
+            IntervallumKind::Exclusive if ascending => hi.saturating_sub(T::one()),
             _ => hi,
         };
 
@@ -125,20 +195,20 @@ impl Intervallum<i64> {
 
     /// Materialize interval values into an eager list (honors declared inclusivity).
     #[must_use]
-    pub fn ad_lista(&self) -> Vec<i64> {
-        let step = if self.initium <= self.finis { 1 } else { -1 };
+    pub fn ad_lista(&self) -> Vec<T> {
+        let ascending = self.initium <= self.finis;
         let mut out = Vec::new();
         let mut cursor = self.initium;
-        if step > 0 {
+        if ascending {
             while match self.kind {
                 IntervallumKind::Exclusive => cursor < self.finis,
                 IntervallumKind::Inclusive => cursor <= self.finis,
             } {
                 out.push(cursor);
-                if cursor == i64::MAX {
+                if cursor >= T::MAX {
                     break;
                 }
-                cursor += step;
+                cursor = cursor.walk_ascend();
             }
         } else {
             while match self.kind {
@@ -146,16 +216,28 @@ impl Intervallum<i64> {
                 IntervallumKind::Inclusive => cursor >= self.finis,
             } {
                 out.push(cursor);
-                if cursor == i64::MIN {
+                if cursor <= T::MIN {
                     break;
                 }
-                cursor += step;
+                cursor = cursor.walk_descend();
             }
         }
         out
     }
 
-    /// Discrete span count for `numerus` intervals (same cardinality as `ad_lista()`).
+    /// Lazy interval walk — returns an iterator over the values in this interval.
+    ///
+    /// Honors the declared inclusivity and direction.  Use instead of `ad_lista`
+    /// when you do not need the full materialized `Vec`.
+    #[must_use]
+    pub fn ambula(&self) -> IntervallumWalk<T> {
+        IntervallumWalk {
+            interval: *self,
+            cursor: self.initium,
+        }
+    }
+
+    /// Discrete span count (same cardinality as `ad_lista()`).
     #[must_use]
     pub fn longitudo(&self) -> i64 {
         let span = if self.initium <= self.finis {
@@ -163,16 +245,11 @@ impl Intervallum<i64> {
         } else {
             self.initium.saturating_sub(self.finis)
         };
+        let span_i64 = span.to_i64();
         match self.kind {
-            IntervallumKind::Exclusive => span,
-            IntervallumKind::Inclusive => span.saturating_add(1),
+            IntervallumKind::Exclusive => span_i64,
+            IntervallumKind::Inclusive => span_i64.saturating_add(1),
         }
-    }
-
-    /// Materialize interval values into a 1-d tensor (honors declared inclusivity).
-    #[must_use]
-    pub fn ad_tensor(&self) -> Tensor<i64> {
-        Tensor::linea(self.ad_lista())
     }
 
     /// Interval intersection; `None` when disjoint (distinct from range clamp).
@@ -202,7 +279,7 @@ impl Intervallum<i64> {
             if new_lo >= hi {
                 return None;
             }
-            new_lo = new_lo.saturating_add(1);
+            new_lo = new_lo.saturating_add(T::one());
         }
 
         // Find last point in the overlapping region that belongs to both intervals.
@@ -214,7 +291,7 @@ impl Intervallum<i64> {
             if new_hi <= new_lo {
                 return None;
             }
-            new_hi = new_hi.saturating_sub(1);
+            new_hi = new_hi.saturating_sub(T::one());
         }
 
         // Result direction follows left operand.
@@ -256,7 +333,7 @@ impl Intervallum<i64> {
             if self.continet(&new_lo) || other.continet(&new_lo) {
                 break;
             }
-            new_lo = new_lo.saturating_add(1);
+            new_lo = new_lo.saturating_add(T::one());
         }
 
         // Find last point from the union that is in at least one interval.
@@ -265,7 +342,7 @@ impl Intervallum<i64> {
             if self.continet(&new_hi) || other.continet(&new_hi) {
                 break;
             }
-            new_hi = new_hi.saturating_sub(1);
+            new_hi = new_hi.saturating_sub(T::one());
         }
 
         let left_descending = self.initium > self.finis;
@@ -310,31 +387,107 @@ impl Intervallum<i64> {
             hi_a
         } else {
             // hi_a is the excluded finis endpoint.
-            hi_a.saturating_sub(1)
+            hi_a.saturating_sub(T::one())
         };
         let actual_lo_b = if other.continet(&lo_b) {
             lo_b
         } else {
-            lo_b.saturating_add(1)
+            lo_b.saturating_add(T::one())
         };
-        if actual_hi_a.saturating_add(1) == actual_lo_b {
+        if actual_hi_a.saturating_add(T::one()) == actual_lo_b {
             return true;
         }
 
         let actual_hi_b = if other.continet(&hi_b) {
             hi_b
         } else {
-            hi_b.saturating_sub(1)
+            hi_b.saturating_sub(T::one())
         };
         let actual_lo_a = if self.continet(&lo_a) {
             lo_a
         } else {
-            lo_a.saturating_add(1)
+            lo_a.saturating_add(T::one())
         };
-        if actual_hi_b.saturating_add(1) == actual_lo_a {
+        if actual_hi_b.saturating_add(T::one()) == actual_lo_a {
             return true;
         }
 
         false
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Methods requiring Default (Tensor::linea needs T: Default)
+// ---------------------------------------------------------------------------
+
+impl<T: IntervallumNumeric + Default> Intervallum<T> {
+    /// Materialize interval values into a 1-d tensor (honors declared inclusivity).
+    #[must_use]
+    pub fn ad_tensor(&self) -> Tensor<T> {
+        Tensor::linea(self.ad_lista())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Expand helpers: lazy iterator walk over interval values
+// ---------------------------------------------------------------------------
+
+/// Iterator returned by [`Intervallum::ambula`].
+///
+/// Yields each discrete value in the interval, honoring direction and inclusivity.
+#[derive(Debug, Clone)]
+pub struct IntervallumWalk<T> {
+    interval: Intervallum<T>,
+    cursor: T,
+}
+
+impl<T: IntervallumNumeric> Iterator for IntervallumWalk<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        let ascending = self.interval.initium <= self.interval.finis;
+        let done = if ascending {
+            match self.interval.kind {
+                IntervallumKind::Exclusive => self.cursor >= self.interval.finis,
+                IntervallumKind::Inclusive => self.cursor > self.interval.finis,
+            }
+        } else {
+            match self.interval.kind {
+                IntervallumKind::Exclusive => self.cursor <= self.interval.finis,
+                IntervallumKind::Inclusive => self.cursor < self.interval.finis,
+            }
+        };
+
+        if done {
+            return None;
+        }
+
+        let current = self.cursor;
+        if ascending {
+            if current >= T::MAX {
+                // Yield the last value and mark done for next call.
+                self.cursor = self.interval.finis; // force done next round
+            } else {
+                self.cursor = self.cursor.walk_ascend();
+            }
+        } else {
+            if current <= T::MIN {
+                self.cursor = self.interval.finis; // force done next round
+            } else {
+                self.cursor = self.cursor.walk_descend();
+            }
+        }
+        Some(current)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // Approximate: at most what longitudo reports.
+        let len: i64 = self.interval.longitudo();
+        if len <= 0_i64 {
+            return (0, Some(0));
+        }
+        // Bound to usize::MAX for safety.
+        let len_usize: usize = len as usize;
+        (0, Some(len_usize))
     }
 }

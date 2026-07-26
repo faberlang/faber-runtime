@@ -1,5 +1,9 @@
 use super::{Intervallum, IntervallumKind, Tensor};
 
+// ===========================================================================
+// i64 — existing tests (preserved and extended)
+// ===========================================================================
+
 #[test]
 fn exclusive_half_open_containment() {
     let range = Intervallum::exclusive(0_i64, 10);
@@ -91,8 +95,6 @@ fn inter_overlapping_half_open() {
     let left = Intervallum::exclusive(0, 10);
     let right = Intervallum::exclusive(5, 15);
     let hit = left.inter(right).expect("overlap");
-    // Intersection of [0,10) ∧ [5,15) is [5,10) = {5,6,7,8,9}.
-    // Encoded as Inclusive 5…9 = {5,6,7,8,9} (equivalent point set).
     assert_eq!(hit, Intervallum::inclusive(5, 9));
 }
 
@@ -101,8 +103,6 @@ fn union_adjacent_half_open_merges() {
     let left = Intervallum::exclusive(0, 5);
     let right = Intervallum::exclusive(5, 10);
     let merged = left.union(right).expect("adjacent");
-    // Union of [0,5) ∪ [5,10) is [0,10) = {0,…,9}.
-    // Encoded as Inclusive 0…9 = {0,…,9} (equivalent point set).
     assert_eq!(merged, Intervallum::inclusive(0, 9));
 }
 
@@ -134,58 +134,53 @@ fn longitudo_matches_ad_lista_cardinality() {
             finis,
             kind,
         };
-        // SAFETY: test data is small.
         #[allow(clippy::cast_possible_wrap)]
         let len = range.ad_lista().len() as i64;
         assert_eq!(range.longitudo(), len);
     }
 }
 
-// --- Descending span tests (Option B — directional ranges) ---
+// --- Descending span tests (directional ranges) ---
 
 #[test]
 fn descending_exclusive_continet() {
-    // 5‥0 = points {5, 4, 3, 2, 1}
     let range = Intervallum::exclusive(5, 0);
     assert!(range.continet(&5));
     assert!(range.continet(&4));
     assert!(range.continet(&1));
-    assert!(!range.continet(&0)); // finis excluded
+    assert!(!range.continet(&0));
     assert!(!range.continet(&6));
     assert!(!range.continet(&-1));
 }
 
 #[test]
 fn descending_inclusive_continet() {
-    // 5…0 = points {5, 4, 3, 2, 1, 0}
     let range = Intervallum::inclusive(5, 0);
     assert!(range.continet(&5));
-    assert!(range.continet(&0)); // finis included
+    assert!(range.continet(&0));
     assert!(!range.continet(&6));
     assert!(!range.continet(&-1));
 }
 
 #[test]
 fn descending_exclusive_coercere() {
-    // 5‥0 = valid range [1, 5]
     let range = Intervallum::exclusive(5, 0);
     assert_eq!(range.coercere(5), 5);
-    assert_eq!(range.coercere(3), 3); // inside
+    assert_eq!(range.coercere(3), 3);
     assert_eq!(range.coercere(1), 1);
-    assert_eq!(range.coercere(0), 1); // finis excluded, clamp up
-    assert_eq!(range.coercere(-1), 1); // below range
-    assert_eq!(range.coercere(6), 5); // above range
+    assert_eq!(range.coercere(0), 1);
+    assert_eq!(range.coercere(-1), 1);
+    assert_eq!(range.coercere(6), 5);
     assert_eq!(range.coercere(10), 5);
 }
 
 #[test]
 fn descending_inclusive_coercere() {
-    // 5…0 = valid range [0, 5]
     let range = Intervallum::inclusive(5, 0);
     assert_eq!(range.coercere(5), 5);
-    assert_eq!(range.coercere(0), 0); // finis included
-    assert_eq!(range.coercere(-1), 0); // below, clamp to min valid
-    assert_eq!(range.coercere(6), 5); // above, clamp to max valid
+    assert_eq!(range.coercere(0), 0);
+    assert_eq!(range.coercere(-1), 0);
+    assert_eq!(range.coercere(6), 5);
 }
 
 #[test]
@@ -216,19 +211,14 @@ fn descending_inclusive_longitudo() {
 
 #[test]
 fn descending_inter_overlapping() {
-    // 5‥0 = {5,4,3,2,1}, 7‥1 = {7,6,5,4,3,2}
-    // Intersection = {5,4,3,2}
-    // Left operand is descending → result descending.
     let left = Intervallum::exclusive(5, 0);
     let right = Intervallum::exclusive(7, 1);
     let hit = left.inter(right).expect("overlap");
-    // {5,4,3,2} as descending Inclusive: initium=5, finis=2
     assert_eq!(hit, Intervallum::inclusive(5, 2));
 }
 
 #[test]
 fn descending_inter_disjoint() {
-    // 5‥0 = {5,4,3,2,1}, 10‥8 = {10,9}
     let left = Intervallum::exclusive(5, 0);
     let right = Intervallum::exclusive(10, 8);
     assert!(left.inter(right).is_none());
@@ -236,38 +226,28 @@ fn descending_inter_disjoint() {
 
 #[test]
 fn descending_union_adjacent() {
-    // 5‥1 = {5,4,3,2}, 1‥-3 = {1,0,-1,-2}
-    // Union = {5,4,3,2,1,0,-1,-2}
     let left = Intervallum::exclusive(5, 1);
     let right = Intervallum::exclusive(1, -3);
     let merged = left.union(right).expect("adjacent");
-    // Descending: initium=5, finis=-2, Inclusive
     assert_eq!(merged, Intervallum::inclusive(5, -2));
     assert_eq!(merged.ad_lista(), vec![5, 4, 3, 2, 1, 0, -1, -2]);
 }
 
 #[test]
 fn mixed_direction_inter() {
-    // ascending 0‥5 = {0,1,2,3,4}, descending 7‥1 = {7,6,5,4,3,2}
-    // Intersection = {2,3,4}
     let asc = Intervallum::exclusive(0, 5);
     let desc = Intervallum::exclusive(7, 1);
     let hit = asc.inter(desc).expect("overlap");
-    // Left is ascending → result ascending: initium=2, finis=4, Inclusive
     assert_eq!(hit, Intervallum::inclusive(2, 4));
     assert_eq!(hit.ad_lista(), vec![2, 3, 4]);
 }
 
 #[test]
 fn mixed_direction_union_touching() {
-    // descending 4‥1 = {4,3,2}, ascending 5…10 = {5,6,7,8,9,10}
-    // Adjacent at 4→5; union = {4,3,2,5,6,7,8,9,10}
     let desc = Intervallum::exclusive(4, 1);
     let asc = Intervallum::inclusive(5, 10);
     let merged = desc.union(asc).expect("adjacent");
-    // Left is descending → result descending: initium=10, finis=2, Inclusive
     assert_eq!(merged, Intervallum::inclusive(10, 2));
-    // Materialized descending: {10,9,8,7,6,5,4,3,2}
     assert_eq!(merged.ad_lista(), vec![10, 9, 8, 7, 6, 5, 4, 3, 2]);
 }
 
@@ -277,4 +257,292 @@ fn ad_tensor_descending_preserves_order() {
     let tensor: Tensor<i64> = range.ad_tensor();
     assert_eq!(tensor.magnitudines(), vec![5]);
     assert_eq!(tensor.planata(), vec![5, 4, 3, 2, 1]);
+}
+
+// ===========================================================================
+// Sized integer types — i8, i16, i32
+// ===========================================================================
+
+#[test]
+fn i8_ascending_ad_lista() {
+    let r = Intervallum::exclusive(0_i8, 5);
+    assert_eq!(r.ad_lista(), vec![0, 1, 2, 3, 4]);
+    assert_eq!(r.longitudo(), 5);
+
+    let r = Intervallum::inclusive(0_i8, 5);
+    assert_eq!(r.ad_lista(), vec![0, 1, 2, 3, 4, 5]);
+    assert_eq!(r.longitudo(), 6);
+}
+
+#[test]
+fn i8_descending_ad_lista() {
+    let r = Intervallum::exclusive(5_i8, 0);
+    assert_eq!(r.ad_lista(), vec![5, 4, 3, 2, 1]);
+
+    let r = Intervallum::inclusive(5_i8, 0);
+    assert_eq!(r.ad_lista(), vec![5, 4, 3, 2, 1, 0]);
+}
+
+#[test]
+fn i8_coercere_clamps() {
+    let r = Intervallum::exclusive(0_i8, 10);
+    assert_eq!(r.coercere(15), 9);
+    assert_eq!(r.coercere(-5), 0);
+
+    let r = Intervallum::inclusive(0_i8, 10);
+    assert_eq!(r.coercere(15), 10);
+}
+
+#[test]
+fn i8_inter_union() {
+    let a = Intervallum::exclusive(0_i8, 5);
+    let b = Intervallum::exclusive(5_i8, 10);
+    assert!(a.inter(b).is_none());
+    let u = a.union(b).expect("adjacent");
+    assert_eq!(u, Intervallum::inclusive(0, 9));
+
+    let c = Intervallum::exclusive(0_i8, 5);
+    let d = Intervallum::exclusive(6_i8, 10);
+    assert!(c.union(d).is_none());
+}
+
+#[test]
+fn i16_ascending_ad_lista() {
+    let r = Intervallum::exclusive(0_i16, 4);
+    assert_eq!(r.ad_lista(), vec![0, 1, 2, 3]);
+    assert_eq!(r.longitudo(), 4);
+}
+
+#[test]
+fn i16_descending_ad_lista() {
+    let r = Intervallum::exclusive(4_i16, 0);
+    assert_eq!(r.ad_lista(), vec![4, 3, 2, 1]);
+}
+
+#[test]
+fn i16_continet_coercere() {
+    let r = Intervallum::exclusive(0_i16, 100);
+    assert!(r.continet(&50));
+    assert!(!r.continet(&100));
+    assert_eq!(r.coercere(200), 99);
+    assert_eq!(r.coercere(-1), 0);
+}
+
+#[test]
+fn i16_ad_tensor() {
+    let r = Intervallum::exclusive(0_i16, 4);
+    let t: Tensor<i16> = r.ad_tensor();
+    assert_eq!(t.planata(), vec![0, 1, 2, 3]);
+}
+
+#[test]
+fn i32_ascending_ad_lista() {
+    let r = Intervallum::exclusive(0_i32, 4);
+    assert_eq!(r.ad_lista(), vec![0, 1, 2, 3]);
+}
+
+#[test]
+fn i32_descending_ad_lista() {
+    let r = Intervallum::exclusive(5_i32, 0);
+    assert_eq!(r.ad_lista(), vec![5, 4, 3, 2, 1]);
+}
+
+#[test]
+fn i32_inter_intersection() {
+    let a = Intervallum::exclusive(0_i32, 10);
+    let b = Intervallum::exclusive(3_i32, 7);
+    let hit = a.inter(b).expect("overlap");
+    assert_eq!(hit, Intervallum::inclusive(3, 6));
+}
+
+#[test]
+fn i32_longitudo_matches_list() {
+    let r = Intervallum::inclusive(100_i32, 200);
+    assert_eq!(r.longitudo(), 101);
+    assert_eq!(r.longitudo(), r.ad_lista().len() as i64);
+}
+
+// ===========================================================================
+// Sized integer types — u8, u16, u32, u64
+// ===========================================================================
+
+#[test]
+fn u8_ascending_ad_lista() {
+    let r = Intervallum::exclusive(0_u8, 5);
+    assert_eq!(r.ad_lista(), vec![0, 1, 2, 3, 4]);
+    assert_eq!(r.longitudo(), 5);
+
+    let r = Intervallum::inclusive(0_u8, 5);
+    assert_eq!(r.ad_lista(), vec![0, 1, 2, 3, 4, 5]);
+    assert_eq!(r.longitudo(), 6);
+}
+
+#[test]
+fn u8_continet() {
+    let r = Intervallum::exclusive(10_u8, 20);
+    assert!(r.continet(&10));
+    assert!(r.continet(&15));
+    assert!(!r.continet(&20));
+    assert!(!r.continet(&9));
+}
+
+#[test]
+fn u8_coercere_clamps() {
+    let r = Intervallum::exclusive(10_u8, 20);
+    assert_eq!(r.coercere(5), 10);  // below → lo
+    assert_eq!(r.coercere(25), 19); // above → hi_valid (excluded finis - 1)
+    assert_eq!(r.coercere(15), 15); // inside
+}
+
+#[test]
+fn u8_inter_union() {
+    let a = Intervallum::exclusive(0_u8, 5);
+    let b = Intervallum::exclusive(5_u8, 10);
+    assert!(a.inter(b).is_none());
+    let u = a.union(b).expect("adjacent");
+    assert_eq!(u, Intervallum::inclusive(0, 9));
+}
+
+#[test]
+fn u16_ascending_ad_lista() {
+    let r = Intervallum::exclusive(0_u16, 4);
+    assert_eq!(r.ad_lista(), vec![0, 1, 2, 3]);
+}
+
+#[test]
+fn u16_longitudo() {
+    let r = Intervallum::exclusive(100_u16, 200);
+    assert_eq!(r.longitudo(), 100);
+    let r = Intervallum::inclusive(100_u16, 200);
+    assert_eq!(r.longitudo(), 101);
+}
+
+#[test]
+fn u16_coercere_intervallum() {
+    let wide = Intervallum::exclusive(0_u16, 200);
+    let target = Intervallum::inclusive(50_u16, 100);
+    let narrow = wide.coercere_intervallum(&target);
+    assert_eq!(narrow.kind, IntervallumKind::Inclusive);
+    assert_eq!(narrow.initium, 50);
+    assert_eq!(narrow.finis, 100);
+}
+
+#[test]
+fn u32_ascending_ad_lista() {
+    let r = Intervallum::exclusive(0_u32, 5);
+    assert_eq!(r.ad_lista(), vec![0, 1, 2, 3, 4]);
+}
+
+#[test]
+fn u32_longitudo_matches_list() {
+    let r = Intervallum::inclusive(1_u32, 10);
+    assert_eq!(r.longitudo(), 10);
+    assert_eq!(r.longitudo(), r.ad_lista().len() as i64);
+}
+
+#[test]
+fn u64_ad_lista() {
+    let r = Intervallum::exclusive(0_u64, 4);
+    assert_eq!(r.ad_lista(), vec![0, 1, 2, 3]);
+
+    let r = Intervallum::inclusive(0_u64, 4);
+    assert_eq!(r.ad_lista(), vec![0, 1, 2, 3, 4]);
+}
+
+#[test]
+fn u64_continet() {
+    let r = Intervallum::exclusive(10_u64, 20);
+    assert!(r.continet(&10));
+    assert!(!r.continet(&20));
+    assert!(!r.continet(&200));
+}
+
+#[test]
+fn u64_coercere() {
+    let r = Intervallum::exclusive(5_u64, 10);
+    assert_eq!(r.coercere(2), 5);
+    assert_eq!(r.coercere(20), 9);
+    assert_eq!(r.coercere(7), 7);
+}
+
+#[test]
+fn u64_ad_tensor() {
+    let r = Intervallum::exclusive(0_u64, 4);
+    let t: Tensor<u64> = r.ad_tensor();
+    assert_eq!(t.planata(), vec![0, 1, 2, 3]);
+}
+
+// ===========================================================================
+// IntervallumWalk (ambula) — lazy iterator
+// ===========================================================================
+
+#[test]
+fn ambula_ascending_exclusive() {
+    let r = Intervallum::exclusive(0_i64, 5);
+    let collected: Vec<i64> = r.ambula().collect();
+    assert_eq!(collected, vec![0, 1, 2, 3, 4]);
+}
+
+#[test]
+fn ambula_ascending_inclusive() {
+    let r = Intervallum::inclusive(0_i64, 5);
+    let collected: Vec<i64> = r.ambula().collect();
+    assert_eq!(collected, vec![0, 1, 2, 3, 4, 5]);
+}
+
+#[test]
+fn ambula_descending_exclusive() {
+    let r = Intervallum::exclusive(5_i64, 0);
+    let collected: Vec<i64> = r.ambula().collect();
+    assert_eq!(collected, vec![5, 4, 3, 2, 1]);
+}
+
+#[test]
+fn ambula_descending_inclusive() {
+    let r = Intervallum::inclusive(5_i64, 0);
+    let collected: Vec<i64> = r.ambula().collect();
+    assert_eq!(collected, vec![5, 4, 3, 2, 1, 0]);
+}
+
+#[test]
+fn ambula_matches_ad_lista() {
+    let ranges = [
+        Intervallum::exclusive(0_i64, 10),
+        Intervallum::inclusive(0_i64, 10),
+        Intervallum::exclusive(10_i64, 0),
+        Intervallum::inclusive(10_i64, 0),
+        Intervallum::inclusive(5_i64, 5),
+    ];
+    for r in &ranges {
+        let walked: Vec<i64> = r.ambula().collect();
+        assert_eq!(walked, r.ad_lista(), "ambula mismatch for {r:?}");
+    }
+}
+
+#[test]
+fn ambula_u8_ascending() {
+    let r = Intervallum::exclusive(0_u8, 5);
+    let collected: Vec<u8> = r.ambula().collect();
+    assert_eq!(collected, vec![0, 1, 2, 3, 4]);
+}
+
+#[test]
+fn ambula_i8_descending() {
+    let r = Intervallum::exclusive(5_i8, 0);
+    let collected: Vec<i8> = r.ambula().collect();
+    assert_eq!(collected, vec![5, 4, 3, 2, 1]);
+}
+
+#[test]
+fn ambula_empty_interval() {
+    // Exclusive where initium == finis → empty.
+    let r = Intervallum::exclusive(0_i64, 0);
+    assert!(r.ambula().next().is_none());
+}
+
+#[test]
+fn ambula_single_point() {
+    let r = Intervallum::inclusive(42_i64, 42);
+    let collected: Vec<i64> = r.ambula().collect();
+    assert_eq!(collected, vec![42]);
 }
