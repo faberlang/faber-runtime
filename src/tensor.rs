@@ -802,6 +802,9 @@ impl Tensor<f32> {
     /// ε = 1e-7 for numerical stability and N = last_dim (number of classes).
     /// Operates on rank-1 (single example) or rank-2 (batched, row-wise).
     ///
+    /// Cross-entropy loss: `-sum(targets * log(softmax(logits) + ε)) / N`.
+    /// Loss is normalized by N = last dimension (number of classes).
+    ///
     /// Domain validation: non-empty, finite logits, finite targets,
     /// targets in [0, 1], matching shapes, rank 1 or 2.
     ///
@@ -843,6 +846,9 @@ impl Tensor<f32> {
         for (s, &t) in softmax_data.iter().zip(targets_data.iter()) {
             sum -= t * (s + eps).ln();
         }
+        // Normalize by N = last_dim (class count), not by batch size.
+        // For rank-1 shape [C]: N = C, batch = 1.
+        // For rank-2 shape [B, C]: N = C, batch = B.
         Ok(sum / last_dim)
     }
 
