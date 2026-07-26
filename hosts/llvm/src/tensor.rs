@@ -350,24 +350,26 @@ pub unsafe extern "C" fn __faber_rt_v1_tensor_fill(
     handle: *mut c_void,
     kind: FaberRtValueKindV1,
     value: *const c_void,
-) -> FaberRtStatusV1 {
-    ffi_status(|| {
+) -> FaberRtPtrResultV1 {
+    ffi_ptr(|| {
         let Some(runtime) = runtime(context) else {
-            return STATUS_INVALID_ARGUMENT;
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
         let Some(value) = (unsafe { read_value(kind, value) }) else {
-            return STATUS_INVALID_ARGUMENT;
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
-        let Some(tensor) = find_tensor_mut(runtime, handle) else {
-            return STATUS_INVALID_ARGUMENT;
+        // Read receiver's shape (immutable borrow) — don't mutate.
+        let Some(tensor) = find_tensor(runtime, handle) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
         if tensor.kind != kind {
-            return STATUS_INVALID_ARGUMENT;
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         }
-        for slot in &mut tensor.data {
-            *slot = value;
-        }
-        STATUS_OK
+        let shape = tensor.shape.clone();
+        let Ok(count) = validate_shape(&shape) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        store_tensor(runtime, kind, shape, vec![value; count])
     })
 }
 

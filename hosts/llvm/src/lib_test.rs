@@ -1856,17 +1856,15 @@ fn tensor_core_carrier_creates_shapes_indexes_and_slices() {
     };
     assert_eq!(filled.status, STATUS_OK);
     let four = 4.0_f32;
-    assert_eq!(
-        unsafe {
-            __faber_rt_v1_tensor_fill(
-                context,
-                filled.value,
-                VALUE_KIND_F32,
-                std::ptr::from_ref(&four).cast(),
-            )
-        },
-        STATUS_OK
-    );
+    let refilled = unsafe {
+        __faber_rt_v1_tensor_fill(
+            context,
+            filled.value,
+            VALUE_KIND_F32,
+            std::ptr::from_ref(&four).cast(),
+        )
+    };
+    assert_eq!(refilled.status, STATUS_OK);
 
     let newshape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
     for dim in [3_i64, 2_i64] {
@@ -1882,7 +1880,7 @@ fn tensor_core_carrier_creates_shapes_indexes_and_slices() {
             STATUS_OK
         );
     }
-    let reshaped = unsafe { __faber_rt_v1_tensor_reshape(context, tensor.value, newshape.value) };
+    let reshaped = unsafe { __faber_rt_v1_tensor_reshape(context, refilled.value, newshape.value) };
     assert_eq!(reshaped.status, STATUS_OK);
     let mut reshaped_rank = 0_i64;
     assert_eq!(
