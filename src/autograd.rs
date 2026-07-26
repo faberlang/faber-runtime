@@ -2596,4 +2596,12 @@ mod tests {
             &[3],
         );
     }
+
+    #[test]
+    #[should_panic(expected = "rank>1 not supported")]
+    fn autograd_tape_softmax_rejects_rank2() {
+        let mut tape = AutogradTape::new();
+        let value = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]));
+        let _soft = tape.softmax(&value).expect("softmax should be rejected at rank 2");
+    }
 }
