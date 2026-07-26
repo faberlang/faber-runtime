@@ -3118,17 +3118,21 @@ fn llvm_device_execution_exemplar_multiply_by_two() {
 
 // ── Golden provenance ─────────────────────────────────────────────────
 //
-// Golden reference captured from WebGPU host at commit `<NOT-YET-CAPTURED>`.
-// When the WebGPU host pipeline is available in CI, re-capture the golden
-// by running the same kernel on the WebGPU host and update the commit SHA.
-// Until then, this golden is a pre-computed reference matching the
-// mathematical expectation of elementwise multiply-by-2 on f32.
+// Honesty note (2026-07-26, hand-11 residual): No live WebGPU capture was
+// performed because the WebGPU host pipeline is not available in the LLVM
+// test environment. The golden constants below are a PRE-COMPUTED
+// MATHEMATICAL REFERENCE for the deterministic elementwise multiply-by-2
+// kernel. Expected output [2.0, 4.0, 6.0, 8.0] is trivially correct for
+// input [1.0, 2.0, 3.0, 4.0] and does not depend on a particular backend
+// capture. When the WebGPU host pipeline is available, re-capture by
+// running the same kernel on the WebGPU host and update this comment.
 //
 //   Kernel:   elementwise multiply-by-2, rank-1 f32, 4 elements
 //   Source:   exempla/tensor/llvm-placement-v1.fab
 //   Input:    [1.0, 2.0, 3.0, 4.0]
 //   Output:   [2.0, 4.0, 6.0, 8.0]
-//   Captured: 2026-07-22 by hand-6 (G-SPINE-08 S3)
+//   Authored: 2026-07-22 by hand-6 (G-SPINE-08 S3)
+//   Honesty:  2026-07-26 by hand-11 (G-SPINE-08 residual)
 //
 // The test below runs the LLVM exemplar (same copy-in → dispatch →
 // readback pipeline as Stage 2) and compares each output element against
