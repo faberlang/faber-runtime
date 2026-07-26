@@ -661,10 +661,13 @@ fn test_autograd_sqrt_gradient_at_zero() {
     let gradients = tape.backward(&loss).expect("backward succeeds");
 
     let grad_x = gradients.gradient(x.id()).expect("x gradient");
+    // summa upstream is 1.0 (d(loss)/d(sqrt_value) = 1 for scalar sum of [sqrt(0)])
+    // IEEE 754: 1.0 / (2*0) = +inf
+    let g = grad_x.planata()[0];
     assert!(
-        grad_x.planata()[0].is_infinite(),
-        "gradient at sqrt(0) should be inf per domain policy, got {}",
-        grad_x.planata()[0]
+        g.is_infinite() && g.is_sign_positive(),
+        "IEEE 754 at sqrt(0): upstream=1 → +inf, got {}",
+        g,
     );
 }
 

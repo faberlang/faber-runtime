@@ -508,7 +508,8 @@ impl AutogradTape {
                         return Err(AutogradError::MissingNode);
                     };
                     // VJP: d/dx sqrt(x) = 1/(2*sqrt(x))
-                    // At x=0 forward_output=0 so 1/(2*0)=inf per domain policy.
+                    // IEEE 754 at x=0: forward_output=0 → denom=0,
+                    // so upstream/0.0 produces ±inf (or NaN if upstream=0).
                     let forward_output = self.value(node.id)?;
                     let grad_shape = upstream.magnitudines();
                     let grad_data: Vec<f32> = upstream
@@ -517,11 +518,7 @@ impl AutogradTape {
                         .zip(forward_output.planata().into_iter())
                         .map(|(up, fwd)| {
                             let denom = 2.0 * fwd;
-                            if denom == 0.0 {
-                                f32::INFINITY
-                            } else {
-                                up / denom
-                            }
+                            up / denom
                         })
                         .collect();
                     let grad =
