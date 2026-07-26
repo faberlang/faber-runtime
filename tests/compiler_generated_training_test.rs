@@ -36,6 +36,64 @@ fn oracle_loss() -> f32 {
     squared.media().expect("mean loss")
 }
 
+/// Compute oracle weight and bias after N SGD steps using finite-difference
+/// gradients. Matches the exemplum's inline SGD update.
+///
+/// Trainable params are weight (indices 4..8) and bias (indices 8..12) in
+/// the flat 12-element param layout.
+fn oracle_multi_step_params(steps: usize) -> (Vec<f32>, Vec<f32>) {
+    let mut params: Vec<f32> = vec![
+        0.5, -1.0, 2.0, 0.75, // input (frozen)
+        1.25, -0.5, 0.8, 1.1, // weight (trainable)
+        0.2, -0.3, 0.2, -0.3, // bias (trainable)
+    ];
+    let lr = 0.01;
+    let eps = 1.0e-3;
+
+    for _ in 0..steps {
+        for i in 4..params.len() {
+            let orig = params[i];
+            params[i] = orig + eps;
+            let loss_plus = linear_loss_2x2_bias(&params);
+            params[i] = orig - eps;
+            let loss_minus = linear_loss_2x2_bias(&params);
+            params[i] = orig;
+            let gradient = (loss_plus - loss_minus) / (2.0 * eps);
+            params[i] -= lr * gradient;
+        }
+    }
+
+    (params[4..8].to_vec(), params[8..12].to_vec())
+}
+
+/// Compute the expected loss trace for a multi-step SGD training loop.
+fn oracle_multi_step_loss_trace(steps: usize) -> Vec<f32> {
+    let mut params: Vec<f32> = vec![
+        0.5, -1.0, 2.0, 0.75, // input (frozen) — order matches exemplum
+        1.25, -0.5, 0.8, 1.1, // weight (trainable)
+        0.2, -0.3, 0.2, -0.3, // bias (trainable)
+    ];
+    let lr = 0.01;
+    let eps = 1.0e-3;
+    let mut trace = Vec::with_capacity(steps);
+
+    for _ in 0..steps {
+        trace.push(linear_loss_2x2_bias(&params));
+        // FD gradient + SGD update for trainable params (indices 4..12).
+        for i in 4..params.len() {
+            let orig = params[i];
+            params[i] = orig + eps;
+            let loss_plus = linear_loss_2x2_bias(&params);
+            params[i] = orig - eps;
+            let loss_minus = linear_loss_2x2_bias(&params);
+            params[i] = orig;
+            let gradient = (loss_plus - loss_minus) / (2.0 * eps);
+            params[i] -= lr * gradient;
+        }
+    }
+    trace
+}
+
 /// Path to the linear-regression exemplum package relative to
 /// `faber-runtime/` (the `CARGO_MANIFEST_DIR` for this test crate).
 fn exemplum_path() -> String {
@@ -134,6 +192,37 @@ fn compiler_generated_training_step_matches_tape_oracle() {
         "exemplum loss {exemplum_loss} differs from oracle loss {oracle_loss} \
          by {delta} (tolerance {FINITE_DIFFERENCE_TOLERANCE})"
     );
+
+    // Parse weight and bias from nota output (after loss_trace).
+    // Output format: loss_trace (8 values via bracketed list), then
+    // weight[0..4] (bare f32 lines), then bias[0..4] (bare f32 lines).
+    let all_values = parse_f32_values(&stdout);
+    assert!(
+        all_values.len() >= 16,
+        "expected ≥ 16 numeric values (8 loss + 4 weight + 4 bias), got {}.\nstdout:\n{stdout}",
+        all_values.len(),
+    );
+
+    let exemplum_weight = &all_values[8..12];
+    let exemplum_bias = &all_values[12..16];
+
+    let (oracle_weight, oracle_bias) = oracle_multi_step_params(8);
+
+    for (i, (&actual, &expected)) in exemplum_weight.iter().zip(oracle_weight.iter()).enumerate() {
+        let delta = (actual - expected).abs();
+        assert!(
+            delta <= FINITE_DIFFERENCE_TOLERANCE,
+            "weight[{i}]: exemplum {actual} vs oracle {expected} (delta {delta})"
+        );
+    }
+
+    for (i, (&actual, &expected)) in exemplum_bias.iter().zip(oracle_bias.iter()).enumerate() {
+        let delta = (actual - expected).abs();
+        assert!(
+            delta <= FINITE_DIFFERENCE_TOLERANCE,
+            "bias[{i}]: exemplum {actual} vs oracle {expected} (delta {delta})"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -155,44 +244,32 @@ fn linear_loss_2x2_bias(params: &[f32]) -> f32 {
     squared.media().expect("mean loss")
 }
 
-/// Return the expected loss trace for a forward-only loop.
-///
-/// Since the backward companion has a pre-existing runtime type error
-/// ("tensor receiver type mismatch: Unit"), the exemplum currently runs a
-/// forward-only loop without SGD updates. All loss values are identical to
-/// the initial loss.
-fn oracle_forward_only_loss_trace(steps: usize) -> Vec<f32> {
-    let loss = linear_loss_2x2_bias(&[0.5, -1.0, 2.0, 0.75, 1.25, -0.5, 0.8, 1.1, 0.2, -0.3, 0.2, -0.3]);
-    vec![loss; steps]
-}
-
 #[test]
 fn compiler_generated_loss_trace_matches_tape_oracle() {
     let output = run_exemplum().expect("faber run should succeed for multi-step trace");
 
     assert!(
         output.status.success(),
-        "faber run exited with code {}.\nstderr:\n{}",
+        "faber run exited with code {} — backward companion or runtime failure.\nstderr:\n{}",
         output.status,
         String::from_utf8_lossy(&output.stderr),
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Parse loss trace from nota output.
-    let exemplum_trace = parse_f32_values(&stdout);
+    // Parse loss trace from nota output (first 8 values).
+    let exemplum_trace_raw = parse_f32_values(&stdout);
 
     const STEPS: usize = 8;
     assert!(
-        exemplum_trace.len() >= STEPS,
+        exemplum_trace_raw.len() >= STEPS,
         "expected ≥ {STEPS} loss values, got {}.\nstdout:\n{stdout}",
-        exemplum_trace.len()
+        exemplum_trace_raw.len()
     );
-    let exemplum_trace = &exemplum_trace[..STEPS];
+    let exemplum_trace = &exemplum_trace_raw[..STEPS];
 
-    // Oracle trace: since the exemplum runs forward-only (backward companion
-    // pending type fix), all steps yield the same initial loss.
-    let oracle_trace = oracle_forward_only_loss_trace(STEPS);
+    // Oracle trace from finite-difference multi-step SGD.
+    let oracle_trace = oracle_multi_step_loss_trace(STEPS);
 
     for (i, (actual, expected)) in exemplum_trace.iter().zip(oracle_trace.iter()).enumerate() {
         let delta = (actual - expected).abs();
@@ -202,14 +279,14 @@ fn compiler_generated_loss_trace_matches_tape_oracle() {
         );
     }
 
-    // All values should be identical (no SGD update without backward companion).
-    let first = exemplum_trace[0];
-    for (i, &val) in exemplum_trace.iter().enumerate().skip(1) {
-        let delta = (val - first).abs();
+    // Strictly decreasing loss via backward path.
+    for i in 1..exemplum_trace.len() {
         assert!(
-            delta <= FINITE_DIFFERENCE_TOLERANCE,
-            "step {i}: loss {val} differs from initial loss {first} (delta {delta}) — \
-             unexpected since backward+SGD is not yet active"
+            exemplum_trace[i] < exemplum_trace[i - 1],
+            "step {i}: loss {} is not less than previous loss {} — \
+             backward+SGD update should produce strictly decreasing loss",
+            exemplum_trace[i],
+            exemplum_trace[i - 1]
         );
     }
 }
