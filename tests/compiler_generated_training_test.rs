@@ -1,17 +1,13 @@
-//! Integration test: compiler-generated backward companion + training loop
-//! matches the tape oracle end-to-end.
+//! Integration tests: compiler-generated backward companion + training loop
+//! match the tape oracle end-to-end.
 //!
-//! Stage E2 — single-step linear+MSE training exemplum.
-//! Compiles `examples/training/linear-regression/` through the MIR pipeline,
-//! runs one training step, and compares the output loss against an inline
-//! oracle computed via the public `faber::Tensor` API (same logic as
-//! `linear_training_step_loss` in `autograd_reference_test.rs`).
+//! Stage E2 — single-step linear+MSE training step (regression gate).
+//! Stage E3 — multi-step loss trace (≥8 SGD steps, strictly decreasing).
+//!
+//! Compiles `examples/training/linear-regression/` through the MIR pipeline
+//! and compares output against oracles computed with the public `faber::Tensor` API.
 //!
 //! Run: cargo test -p faber-runtime compiler_generated_training
-//!
-//! Current state (2026-07-25): forward pass verified — produces correct
-//! loss (1.3034375). Backward companion not yet available in MIR image
-//! (Stage 0 DefId resolution gap). Test handles both states gracefully.
 
 use faber::Tensor;
 use std::process::Command;
@@ -38,6 +34,60 @@ fn oracle_loss() -> f32 {
     let residual = shifted.subtrahe(&target).expect("subtract target");
     let squared = residual.multiplica(&residual).expect("square");
     squared.media().expect("mean loss")
+}
+
+/// Compute oracle gradients for weight and bias using finite differences.
+fn oracle_weight_gradient() -> Vec<f32> {
+    let eps = 1.0e-3;
+    let mut params: Vec<f32> = INPUT.to_vec();
+    params.extend_from_slice(WEIGHT);
+    params.extend_from_slice(BIAS);
+
+    let loss = |p: &[f32]| -> f32 {
+        let input = Tensor::structa(p[0..4].to_vec(), &[2, 2]).expect("input");
+        let weight = Tensor::structa(p[4..8].to_vec(), &[2, 2]).expect("weight");
+        let bias = Tensor::structa(p[8..12].to_vec(), &[2, 2]).expect("bias");
+        let target = Tensor::structa(TARGET.to_vec(), &[2, 2]).expect("target");
+        let prediction = input.matmul(&weight).expect("matmul");
+        let shifted = prediction.addita(&bias).expect("add bias");
+        let residual = shifted.subtrahe(&target).expect("subtract target");
+        let squared = residual.multiplica(&residual).expect("square");
+        squared.media().expect("mean loss")
+    };
+
+    // Gradients for weight (indices 4..8) + bias (indices 8..12).
+    let mut gradients = Vec::with_capacity(8);
+    for i in 4..params.len() {
+        let orig = params[i];
+        params[i] = orig + eps;
+        let loss_plus = loss(&params);
+        params[i] = orig - eps;
+        let loss_minus = loss(&params);
+        params[i] = orig;
+        gradients.push((loss_plus - loss_minus) / (2.0 * eps));
+    }
+    gradients
+}
+
+/// Compute oracle params after one SGD step (weight + bias updated).
+fn oracle_sgd_step() -> (Vec<f32>, Vec<f32>) {
+    let grads = oracle_weight_gradient();
+    let lr = 0.01;
+    let weight_grad: Vec<f32> = grads[0..4].to_vec();
+    let bias_grad: Vec<f32> = grads[4..8].to_vec();
+
+    let new_weight: Vec<f32> = WEIGHT
+        .iter()
+        .zip(weight_grad.iter())
+        .map(|(w, g)| w - lr * g)
+        .collect();
+    let new_bias: Vec<f32> = BIAS
+        .iter()
+        .zip(bias_grad.iter())
+        .map(|(b, g)| b - lr * g)
+        .collect();
+
+    (new_weight, new_bias)
 }
 
 /// Path to the linear-regression exemplum package relative to
@@ -91,54 +141,173 @@ fn parse_loss(stdout: &str) -> Option<f32> {
 
 #[test]
 fn compiler_generated_training_step_matches_tape_oracle() {
-    let output = match run_exemplum() {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("faber run failed: {e}");
-            eprintln!(
-                "(Expected if the compiler pipeline does not yet support \
-                 multi-op backward companions.)"
-            );
-            return;
-        }
-    };
+    let output = run_exemplum().expect("faber run should succeed — companion must be present after f4c5313bf");
+
+    assert!(
+        output.status.success(),
+        "faber run exited with code {} — companion or forward pass failure.\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr),
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Forward pass loss should be present and correct.
-    let exemplum_loss = match parse_loss(&stdout) {
-        Some(loss) => loss,
-        None => {
-            eprintln!(
-                "exemplum stdout did not contain a parseable loss value.\n\
-                 stdout:\n{stdout}"
-            );
-            return;
-        }
-    };
+    let exemplum_loss = parse_loss(&stdout).unwrap_or_else(|| {
+        panic!(
+            "exemplum stdout did not contain a parseable loss value.\n\
+             stdout:\n{stdout}\n\
+             (Companion is present: check for runtime errors in stderr.)"
+        );
+    });
 
     let oracle_loss = oracle_loss();
     let delta = (exemplum_loss - oracle_loss).abs();
-
     assert!(
         delta <= FINITE_DIFFERENCE_TOLERANCE,
         "exemplum loss {exemplum_loss} differs from oracle loss {oracle_loss} \
          by {delta} (tolerance {FINITE_DIFFERENCE_TOLERANCE})"
     );
 
-    // Backward companion check — known gap.
-    // When the companion is available, the exemplum will nota weight and bias
-    // after the SGD update. Parse those values and compare against a manual
-    // SGD oracle here.
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("missing MIR function for def#") {
-        eprintln!(
-            "NOTE: backward companion not yet available in MIR image.\n\
-             Forward loss verified: {} (oracle: {})\n\
-             This is a known Stage 0 dependency — companion DefId resolution\n\
-             is pending. When resolved, the exemplum will complete the full\n\
-             forward → backward → SGD update path.",
-            exemplum_loss, oracle_loss
+    // Parse weight and bias after SGD update from nota output.
+    // The exemplum outputs: loss, then weight values (on multiple lines
+    // if the tensor is multiline), then bias values.
+    let all_values: Vec<f32> = stdout
+        .lines()
+        .filter_map(|line| line.trim().parse::<f32>().ok())
+        .collect();
+
+    // We need at least 1 (loss) + 4 (weight) + 4 (bias) = 9 values.
+    assert!(
+        all_values.len() >= 9,
+        "expected at least 9 numeric values (loss + 4 weight + 4 bias), got {}.\nstdout:\n{stdout}",
+        all_values.len(),
+    );
+
+    // Loss is all_values[0], weight is all_values[1..5], bias is all_values[5..9].
+    let exemplum_weight = &all_values[1..5];
+    let exemplum_bias = &all_values[5..9];
+
+    let (oracle_weight, oracle_bias) = oracle_sgd_step();
+
+    for (i, (&actual, &expected)) in exemplum_weight.iter().zip(oracle_weight.iter()).enumerate() {
+        let delta = (actual - expected).abs();
+        assert!(
+            delta <= FINITE_DIFFERENCE_TOLERANCE,
+            "weight[{i}]: exemplum {actual} vs oracle {expected} (delta {delta})"
+        );
+    }
+
+    for (i, (&actual, &expected)) in exemplum_bias.iter().zip(oracle_bias.iter()).enumerate() {
+        let delta = (actual - expected).abs();
+        assert!(
+            delta <= FINITE_DIFFERENCE_TOLERANCE,
+            "bias[{i}]: exemplum {actual} vs oracle {expected} (delta {delta})"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Stage E3 — multi-step loss trace
+// ---------------------------------------------------------------------------
+
+/// Same-shape (2×2) bias forward loss matching the exemplum's `linear_loss`.
+/// Uses 12-element flat params: [4 input, 4 weight, 4 bias].
+fn linear_loss_2x2_bias(params: &[f32]) -> f32 {
+    let input = Tensor::structa(params[0..4].to_vec(), &[2, 2]).expect("input");
+    let weight = Tensor::structa(params[4..8].to_vec(), &[2, 2]).expect("weight");
+    let bias = Tensor::structa(params[8..12].to_vec(), &[2, 2]).expect("bias");
+    let target = Tensor::structa(vec![0.25, -1.0, 1.5, 0.75], &[2, 2]).expect("target");
+
+    let prediction = input.matmul(&weight).expect("matmul");
+    let shifted = prediction.addita(&bias).expect("add bias");
+    let residual = shifted.subtrahe(&target).expect("subtract target");
+    let squared = residual.multiplica(&residual).expect("square");
+    squared.media().expect("mean loss")
+}
+
+/// Compute full multi-step loss trace using finite-difference gradients for
+/// trainable params (weight indices 4..8, bias indices 8..12).
+///
+/// Matches the exemplum's [2,2] same-shape bias exactly.  The
+/// `TestOnlySgdSession` oracle in the autograd module uses [1,2] bias, so we
+/// compute our own oracle here rather than reusing it.
+fn oracle_multi_step_loss_trace(steps: usize) -> Vec<f32> {
+    // Flat 12-param layout: [4 input, 4 weight, 4 bias] with [2,2] bias.
+    let mut params: Vec<f32> = vec![0.5, -1.0, 2.0, 0.75, 1.25, -0.5, 0.8, 1.1, 0.2, -0.3, 0.2, -0.3];
+    let lr = 0.01;
+    let eps = 1.0e-3;
+    let mut trace = Vec::with_capacity(steps + 1);
+
+    for s in 0..=steps {
+        trace.push(linear_loss_2x2_bias(&params));
+        if s < steps {
+            // Finite-difference gradient for trainable params only.
+            let mut gradient = [0.0_f32; 12];
+            for i in 4..params.len() {
+                let original = params[i];
+                params[i] = original + eps;
+                let loss_plus = linear_loss_2x2_bias(&params);
+                params[i] = original - eps;
+                let loss_minus = linear_loss_2x2_bias(&params);
+                params[i] = original;
+                gradient[i] = (loss_plus - loss_minus) / (2.0 * eps);
+            }
+            // SGD update for trainable params.
+            for i in 4..params.len() {
+                params[i] -= lr * gradient[i];
+            }
+        }
+    }
+    trace
+}
+
+#[test]
+fn compiler_generated_loss_trace_matches_tape_oracle() {
+    let output = run_exemplum().expect("faber run should succeed for multi-step trace");
+
+    assert!(
+        output.status.success(),
+        "faber run exited with code {} — companion or forward pass failure.\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Parse loss trace from nota output — collect all parseable f32 values.
+    let exemplum_trace: Vec<f32> = stdout
+        .lines()
+        .filter_map(|line| line.trim().parse::<f32>().ok())
+        .collect();
+
+    const STEPS: usize = 8;
+    assert!(
+        exemplum_trace.len() >= STEPS + 1,
+        "expected ≥ {} loss values, got {}.\nstdout:\n{stdout}",
+        STEPS + 1,
+        exemplum_trace.len()
+    );
+    let exemplum_trace = &exemplum_trace[..STEPS + 1];
+
+    // Oracle trace from finite-difference over same-shape [2,2] bias.
+    let oracle_trace = oracle_multi_step_loss_trace(STEPS);
+
+    for (i, (actual, expected)) in exemplum_trace.iter().zip(oracle_trace.iter()).enumerate() {
+        let delta = (actual - expected).abs();
+        assert!(
+            delta <= FINITE_DIFFERENCE_TOLERANCE,
+            "step {i}: exemplum loss {actual} vs oracle {expected} (delta {delta})"
+        );
+    }
+
+    // Strictly decreasing.
+    for i in 1..exemplum_trace.len() {
+        assert!(
+            exemplum_trace[i] < exemplum_trace[i - 1],
+            "step {i}: loss {} is not less than previous loss {}",
+            exemplum_trace[i],
+            exemplum_trace[i - 1]
         );
     }
 }

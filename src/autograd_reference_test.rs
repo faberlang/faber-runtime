@@ -313,20 +313,20 @@ fn apply_test_only_sgd_update(params: &[f32], gradient: &[f32], learning_rate: f
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct TestOnlySgdSession {
+pub struct TestOnlySgdSession {
     params: Vec<f32>,
     learning_rate: f32,
 }
 
 impl TestOnlySgdSession {
-    fn new(params: Vec<f32>, learning_rate: f32) -> Self {
+    pub fn new(params: Vec<f32>, learning_rate: f32) -> Self {
         Self {
             params,
             learning_rate,
         }
     }
 
-    fn loss(&self) -> f32 {
+    pub fn loss(&self) -> f32 {
         linear_training_step_loss(&self.params)
     }
 
@@ -354,7 +354,7 @@ impl TestOnlySgdSession {
         gradient
     }
 
-    fn autograd_loss_trace(&mut self, steps: usize) -> Vec<f32> {
+    pub fn autograd_loss_trace(&mut self, steps: usize) -> Vec<f32> {
         let mut trace = Vec::with_capacity(steps + 1);
         trace.push(self.loss());
         for _ in 0..steps {

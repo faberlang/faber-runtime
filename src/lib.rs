@@ -84,6 +84,9 @@ mod json_test;
 mod autograd_reference_test;
 
 #[cfg(test)]
+pub use autograd_reference_test::TestOnlySgdSession;
+
+#[cfg(test)]
 #[path = "frame_test.rs"]
 mod frame_test;
 
