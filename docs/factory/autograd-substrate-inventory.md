@@ -22,6 +22,13 @@ behavior, session integration, optimizer support, or host ABI gradient handles.
 | Softmax forward | `Tensor<f32>::softmax()` with numerical stability transform (x - max(x)), rank-1 and rank-2 row-wise. Forward only — VJP deferred to cross-entropy goal. No autograd integration. | `src/tensor.rs` |
 | ABI symbols | The host ABI names tensor creation, shape, get/set, fill, flatten, materialize, slice, add/sub/mul, matmul, sum, mean, conversion, and sparse new/get/set/nonzero/rank/densify/from-tensor symbols. | `src/host_abi.rs`; `hosts/llvm/src/lib.rs` |
 
+## Host ABI Gradient Handles
+
+| Area | Current support | Evidence |
+| --- | --- | --- |
+| WGSL gradient handles | WebGPU browser host provides `createGradientBuffer`, `accumulateGradient`, `readGradient`, `zeroGradient` with opaque `u32` handle indices mapped to `GPUBuffer` instances. Host-side accumulation (maps buffer, adds elementwise, unmaps). WGSL backend (`radix-mir-wgsl/src/gradient.rs`) emits traceable host-side comments for Create/Accumulate/Read/Zero. Behavioral test (`gradient-handle-check.mjs`) covers all four ops plus rejection paths. | `hosts/webgpu-browser/public/src/webgpu-runtime.js:1767–1854`; `radix/crates/radix-mir-wgsl/src/gradient.rs`; `hosts/webgpu-browser/public/src/gradient-handle-check.mjs` |
+| Wasm gradient handles | Deferred. Wasm gradient handles follow the same buffer-backed model (linear memory, no bind groups — simpler than WGSL). File as follow-on after G-A-09 closes. | `radix/crates/radix-mir-wasm/` — zero gradient code (confirmed) |
+
 ## Autograd-Relevant Remaining Blockers
 
 The current scaffold is suitable for local dense proof cases, but it is missing
