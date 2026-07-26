@@ -14,6 +14,12 @@ use std::process::Command;
 
 const FINITE_DIFFERENCE_TOLERANCE: f32 = 2.0e-3;
 
+// MLP: 64 trainable params × 8 FD-oracle SGD steps accumulates ~0.020
+// error (measured max delta 0.020). Tighter FD step (eps) would reduce
+// truncation but amplify floating-point noise; the value is documented
+// rather than silently discarding oracle steps.
+const MLP_FD_TOLERANCE: f32 = 2.5e-2;
+
 // Fixed initial parameters — same-shape bias (2×2) to avoid broadcast
 // gradient reduction in the backward companion (Stage C gap).
 const INPUT: &[f32] = &[0.5, -1.0, 2.0, 0.75];
@@ -415,33 +421,22 @@ fn compiler_generated_mlp_loss_trace_matches_tape_oracle() {
     // Oracle trace from finite-difference multi-step SGD.
     let oracle_trace = oracle_mlp_loss_trace(STEPS);
 
-    // Step 0: pure forward match (no gradients involved).
+    // All 8 steps: compare against FD oracle.
+    // Step 0 uses tight tolerance (pure forward, no gradient error).
+    // Steps 1-7 use MLP_FD_TOLERANCE: 64 trainable params × 8 SGD steps
+    // accumulate ~0.020 FD truncation error (measured, not guessed).
+    for (i, (&actual, &expected)) in
+        exemplum_trace.iter().zip(oracle_trace.iter()).enumerate()
     {
-        let delta = (exemplum_trace[0] - oracle_trace[0]).abs();
+        let tolerance = if i == 0 { FINITE_DIFFERENCE_TOLERANCE } else { MLP_FD_TOLERANCE };
+        let delta = (actual - expected).abs();
         assert!(
-            delta <= FINITE_DIFFERENCE_TOLERANCE,
-            "step 0: exemplum loss {} vs oracle {} (delta {})",
-            exemplum_trace[0],
-            oracle_trace[0],
-            delta,
+            delta <= tolerance,
+            "step {i}: exemplum loss {actual} vs oracle {expected} (delta {delta}, tolerance {tolerance})"
         );
     }
 
-    // Steps 1+: verify monotonic decrease (backward+SGD works correctly).
-    // FD gradient comparison for 64 trainable params over multiple SGD steps
-    // accumulates error beyond a tight tolerance, so we rely on the monotonic
-    // decrease assertion as the primary correctness signal.
-    for i in 1..exemplum_trace.len() {
-        assert!(
-            exemplum_trace[i] < exemplum_trace[i - 1],
-            "step {i}: loss {} is not less than previous loss {} — \
-             backward+SGD update should produce strictly decreasing loss",
-            exemplum_trace[i],
-            exemplum_trace[i - 1]
-        );
-    }
-
-    // Strictly decreasing loss via backward path (fmir green).
+    // Strictly decreasing loss via backward path.
     for i in 1..exemplum_trace.len() {
         assert!(
             exemplum_trace[i] < exemplum_trace[i - 1],
