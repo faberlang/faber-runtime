@@ -932,3 +932,71 @@ fn test_autograd_softmax_gradient_rank1_negative() {
 
     assert_gradient_close(&actual, &reference);
 }
+
+// ── GELU rank-2 numeric oracle ──────────────────────────────────────────
+
+fn gelu_rank2_loss(params: &[f32]) -> f32 {
+    // 2×3 batch
+    let x = Tensor::structa(params.to_vec(), &[2, 3]).expect("x tensor");
+    let activated = x.gelu().expect("gelu");
+    activated.media().expect("mean")
+}
+
+fn gelu_rank2_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(params, &[2, 3]));
+    let activated = tape.gelu(&x).expect("gelu records");
+    let loss = tape.media(&activated).expect("media reduces");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+    gradients.gradient(x.id()).expect("x gradient").planata()
+}
+
+#[test]
+fn test_autograd_gelu_gradient_rank2() {
+    // 2×3: covers the batch × features pattern
+    let params = vec![-2.0f32, -1.0, 0.0, 0.5, 1.5, 3.0];
+    let reference = finite_difference_gradient(&params, gelu_rank2_loss);
+    let actual = gelu_rank2_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
+
+// ── LayerNorm gamma-only numeric oracle ──────────────────────────────────
+
+fn layernorm_gamma_only_loss(params: &[f32]) -> f32 {
+    // params layout: [x: 6 elements, gamma: 3 elements] — no beta
+    let x = Tensor::structa(params[0..6].to_vec(), &[2, 3]).expect("x tensor");
+    let gamma = Tensor::structa(params[6..9].to_vec(), &[3]).expect("gamma tensor");
+    let result = x.layernorm(1, 1e-5, Some(&gamma), None).unwrap();
+    result.media().unwrap()
+}
+
+fn layernorm_gamma_only_autograd_gradient(params: &[f32]) -> Vec<f32> {
+    let mut tape = AutogradTape::new();
+    let x = leaf(&mut tape, tensor(&params[0..6], &[2, 3]));
+    let gamma = leaf(&mut tape, tensor(&params[6..9], &[3]));
+
+    let y = tape
+        .layernorm(&x, 1, 1e-5, Some(&gamma), None)
+        .expect("layernorm records");
+    let loss = tape.media(&y).expect("media reduces");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    let mut actual = Vec::with_capacity(params.len());
+    actual.extend(gradients.gradient(x.id()).expect("x gradient").planata());
+    actual.extend(gradients.gradient(gamma.id()).expect("gamma gradient").planata());
+    actual
+}
+
+#[test]
+fn test_autograd_layernorm_gradient_gamma_only() {
+    // x: [1,2,3]  [4,5,6]  gamma: [1.0, 0.5, 2.0]  (no beta)
+    let params = vec![
+        1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, // x: 2×3
+        1.0, 0.5, 2.0, // gamma only
+    ];
+    let reference = finite_difference_gradient(&params, layernorm_gamma_only_loss);
+    let actual = layernorm_gamma_only_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}
