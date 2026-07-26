@@ -229,18 +229,23 @@ impl AutogradTape {
         Ok(self.record(AutogradOp::Gelu, vec![value.id], tensor))
     }
 
-    /// Softmax tape method. Last-axis only (rank-1 vector or rank-2 batched
-    /// row-wise). Records the forward pass as `AutogradOp::Softmax` for VJP
+    /// Softmax tape method. Last-axis only (rank-1).
+    /// Records the forward pass as `AutogradOp::Softmax` for VJP
     /// computation during backward.
     ///
     /// VJP: y * (upstream - sum(y * upstream)) where y = softmax(x).
-    /// Uses scalar `Summa` — correct for rank-1; batched rank-2 softmax
+    /// Uses scalar `Summa` — correct for rank-1 only; batched rank-2 softmax
     /// requires per-row `SumAxis` (not available on the tape).
     pub(crate) fn softmax(
         &mut self,
         value: &AutogradValue,
     ) -> Result<AutogradValue, AutogradError> {
         self.ensure_member(value)?;
+        debug_assert!(
+            self.value(value.id)
+                .map_or(false, |t| t.magnitudines().len() <= 1),
+            "tape.softmax: rank>1 not supported (VJP uses scalar Summa)"
+        );
         let tensor = self
             .value(value.id)?
             .softmax()
@@ -956,10 +961,8 @@ impl AutogradTape {
                     };
                     // VJP: y * (upstream - sum(y * upstream))
                     // where y = softmax(x) = forward_output.
-                    // Uses scalar Summa — correct for rank-1 softmax.
-                    // For rank-2 batched softmax, per-row SumAxis is
-                    // needed; the tape does not have it. Batched softmax
-                    // validation is done through the AIR pipeline.
+                    // Scalar Summa — correct for rank-1 only (rank>1
+                    // rejected by tape.softmax upstream).
                     let forward_output = self.value(node.id)?;
                     let upstream_shape = upstream.magnitudines();
                     let y_mul_up = upstream
