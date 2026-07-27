@@ -727,7 +727,7 @@ impl Tensor<f32> {
         }
         let rank = self.shape.len();
         // v1: rank-1 (single axis) or rank-2 (axis 1 — the last axis).
-        let last_dim = self.shape[rank - 1] as usize;
+        let last_dim = self.shape[rank - 1];
         let batch = self.element_count() / last_dim;
 
         let mut out_data = Vec::with_capacity(self.element_count());
@@ -790,7 +790,7 @@ impl Tensor<f32> {
             return Err(ERR_CRUX_ENTROPIA_SHAPE_MISMATCH);
         }
         let rank = self.shape.len();
-        if rank < 1 || rank > 2 {
+        if !(1..=2).contains(&rank) {
             return Err(ERR_CRUX_ENTROPIA_RANK);
         }
 
@@ -999,11 +999,11 @@ impl Tensor<f32> {
 
             let result: Vec<f32> = if normalize_along_cols {
                 let _n = cols as f32;
-                let mut result = vec![0.0_f32; (rows * cols) as usize];
+                let mut result = vec![0.0_f32; rows * cols];
 
                 for r in 0..rows {
-                    let row_start = (r * cols) as usize;
-                    let row_end = row_start + cols as usize;
+                    let row_start = r * cols;
+                    let row_end = row_start + cols;
                     let row_data = &input_data[row_start..row_end];
 
                     // Mean
@@ -1024,7 +1024,6 @@ impl Tensor<f32> {
                     let inv_std = 1.0 / (var + epsilon).sqrt();
 
                     for c in 0..cols {
-                        let c = c as usize;
                         let idx = row_start + c;
                         let centered = input_data[idx] - mean;
                         let norm = centered * inv_std;
@@ -1051,20 +1050,19 @@ impl Tensor<f32> {
             } else {
                 // axis=0: normalize each column independently
                 let _n = rows as f32;
-                let mut result = vec![0.0_f32; (rows * cols) as usize];
+                let mut result = vec![0.0_f32; rows * cols];
 
                 for c in 0..cols {
-                    let c = c as usize;
                     // Collect column data
                     let mut col_sum: f64 = 0.0;
                     for r in 0..rows {
-                        col_sum += input_data[(r * cols) as usize + c] as f64;
+                        col_sum += input_data[r * cols + c] as f64;
                     }
                     let mean = (col_sum / rows as f64) as f32;
 
                     let mut col_var: f64 = 0.0;
                     for r in 0..rows {
-                        let v = input_data[(r * cols) as usize + c];
+                        let v = input_data[r * cols + c];
                         let d = v as f64 - mean as f64;
                         col_var += d * d;
                     }
@@ -1072,8 +1070,7 @@ impl Tensor<f32> {
                     let inv_std = 1.0 / (var + epsilon).sqrt();
 
                     for r in 0..rows {
-                        let r = r as usize;
-                        let idx = r * cols as usize + c;
+                        let idx = r * cols + c;
                         let centered = input_data[idx] - mean;
                         let norm = centered * inv_std;
 

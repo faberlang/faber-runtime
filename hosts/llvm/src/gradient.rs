@@ -20,7 +20,6 @@ use std::ffi::c_void;
 pub(super) struct GradientStorage {
     pub(super) data: Vec<f32>,
     pub(super) shape: Vec<i64>,
-    pub(super) kind: FaberRtValueKindV1,
 }
 
 /// `#[repr(C)]` view carrier returned by [`gradient_read`].
@@ -72,9 +71,8 @@ fn store_gradient(
     runtime: &mut RuntimeContext,
     data: Vec<f32>,
     shape: Vec<i64>,
-    kind: FaberRtValueKindV1,
 ) -> FaberRtPtrResultV1 {
-    let gradient = StableBox::new(GradientStorage { data, shape, kind });
+    let gradient = StableBox::new(GradientStorage { data, shape });
     let handle = gradient.handle();
     runtime.gradients.push(gradient);
     FaberRtPtrResultV1::success(handle)
@@ -120,12 +118,7 @@ pub unsafe extern "C" fn __faber_rt_v1_gradient_create(
         let Some(element_count) = checked_element_count(shape_slice) else {
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
-        store_gradient(
-            runtime,
-            vec![0.0f32; element_count],
-            shape_slice.to_vec(),
-            kind,
-        )
+        store_gradient(runtime, vec![0.0f32; element_count], shape_slice.to_vec())
     })
 }
 

@@ -1149,7 +1149,7 @@ fn solum_write_text_frames(route: &str, data: Valor) -> Vec<(FrameStatus, Valor)
 }
 
 fn solum_parent_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
+    let Some(path) = valor_text(data) else {
         return error_frames("solum:parens opener must be textus");
     };
     let parent = std::path::Path::new(&path)
@@ -1186,7 +1186,7 @@ fn solum_home_value(
 }
 
 fn solum_delete_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
+    let Some(path) = valor_text(data) else {
         return error_frames("solum:dele opener must be textus");
     };
     match std::fs::remove_file(&path) {
@@ -1197,7 +1197,7 @@ fn solum_delete_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
 }
 
 fn solum_hauri_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
+    let Some(path) = valor_text(data) else {
         return error_frames("solum:hauri opener must be textus");
     };
     match std::fs::read(&path) {
@@ -1217,7 +1217,7 @@ fn solum_write_bytes_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
 }
 
 fn solum_create_dir_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
+    let Some(path) = valor_text(data) else {
         return error_frames("solum:crea opener must be textus");
     };
     match std::fs::create_dir_all(&path) {
@@ -1227,7 +1227,7 @@ fn solum_create_dir_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
 }
 
 fn solum_list_dir_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
+    let Some(path) = valor_text(data) else {
         return error_frames("solum:enumera opener must be textus");
     };
     match std::fs::read_dir(&path) {
@@ -1256,7 +1256,7 @@ fn solum_list_dir_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
 }
 
 fn solum_remove_dir_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
+    let Some(path) = valor_text(data) else {
         return error_frames("solum:amputa opener must be textus");
     };
     match std::fs::remove_dir_all(&path) {
@@ -1286,7 +1286,7 @@ fn solum_rename_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
 }
 
 fn solum_touch_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
+    let Some(path) = valor_text(data) else {
         return error_frames("solum:tange opener must be textus");
     };
     match solum_touch_path(std::path::Path::new(&path)) {
@@ -1312,7 +1312,7 @@ fn solum_touch_path(path: &std::path::Path) -> std::io::Result<()> {
 }
 
 fn solum_follow_symlink_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
+    let Some(path) = valor_text(data) else {
         return error_frames("solum:sequere opener must be textus");
     };
     match std::fs::read_link(&path) {
@@ -1349,7 +1349,7 @@ fn solum_set_mode_frames(data: Valor) -> Vec<(FrameStatus, Valor)> {
 }
 
 fn solum_get_mode_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
+    let Some(path) = valor_text(data) else {
         return error_frames("solum:modus opener must be textus");
     };
     use std::os::unix::fs::PermissionsExt;
@@ -1805,7 +1805,7 @@ fn consolum_read_line_frames() -> Vec<(FrameStatus, Valor)> {
 
 fn consolum_read_stdin_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
     use std::io::Read;
-    let Some(magnitude) = valor_numerus(&data) else {
+    let Some(magnitude) = valor_numerus(data) else {
         return error_frames("consolum:hauri opener must be numerus");
     };
     // SAFETY: magnitude is clamped to >= 0.
@@ -1849,14 +1849,14 @@ fn solum_line_item_frames(path: &str, read_err_prefix: &str) -> Vec<(FrameStatus
 
 /// Read a file as text lines for `norma:solum.carpe` / `solum:carpe`.
 fn solum_carpe_frames(data: &Valor) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
+    let Some(path) = valor_text(data) else {
         return error_frames("solum:carpe opener must be textus");
     };
     solum_line_item_frames(&path, &format!("solum:carpe failed for {path}"))
 }
 
 fn solum_lege_frames(data: &Valor, target: Option<&'static str>) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
+    let Some(path) = valor_text(data) else {
         return error_frames("solum:lege opener must be textus");
     };
     let Some(target) = target else {
@@ -1921,7 +1921,7 @@ fn solum_partem_frames(data: Valor, target: Option<&'static str>) -> Vec<(FrameS
 }
 
 fn solum_mensura_frames(data: &Valor, target: Option<&'static str>) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
+    let Some(path) = valor_text(data) else {
         return error_frames("solum:mensura opener must be textus");
     };
     if target != Some(std::any::type_name::<i64>()) {
@@ -1989,7 +1989,7 @@ fn solum_path_bool_frames(
     data: &Valor,
     target: Option<&'static str>,
 ) -> Vec<(FrameStatus, Valor)> {
-    let Some(path) = valor_text(&data) else {
+    let Some(path) = valor_text(data) else {
         return error_frames(format!("{route} opener must be textus"));
     };
     if target.is_some_and(|name| name != std::any::type_name::<bool>()) {

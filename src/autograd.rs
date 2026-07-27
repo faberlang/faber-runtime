@@ -249,7 +249,7 @@ impl AutogradTape {
         self.ensure_member(value)?;
         debug_assert!(
             self.value(value.id)
-                .map_or(false, |t| t.magnitudines().len() <= 1),
+                .is_ok_and(|t| t.magnitudines().len() <= 1),
             "tape.softmax: rank>1 not supported (VJP uses scalar Summa)"
         );
         let tensor = self
@@ -582,7 +582,7 @@ impl AutogradTape {
                     let grad_data: Vec<f32> = upstream
                         .planata()
                         .into_iter()
-                        .zip(forward_output.planata().into_iter())
+                        .zip(forward_output.planata())
                         .map(|(up, fwd)| {
                             let denom = 2.0 * fwd;
                             up / denom
@@ -627,7 +627,7 @@ impl AutogradTape {
                     let grad_data: Vec<f32> = upstream
                         .planata()
                         .into_iter()
-                        .zip(forward_input.planata().into_iter())
+                        .zip(forward_input.planata())
                         .map(|(up, x)| {
                             let cube = x * x * x;
                             let t = alpha * (x + beta * cube);
@@ -860,7 +860,7 @@ impl AutogradTape {
                         let mut y_norm = vec![0.0_f32; rows * cols];
                         let mut inv_stds = vec![0.0_f32; batch_dim];
 
-                        for b in 0..batch_dim {
+                        for (b, inv_std_slot) in inv_stds.iter_mut().enumerate().take(batch_dim) {
                             let mut sum: f64 = 0.0;
                             let slice_start = if normalize_along_cols { b * cols } else { b };
                             for k in 0..norm_dim {
@@ -885,7 +885,7 @@ impl AutogradTape {
                             }
                             let var = (var_sum / norm_dim as f64) as f32;
                             let inv_std = 1.0 / (var + epsilon).sqrt();
-                            inv_stds[b] = inv_std;
+                            *inv_std_slot = inv_std;
 
                             for k in 0..norm_dim {
                                 let idx = if normalize_along_cols {
@@ -917,9 +917,8 @@ impl AutogradTape {
 
                         // Compute dx using Ba et al. 2016 VJP
                         let mut dx_data = vec![0.0_f32; rows * cols];
-                        for b in 0..batch_dim {
+                        for (b, inv_std) in inv_stds.iter().copied().enumerate().take(batch_dim) {
                             let slice_start = if normalize_along_cols { b * cols } else { b };
-                            let inv_std = inv_stds[b];
 
                             let mut sum_dy: f32 = 0.0;
                             let mut sum_dy_y: f32 = 0.0;
@@ -953,7 +952,7 @@ impl AutogradTape {
                             let gamma_len = if normalize_along_cols { cols } else { rows };
                             let mut dgamma_data = vec![0.0_f32; gamma_len];
 
-                            for k in 0..norm_dim {
+                            for (k, dgamma) in dgamma_data.iter_mut().enumerate().take(norm_dim) {
                                 let mut sum: f32 = 0.0;
                                 for b in 0..batch_dim {
                                     let idx = if normalize_along_cols {
@@ -963,7 +962,7 @@ impl AutogradTape {
                                     };
                                     sum += dy_data[idx] * y_norm[idx];
                                 }
-                                dgamma_data[k] = sum;
+                                *dgamma = sum;
                             }
 
                             let dgamma = Tensor::structa(dgamma_data, &[gamma_len as i64])
@@ -977,7 +976,7 @@ impl AutogradTape {
                             let beta_len = if normalize_along_cols { cols } else { rows };
                             let mut dbeta_data = vec![0.0_f32; beta_len];
 
-                            for k in 0..norm_dim {
+                            for (k, dbeta) in dbeta_data.iter_mut().enumerate().take(norm_dim) {
                                 let mut sum: f32 = 0.0;
                                 for b in 0..batch_dim {
                                     let idx = if normalize_along_cols {
@@ -987,7 +986,7 @@ impl AutogradTape {
                                     };
                                     sum += dy_data[idx];
                                 }
-                                dbeta_data[k] = sum;
+                                *dbeta = sum;
                             }
 
                             let dbeta = Tensor::structa(dbeta_data, &[beta_len as i64])
@@ -2642,7 +2641,7 @@ mod tests {
         // softmax([1,2,3]) = softmax([-2,-1,0]) with shift
         // exp(-2)=0.1353, exp(-1)=0.3679, exp(0)=1.0, sum=1.5032
         // [0.0900, 0.2447, 0.6652]
-        let expected = vec![0.0900_f32, 0.2447, 0.6652];
+        let expected = [0.0900_f32, 0.2447, 0.6652];
         for (i, (actual, expected)) in soft
             .tensor()
             .planata()
@@ -2800,9 +2799,10 @@ mod tests {
 
     #[test]
     fn scalar_tensor_produces_rank_zero() {
-        let t = scalar_tensor(3.14).expect("scalar tensor");
+        let value = 3.125;
+        let t = scalar_tensor(value).expect("scalar tensor");
         assert!(t.magnitudines().is_empty());
-        assert_eq!(t.planata(), vec![3.14]);
+        assert_eq!(t.planata(), vec![value]);
     }
 
     #[test]

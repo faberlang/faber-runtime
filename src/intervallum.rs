@@ -371,15 +371,15 @@ impl<T: IntervallumNumeric> Intervallum<T> {
     /// Whether two intervals touch (adjacent without gap), so their union is contiguous.
     fn touches(self, other: Self) -> bool {
         // Same-direction endpoint equality (e.g. self.finis meets other.initium).
-        if self.finis == other.initium {
-            if self.continet(&other.initium) || other.continet(&self.finis) {
-                return true;
-            }
+        if self.finis == other.initium
+            && (self.continet(&other.initium) || other.continet(&self.finis))
+        {
+            return true;
         }
-        if other.finis == self.initium {
-            if other.continet(&self.initium) || self.continet(&other.finis) {
-                return true;
-            }
+        if other.finis == self.initium
+            && (other.continet(&self.initium) || self.continet(&other.finis))
+        {
+            return true;
         }
 
         // Diagonal adjacency: a descending span's high end may be consecutive

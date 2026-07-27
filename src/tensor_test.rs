@@ -704,7 +704,7 @@ fn layernorm_rank1_no_affine() {
 
     assert_eq!(result.magnitudines(), vec![3]);
     // mean=2.0, var=(1+0+1)/3=0.6667, inv_std≈1.2247
-    let expected = vec![-1.2247449f32, 0.0, 1.2247449];
+    let expected = [-1.2247449f32, 0.0, 1.2247449];
     for (a, e) in result.planata().iter().zip(expected.iter()) {
         assert!(
             (a - e).abs() < 1e-4,
@@ -728,7 +728,7 @@ fn layernorm_rank2_axis0_no_affine() {
     // Expected col 1: [-1.0, 1.0]
     // Col 2: [3, 6], mean=4.5, same pattern
     // Expected: [-1, -1, -1, 1, 1, 1]
-    let expected = vec![-1.0f32, -1.0, -1.0, 1.0, 1.0, 1.0];
+    let expected = [-1.0f32, -1.0, -1.0, 1.0, 1.0, 1.0];
     for (a, e) in result_data.iter().zip(expected.iter()) {
         assert!(
             (a - e).abs() < 1e-4,
@@ -754,7 +754,7 @@ fn layernorm_rank2_axis0_with_affine() {
     // gamma = [2.0, 0.5], beta = [0.1, -0.1]
     // Row 0 (r=0): -1 * 2.0 + 0.1 = -1.9
     // Row 1 (r=1):  1 * 0.5 + (-0.1) = 0.4
-    let expected = vec![-1.9f32, -1.9, -1.9, 0.4, 0.4, 0.4];
+    let expected = [-1.9f32, -1.9, -1.9, 0.4, 0.4, 0.4];
     for (a, e) in result_data.iter().zip(expected.iter()) {
         assert!(
             (a - e).abs() < 1e-4,

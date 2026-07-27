@@ -2990,8 +2990,8 @@ fn gpu_placement_copy_in_readback_round_trip() {
 
 #[test]
 fn gpu_placement_copy_in_overwrites_existing_buffer() {
-    let first: [u8; 4] = unsafe { std::mem::transmute::<f32, [u8; 4]>(42.0_f32) };
-    let second: [u8; 4] = unsafe { std::mem::transmute::<f32, [u8; 4]>(99.0_f32) };
+    let first: [u8; 4] = f32::to_ne_bytes(42.0_f32);
+    let second: [u8; 4] = f32::to_ne_bytes(99.0_f32);
 
     unsafe { __faber_gpu_v1_copy_in(1, first.as_ptr(), 4, 0) };
     unsafe { __faber_gpu_v1_copy_in(1, second.as_ptr(), 4, 0) };
@@ -3002,7 +3002,7 @@ fn gpu_placement_copy_in_overwrites_existing_buffer() {
     assert_eq!(status, STATUS_OK);
     assert_eq!(actual_len, 4);
 
-    let value: f32 = unsafe { std::mem::transmute::<[u8; 4], f32>(dest) };
+    let value: f32 = f32::from_ne_bytes(dest);
     assert_eq!(value, 99.0_f32);
 }
 
@@ -3163,7 +3163,8 @@ fn llvm_device_execution_exemplar_multiply_by_two() {
     // Build the shape [4] for a rank-1 tensor.
     let shape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
     assert_eq!(shape.status, STATUS_OK);
-    for dim in [4_i64] {
+    {
+        let dim = 4_i64;
         assert_eq!(
             unsafe {
                 __faber_rt_v1_array_push(
@@ -3354,7 +3355,8 @@ fn llvm_golden_oracle_multiply_by_two() {
     // Shape [4] for rank-1 tensor.
     let shape = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
     assert_eq!(shape.status, STATUS_OK);
-    for dim in [4_i64] {
+    {
+        let dim = 4_i64;
         assert_eq!(
             unsafe {
                 __faber_rt_v1_array_push(

@@ -2,8 +2,10 @@
 
 Public Rust runtime types for Faber-generated code (`use faber::…`).
 
-This crate is independent of the private Radix compiler. Generated packages from
-`faber build` depend on it for `Valor`, tensors, frames, and related carriers.
+Generated packages from `faber build` depend on this crate for `Valor`, tensors,
+frames, and related carriers. Runtime/compiler-shared contracts live in
+`radix-runtime-contract`; the Rust crate name exposed to generated code remains
+`faber`.
 
 ## Package vs crate name
 
@@ -32,6 +34,9 @@ faberlang/
 ## Build
 
 ```bash
-cargo test
+cargo check --workspace
 cargo build --release
 ```
+
+Use `cargo test` or `cargo nextest run` for full validation after targeted
+mechanical checks pass.
