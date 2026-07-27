@@ -103,15 +103,13 @@ fn oracle_multi_step_loss_trace(steps: usize) -> Vec<f32> {
 /// Path to the linear-regression exemplum package relative to
 /// `faber-runtime/` (the `CARGO_MANIFEST_DIR` for this test crate).
 fn exemplum_path() -> String {
-    let manifest_dir =
-        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     format!("{}/../examples/training/linear-regression/", manifest_dir)
 }
 
 /// Path to the `faber` CLI `Cargo.toml` relative to `faber-runtime/`.
 fn faber_manifest_path() -> String {
-    let manifest_dir =
-        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     format!("{}/../faber/Cargo.toml", manifest_dir)
 }
 
@@ -343,25 +341,25 @@ fn compiler_generated_loss_trace_matches_tape_oracle() {
 /// MLP forward loss: mean((GELU(input·w1 + b1)·w2 + b2 - target)²).
 /// Params: [input(16), weight1(16), bias1(16), weight2(16), bias2(16)] = 80.
 fn mlp_forward_loss(params: &[f32]) -> f32 {
-    let input   = Tensor::structa(params[0..16].to_vec(),   &[4, 4]).expect("input");
-    let weight1 = Tensor::structa(params[16..32].to_vec(),  &[4, 4]).expect("weight1");
-    let bias1   = Tensor::structa(params[32..48].to_vec(),  &[4, 4]).expect("bias1");
-    let weight2 = Tensor::structa(params[48..64].to_vec(),  &[4, 4]).expect("weight2");
-    let bias2   = Tensor::structa(params[64..80].to_vec(),  &[4, 4]).expect("bias2");
-    let target  = Tensor::structa(vec![1.0_f32; 16],        &[4, 4]).expect("target");
+    let input = Tensor::structa(params[0..16].to_vec(), &[4, 4]).expect("input");
+    let weight1 = Tensor::structa(params[16..32].to_vec(), &[4, 4]).expect("weight1");
+    let bias1 = Tensor::structa(params[32..48].to_vec(), &[4, 4]).expect("bias1");
+    let weight2 = Tensor::structa(params[48..64].to_vec(), &[4, 4]).expect("weight2");
+    let bias2 = Tensor::structa(params[64..80].to_vec(), &[4, 4]).expect("bias2");
+    let target = Tensor::structa(vec![1.0_f32; 16], &[4, 4]).expect("target");
 
     // Layer 1: linear → GELU
-    let h1  = input.matmul(&weight1).expect("matmul1");
+    let h1 = input.matmul(&weight1).expect("matmul1");
     let h1b = h1.addita(&bias1).expect("add1");
-    let a1  = h1b.gelu().expect("gelu");
+    let a1 = h1b.gelu().expect("gelu");
 
     // Layer 2: linear
-    let h2  = a1.matmul(&weight2).expect("matmul2");
+    let h2 = a1.matmul(&weight2).expect("matmul2");
     let h2b = h2.addita(&bias2).expect("add2");
 
     // MSE
     let residual = h2b.subtrahe(&target).expect("sub");
-    let squared  = residual.multiplica(&residual).expect("mul");
+    let squared = residual.multiplica(&residual).expect("mul");
     squared.media().expect("mean")
 }
 
@@ -371,20 +369,15 @@ fn mlp_forward_loss(params: &[f32]) -> f32 {
 fn oracle_mlp_loss_trace(steps: usize) -> Vec<f32> {
     let init_params: Vec<f32> = vec![
         // input (16)
-        0.5, -0.3, 1.2, -0.7, -0.4, 0.8, -1.0, 0.3,
-        0.7, -0.2, -0.6, 1.0, -0.9, 1.3, 0.1, -0.5,
+        0.5, -0.3, 1.2, -0.7, -0.4, 0.8, -1.0, 0.3, 0.7, -0.2, -0.6, 1.0, -0.9, 1.3, 0.1, -0.5,
         // weight1 (16)
-        0.2, -0.4, 0.7, -0.2, -0.6, 0.3, -0.8, 0.5,
-        -0.3, 0.9, -0.1, -0.5, 0.4, -0.7, 0.6, -0.9,
+        0.2, -0.4, 0.7, -0.2, -0.6, 0.3, -0.8, 0.5, -0.3, 0.9, -0.1, -0.5, 0.4, -0.7, 0.6, -0.9,
         // bias1 (16)
-        0.1, -0.1, 0.0, 0.1, 0.2, -0.2, 0.1, -0.1,
-        0.0, 0.1, -0.1, 0.2, -0.2, 0.0, 0.1, -0.1,
+        0.1, -0.1, 0.0, 0.1, 0.2, -0.2, 0.1, -0.1, 0.0, 0.1, -0.1, 0.2, -0.2, 0.0, 0.1, -0.1,
         // weight2 (16)
-        -0.5, 0.4, -0.3, 0.8, -0.1, -0.7, 0.6, -0.4,
-        0.3, -0.8, -0.2, 0.5, -0.6, 0.2, -0.9, 0.1,
+        -0.5, 0.4, -0.3, 0.8, -0.1, -0.7, 0.6, -0.4, 0.3, -0.8, -0.2, 0.5, -0.6, 0.2, -0.9, 0.1,
         // bias2 (16)
-        0.1, -0.2, 0.1, 0.0, 0.0, 0.1, -0.1, 0.2,
-        -0.1, 0.0, 0.2, -0.1, 0.1, -0.1, 0.0, 0.1,
+        0.1, -0.2, 0.1, 0.0, 0.0, 0.1, -0.1, 0.2, -0.1, 0.0, 0.2, -0.1, 0.1, -0.1, 0.0, 0.1,
     ];
     let mut params = init_params;
     let lr = 0.01_f32;
@@ -410,8 +403,7 @@ fn oracle_mlp_loss_trace(steps: usize) -> Vec<f32> {
 
 /// Path to the MLP exemplum package relative to `faber-runtime/`.
 fn mlp_exemplum_path() -> String {
-    let manifest_dir =
-        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     format!("{}/../examples/training/mlp/", manifest_dir)
 }
 
@@ -464,10 +456,12 @@ fn compiler_generated_mlp_loss_trace_matches_tape_oracle() {
     // Step 0 uses tight tolerance (pure forward, no gradient error).
     // Steps 1-7 use MLP_FD_TOLERANCE: 64 trainable params × 8 SGD steps
     // accumulate ~0.020 FD truncation error (measured, not guessed).
-    for (i, (&actual, &expected)) in
-        exemplum_trace.iter().zip(oracle_trace.iter()).enumerate()
-    {
-        let tolerance = if i == 0 { FINITE_DIFFERENCE_TOLERANCE } else { MLP_FD_TOLERANCE };
+    for (i, (&actual, &expected)) in exemplum_trace.iter().zip(oracle_trace.iter()).enumerate() {
+        let tolerance = if i == 0 {
+            FINITE_DIFFERENCE_TOLERANCE
+        } else {
+            MLP_FD_TOLERANCE
+        };
         let delta = (actual - expected).abs();
         assert!(
             delta <= tolerance,

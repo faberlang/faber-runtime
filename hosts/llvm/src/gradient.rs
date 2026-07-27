@@ -49,10 +49,7 @@ fn runtime(context: *mut FaberRtContextV1) -> Option<&'static mut RuntimeContext
     (!context.is_null()).then(|| unsafe { &mut *context.cast::<RuntimeContext>() })
 }
 
-fn find_gradient(
-    runtime: &RuntimeContext,
-    handle: *mut c_void,
-) -> Option<&GradientStorage> {
+fn find_gradient(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&GradientStorage> {
     runtime
         .gradients
         .iter()
@@ -84,7 +81,9 @@ fn store_gradient(
 }
 
 fn checked_element_count(shape: &[i64]) -> Option<usize> {
-    shape.iter().try_fold(1usize, |acc, d| acc.checked_mul(*d as usize))
+    shape
+        .iter()
+        .try_fold(1usize, |acc, d| acc.checked_mul(*d as usize))
 }
 
 /// Create a zero-filled gradient storage for the given shape and element kind.
@@ -121,7 +120,12 @@ pub unsafe extern "C" fn __faber_rt_v1_gradient_create(
         let Some(element_count) = checked_element_count(shape_slice) else {
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
-        store_gradient(runtime, vec![0.0f32; element_count], shape_slice.to_vec(), kind)
+        store_gradient(
+            runtime,
+            vec![0.0f32; element_count],
+            shape_slice.to_vec(),
+            kind,
+        )
     })
 }
 

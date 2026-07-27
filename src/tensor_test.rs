@@ -3,9 +3,8 @@ use super::{
     ERR_BROADCAST_SHAPE, ERR_CRUX_ENTROPIA_EMPTY_TENSOR, ERR_CRUX_ENTROPIA_NON_FINITE_INPUT,
     ERR_CRUX_ENTROPIA_SHAPE_MISMATCH, ERR_CRUX_ENTROPIA_TARGET_NON_FINITE,
     ERR_CRUX_ENTROPIA_TARGET_RANGE, ERR_DIVIDE_NON_FINITE_INPUT, ERR_DIVIDE_NON_FINITE_RESULT,
-    ERR_DIVIDE_ZERO_DENOMINATOR, ERR_ELEMENT_COUNT_OVERFLOW,
-    ERR_LAYERNORM_AXIS_OUT_OF_RANGE, ERR_LAYERNORM_BETA_NON_FINITE,
-    ERR_LAYERNORM_BETA_SHAPE_MISMATCH, ERR_LAYERNORM_EMPTY_TENSOR,
+    ERR_DIVIDE_ZERO_DENOMINATOR, ERR_ELEMENT_COUNT_OVERFLOW, ERR_LAYERNORM_AXIS_OUT_OF_RANGE,
+    ERR_LAYERNORM_BETA_NON_FINITE, ERR_LAYERNORM_BETA_SHAPE_MISMATCH, ERR_LAYERNORM_EMPTY_TENSOR,
     ERR_LAYERNORM_EPSILON_INVALID, ERR_LAYERNORM_GAMMA_NON_FINITE,
     ERR_LAYERNORM_GAMMA_SHAPE_MISMATCH, ERR_LAYERNORM_NON_FINITE_INPUT,
     ERR_LAYERNORM_RANK_TOO_HIGH, ERR_MATMUL_ARGUMENT_RANK, ERR_MATMUL_INNER_DIMENSION,
@@ -546,8 +545,7 @@ fn matmul_rejects_overflowing_result_shape_before_allocation() {
 #[test]
 fn layernorm_matches_reference_rank2_axis1_no_affine() {
     // 2×3 input, axis=1 (normalize each row)
-    let input =
-        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
     let result = input.layernorm(1, 1e-5, None, None).unwrap();
 
     assert_eq!(result.magnitudines(), vec![2, 3]);
@@ -557,8 +555,7 @@ fn layernorm_matches_reference_rank2_axis1_no_affine() {
     // Row 1: mean=5.0, var=0.6667, same inv_std
     // Expected row 1: [-1.2247, 0.0, 1.2247]
     let result_data = result.planata();
-    let expected: Vec<f32> =
-        vec![-1.2247449, 0.0, 1.2247449, -1.2247449, 0.0, 1.2247449];
+    let expected: Vec<f32> = vec![-1.2247449, 0.0, 1.2247449, -1.2247449, 0.0, 1.2247449];
     for (a, e) in result_data.iter().zip(expected.iter()) {
         assert!(
             (a - e).abs() < 1e-4,
@@ -569,8 +566,7 @@ fn layernorm_matches_reference_rank2_axis1_no_affine() {
 
 #[test]
 fn layernorm_matches_reference_rank2_axis1_with_affine() {
-    let input =
-        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
     let gamma = Tensor::structa(vec![1.0f32, 2.0, 0.5], &[3]).unwrap();
     let beta = Tensor::structa(vec![0.0f32, 0.1, -0.2], &[3]).unwrap();
 
@@ -616,8 +612,7 @@ fn layernorm_rank1_no_affine() {
 #[test]
 fn layernorm_rank2_axis0_no_affine() {
     // 2×3 input, axis=0 (normalize each column independently)
-    let input =
-        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
     let result = input.layernorm(0, 1e-5, None, None).unwrap();
 
     assert_eq!(result.magnitudines(), vec![2, 3]);
@@ -642,8 +637,7 @@ fn layernorm_rank2_axis0_no_affine() {
 fn layernorm_rank2_axis0_with_affine() {
     // Regression test: (Some(g), Some(b)) arm indexed gamma/beta at
     // flattened (r*cols+c) instead of row (r), causing panic for cols>1.
-    let input =
-        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
     let gamma = Tensor::structa(vec![2.0f32, 0.5], &[2]).unwrap();
     let beta = Tensor::structa(vec![0.1f32, -0.1], &[2]).unwrap();
     let result = input.layernorm(0, 1e-5, Some(&gamma), Some(&beta)).unwrap();
@@ -685,8 +679,7 @@ fn layernorm_rejects_empty_tensor() {
 
 #[test]
 fn layernorm_rejects_rank_too_high() {
-    let input =
-        Tensor::structa(vec![1.0f32; 8], &[2, 2, 2]).unwrap();
+    let input = Tensor::structa(vec![1.0f32; 8], &[2, 2, 2]).unwrap();
     assert_eq!(
         input.layernorm(0, 1e-5, None, None).unwrap_err(),
         ERR_LAYERNORM_RANK_TOO_HIGH
@@ -704,8 +697,7 @@ fn layernorm_rejects_axis_out_of_range() {
 
 #[test]
 fn layernorm_rejects_gamma_shape_mismatch() {
-    let input =
-        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
     let gamma = Tensor::structa(vec![1.0f32], &[1]).unwrap();
     assert_eq!(
         input.layernorm(1, 1e-5, Some(&gamma), None).unwrap_err(),
@@ -715,8 +707,7 @@ fn layernorm_rejects_gamma_shape_mismatch() {
 
 #[test]
 fn layernorm_rejects_beta_shape_mismatch() {
-    let input =
-        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
     let beta = Tensor::structa(vec![1.0f32], &[1]).unwrap();
     assert_eq!(
         input.layernorm(1, 1e-5, None, Some(&beta)).unwrap_err(),
@@ -726,8 +717,7 @@ fn layernorm_rejects_beta_shape_mismatch() {
 
 #[test]
 fn layernorm_rejects_non_finite_gamma() {
-    let input =
-        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
     let gamma = Tensor::structa(vec![f32::NAN, 1.0], &[2]).unwrap();
     assert_eq!(
         input.layernorm(1, 1e-5, Some(&gamma), None).unwrap_err(),
@@ -737,8 +727,7 @@ fn layernorm_rejects_non_finite_gamma() {
 
 #[test]
 fn layernorm_rejects_non_finite_beta() {
-    let input =
-        Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
     let beta = Tensor::structa(vec![f32::INFINITY, 0.0], &[2]).unwrap();
     assert_eq!(
         input.layernorm(1, 1e-5, None, Some(&beta)).unwrap_err(),
@@ -793,17 +782,19 @@ fn softmax_rank1_sums_to_one() {
 
 #[test]
 fn softmax_rank2_sums_to_one_per_row() {
-    let input = Tensor::structa(
-        vec![1.0f32, 2.0, 3.0, 1.0, 2.0, 3.0],
-        &[2, 3],
-    )
-    .unwrap();
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0, 1.0, 2.0, 3.0], &[2, 3]).unwrap();
     let output = input.softmax().unwrap();
     let data = output.planata();
     let row0_sum: f32 = data[0..3].iter().sum();
     let row1_sum: f32 = data[3..6].iter().sum();
-    assert!((row0_sum - 1.0).abs() < 1e-6, "row 0 sum must be 1.0, got {row0_sum}");
-    assert!((row1_sum - 1.0).abs() < 1e-6, "row 1 sum must be 1.0, got {row1_sum}");
+    assert!(
+        (row0_sum - 1.0).abs() < 1e-6,
+        "row 0 sum must be 1.0, got {row0_sum}"
+    );
+    assert!(
+        (row1_sum - 1.0).abs() < 1e-6,
+        "row 1 sum must be 1.0, got {row1_sum}"
+    );
 }
 
 #[test]
@@ -825,11 +816,7 @@ fn softmax_rank1_correct_values() {
 
 #[test]
 fn softmax_rank2_identical_rows() {
-    let input = Tensor::structa(
-        vec![1.0f32, 2.0, 3.0, 1.0, 2.0, 3.0],
-        &[2, 3],
-    )
-    .unwrap();
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0, 1.0, 2.0, 3.0], &[2, 3]).unwrap();
     let output = input.softmax().unwrap();
     let data = output.planata();
     // Both rows are identical since inputs are identical.
@@ -855,10 +842,8 @@ fn softmax_preserves_shape() {
 
 #[test]
 fn crux_entropia_rank2_correct_loss() {
-    let logits =
-        Tensor::structa(vec![2.0_f32, 1.0, 0.0, 1.0, 2.0, 1.0], &[2, 3]).unwrap();
-    let targets =
-        Tensor::structa(vec![1.0_f32, 0.0, 0.0, 0.0, 1.0, 0.0], &[2, 3]).unwrap();
+    let logits = Tensor::structa(vec![2.0_f32, 1.0, 0.0, 1.0, 2.0, 1.0], &[2, 3]).unwrap();
+    let targets = Tensor::structa(vec![1.0_f32, 0.0, 0.0, 0.0, 1.0, 0.0], &[2, 3]).unwrap();
     let loss = logits.crux_entropia(&targets).unwrap();
     // softmax row0 = [0.6652, 0.2447, 0.0900], row1 = [0.2119, 0.5761, 0.2119]
     // CE: row0 = -log(0.6652+ε) ≈ 0.4076, row1 = -log(0.5761+ε) ≈ 0.5514

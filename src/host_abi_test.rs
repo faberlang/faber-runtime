@@ -18,14 +18,8 @@ fn gradient_symbols_cohere_with_radix_host_abi() {
         radix_host_abi::SYMBOL_GRADIENT_ACCUMULATE,
         SYMBOL_GRADIENT_ACCUMULATE,
     );
-    assert_eq!(
-        radix_host_abi::SYMBOL_GRADIENT_READ,
-        SYMBOL_GRADIENT_READ,
-    );
-    assert_eq!(
-        radix_host_abi::SYMBOL_GRADIENT_ZERO,
-        SYMBOL_GRADIENT_ZERO,
-    );
+    assert_eq!(radix_host_abi::SYMBOL_GRADIENT_READ, SYMBOL_GRADIENT_READ,);
+    assert_eq!(radix_host_abi::SYMBOL_GRADIENT_ZERO, SYMBOL_GRADIENT_ZERO,);
 }
 
 #[test]

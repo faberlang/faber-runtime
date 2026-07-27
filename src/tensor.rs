@@ -46,36 +46,32 @@ pub(crate) const ERR_SQRT_NON_FINITE_INPUT: &str =
 pub(crate) const ERR_SQRT_NEGATIVE_INPUT: &str = "Sqrt requires non-negative input.";
 pub(crate) const ERR_GELU_NON_FINITE_INPUT: &str =
     "Gelu input must be finite; NaN or inf was given.";
-pub(crate) const ERR_EXP_NON_FINITE_INPUT: &str =
-    "Exp input must be finite; NaN or inf was given.";
+pub(crate) const ERR_EXP_NON_FINITE_INPUT: &str = "Exp input must be finite; NaN or inf was given.";
 pub(crate) const ERR_EXP_OVERFLOW: &str = "Exp overflow: output is non-finite.";
-pub(crate) const ERR_LOG_NON_FINITE_INPUT: &str =
-    "Log input must be finite; NaN or inf was given.";
+pub(crate) const ERR_LOG_NON_FINITE_INPUT: &str = "Log input must be finite; NaN or inf was given.";
 pub(crate) const ERR_LOG_NON_POSITIVE_INPUT: &str = "Log requires positive input.";
-pub(crate) const ERR_LOG_NON_FINITE_RESULT: &str =
-    "Log produced non-finite result.";
+pub(crate) const ERR_LOG_NON_FINITE_RESULT: &str = "Log produced non-finite result.";
 pub(crate) const ERR_SOFTMAX_NON_FINITE_INPUT: &str =
     "Softmax input must be finite; NaN or inf was given.";
 pub(crate) const ERR_SOFTMAX_EMPTY_TENSOR: &str = "Softmax requires non-empty tensor.";
 pub(crate) const ERR_CRUX_ENTROPIA_NON_FINITE_INPUT: &str =
     "Cross-entropy logits must be finite; NaN or inf was given.";
-pub(crate) const ERR_CRUX_ENTROPIA_EMPTY_TENSOR: &str =
-    "Cross-entropy requires non-empty tensor.";
+pub(crate) const ERR_CRUX_ENTROPIA_EMPTY_TENSOR: &str = "Cross-entropy requires non-empty tensor.";
 pub(crate) const ERR_CRUX_ENTROPIA_TARGET_NON_FINITE: &str =
     "Cross-entropy targets must be finite; NaN or inf was given.";
-pub(crate) const ERR_CRUX_ENTROPIA_TARGET_RANGE: &str =
-    "Cross-entropy targets must be in [0, 1].";
+pub(crate) const ERR_CRUX_ENTROPIA_TARGET_RANGE: &str = "Cross-entropy targets must be in [0, 1].";
 pub(crate) const ERR_CRUX_ENTROPIA_SHAPE_MISMATCH: &str =
     "Cross-entropy logits and targets must have the same shape.";
-pub(crate) const ERR_CRUX_ENTROPIA_RANK: &str =
-    "Cross-entropy requires rank-1 or rank-2 tensor.";
+pub(crate) const ERR_CRUX_ENTROPIA_RANK: &str = "Cross-entropy requires rank-1 or rank-2 tensor.";
 pub const ERR_LAYERNORM_NON_FINITE_INPUT: &str =
     "layernorm requires finite input; NaN or inf was given.";
 pub const ERR_LAYERNORM_EMPTY_TENSOR: &str = "layernorm requires non-empty tensor.";
 pub const ERR_LAYERNORM_RANK_TOO_HIGH: &str = "layernorm requires rank-1 or rank-2 tensor.";
 pub const ERR_LAYERNORM_AXIS_OUT_OF_RANGE: &str = "layernorm axis out of range.";
-pub const ERR_LAYERNORM_GAMMA_SHAPE_MISMATCH: &str = "layernorm gamma shape does not match input shape at normalization axis.";
-pub const ERR_LAYERNORM_BETA_SHAPE_MISMATCH: &str = "layernorm beta shape does not match input shape at normalization axis.";
+pub const ERR_LAYERNORM_GAMMA_SHAPE_MISMATCH: &str =
+    "layernorm gamma shape does not match input shape at normalization axis.";
+pub const ERR_LAYERNORM_BETA_SHAPE_MISMATCH: &str =
+    "layernorm beta shape does not match input shape at normalization axis.";
 pub const ERR_LAYERNORM_GAMMA_NON_FINITE: &str =
     "layernorm gamma must be finite; NaN or inf was given.";
 pub const ERR_LAYERNORM_BETA_NON_FINITE: &str =
@@ -632,7 +628,10 @@ impl Tensor<f32> {
             }
         }
         Ok(Tensor::from_contiguous(
-            self.planata().into_iter().map(|value| value.max(0.0)).collect(),
+            self.planata()
+                .into_iter()
+                .map(|value| value.max(0.0))
+                .collect(),
             self.shape.clone(),
         ))
     }
@@ -656,7 +655,10 @@ impl Tensor<f32> {
             }
         }
         Ok(Tensor::from_contiguous(
-            self.planata().into_iter().map(|value| value.sqrt()).collect(),
+            self.planata()
+                .into_iter()
+                .map(|value| value.sqrt())
+                .collect(),
             self.shape.clone(),
         ))
     }
@@ -1049,8 +1051,7 @@ impl Tensor<f32> {
                     let row_data = &input_data[row_start..row_end];
 
                     // Mean
-                    let mean: f64 =
-                        row_data.iter().map(|&v| v as f64).sum::<f64>() / cols as f64;
+                    let mean: f64 = row_data.iter().map(|&v| v as f64).sum::<f64>() / cols as f64;
                     let mean = mean as f32;
 
                     // Variance

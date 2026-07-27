@@ -15,7 +15,9 @@ use std::collections::HashMap;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Mutex;
 
-use faber::host_abi::{FaberRtStatusV1, STATUS_INVALID_ARGUMENT, STATUS_IO_ERROR, STATUS_OK, STATUS_PANIC};
+use faber::host_abi::{
+    FaberRtStatusV1, STATUS_INVALID_ARGUMENT, STATUS_IO_ERROR, STATUS_OK, STATUS_PANIC,
+};
 
 /// Device buffer map keyed by logical buffer ID.
 ///

@@ -762,7 +762,9 @@ fn layernorm_no_affine_loss(params: &[f32]) -> f32 {
 fn layernorm_no_affine_autograd_gradient(params: &[f32]) -> Vec<f32> {
     let mut tape = AutogradTape::new();
     let x = leaf(&mut tape, tensor(params, &[2, 3]));
-    let y = tape.layernorm(&x, 1, 1e-5, None, None).expect("layernorm records");
+    let y = tape
+        .layernorm(&x, 1, 1e-5, None, None)
+        .expect("layernorm records");
     let loss = tape.media(&y).expect("media reduces");
     let gradients = tape.backward(&loss).expect("backward succeeds");
     gradients.gradient(x.id()).expect("x gradient").planata()
@@ -800,8 +802,18 @@ fn layernorm_with_affine_autograd_gradient(params: &[f32]) -> Vec<f32> {
 
     let mut actual = Vec::with_capacity(params.len());
     actual.extend(gradients.gradient(x.id()).expect("x gradient").planata());
-    actual.extend(gradients.gradient(gamma.id()).expect("gamma gradient").planata());
-    actual.extend(gradients.gradient(beta.id()).expect("beta gradient").planata());
+    actual.extend(
+        gradients
+            .gradient(gamma.id())
+            .expect("gamma gradient")
+            .planata(),
+    );
+    actual.extend(
+        gradients
+            .gradient(beta.id())
+            .expect("beta gradient")
+            .planata(),
+    );
     actual
 }
 
@@ -825,7 +837,9 @@ fn test_autograd_layernorm_gradient_rank1() {
 
     let mut tape = AutogradTape::new();
     let x = leaf(&mut tape, tensor(&params, &[3]));
-    let y = tape.layernorm(&x, 0, 1e-5, None, None).expect("layernorm records");
+    let y = tape
+        .layernorm(&x, 0, 1e-5, None, None)
+        .expect("layernorm records");
     let loss = tape.media(&y).expect("media reduces");
     let gradients = tape.backward(&loss).expect("backward succeeds");
 
@@ -863,7 +877,12 @@ fn layernorm_beta_only_autograd_gradient(params: &[f32]) -> Vec<f32> {
 
     let mut actual = Vec::with_capacity(params.len());
     actual.extend(gradients.gradient(x.id()).expect("x gradient").planata());
-    actual.extend(gradients.gradient(beta.id()).expect("beta gradient").planata());
+    actual.extend(
+        gradients
+            .gradient(beta.id())
+            .expect("beta gradient")
+            .planata(),
+    );
     actual
 }
 
@@ -984,7 +1003,12 @@ fn layernorm_gamma_only_autograd_gradient(params: &[f32]) -> Vec<f32> {
 
     let mut actual = Vec::with_capacity(params.len());
     actual.extend(gradients.gradient(x.id()).expect("x gradient").planata());
-    actual.extend(gradients.gradient(gamma.id()).expect("gamma gradient").planata());
+    actual.extend(
+        gradients
+            .gradient(gamma.id())
+            .expect("gamma gradient")
+            .planata(),
+    );
     actual
 }
 
@@ -1006,12 +1030,11 @@ fn test_autograd_layernorm_gradient_gamma_only() {
 fn crux_entropia_loss(params: &[f32]) -> f32 {
     // Fixed targets: [[1,0,0], [0,1,0]] one-hot for 2-batch, 3-class
     let logits = Tensor::structa(params.to_vec(), &[2, 3]).expect("logits tensor");
-    let targets = Tensor::structa(
-        vec![1.0_f32, 0.0, 0.0, 0.0, 1.0, 0.0],
-        &[2, 3],
-    )
-    .expect("targets tensor");
-    logits.crux_entropia(&targets).expect("cross-entropy forward")
+    let targets =
+        Tensor::structa(vec![1.0_f32, 0.0, 0.0, 0.0, 1.0, 0.0], &[2, 3]).expect("targets tensor");
+    logits
+        .crux_entropia(&targets)
+        .expect("cross-entropy forward")
 }
 
 fn crux_entropia_autograd_gradient(params: &[f32]) -> Vec<f32> {

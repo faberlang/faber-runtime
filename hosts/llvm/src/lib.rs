@@ -3,6 +3,8 @@ mod array_numeric;
 mod collection_map;
 mod convert;
 mod format;
+mod gpu_placement;
+mod gradient;
 mod instans;
 mod intervallum;
 mod octeti;
@@ -10,8 +12,6 @@ mod option;
 mod regex_rt;
 mod solum;
 mod sparsa;
-mod gpu_placement;
-mod gradient;
 mod tensor;
 mod text;
 mod valor_aggregate;
@@ -74,6 +74,13 @@ use format::{
 };
 use format::{text_value, RuntimeText};
 #[cfg(test)]
+use gpu_placement::{__faber_gpu_v1_copy_in, __faber_gpu_v1_readback, __faber_gpu_v1_sync};
+#[cfg(test)]
+use gradient::{
+    __faber_rt_v1_gradient_accumulate, __faber_rt_v1_gradient_create, __faber_rt_v1_gradient_read,
+    __faber_rt_v1_gradient_zero,
+};
+#[cfg(test)]
 use instans::{
     __faber_rt_v1_instans_from_text, __faber_rt_v1_instans_from_valor,
     __faber_rt_v1_instans_get_text, __faber_rt_v1_instans_retag,
@@ -115,15 +122,6 @@ use std::ops::{Deref, DerefMut};
 use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 use std::ptr;
-#[cfg(test)]
-use gradient::{
-    __faber_rt_v1_gradient_accumulate, __faber_rt_v1_gradient_create,
-    __faber_rt_v1_gradient_read, __faber_rt_v1_gradient_zero,
-};
-#[cfg(test)]
-use gpu_placement::{
-    __faber_gpu_v1_copy_in, __faber_gpu_v1_readback, __faber_gpu_v1_sync,
-};
 use tensor::RuntimeTensor;
 #[cfg(test)]
 use tensor::{

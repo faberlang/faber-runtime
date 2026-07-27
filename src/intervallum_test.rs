@@ -389,7 +389,7 @@ fn u8_continet() {
 #[test]
 fn u8_coercere_clamps() {
     let r = Intervallum::exclusive(10_u8, 20);
-    assert_eq!(r.coercere(5), 10);  // below → lo
+    assert_eq!(r.coercere(5), 10); // below → lo
     assert_eq!(r.coercere(25), 19); // above → hi_valid (excluded finis - 1)
     assert_eq!(r.coercere(15), 15); // inside
 }

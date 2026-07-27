@@ -41,14 +41,25 @@ pub(crate) enum AutogradOp {
     Exp,
     Log,
     Gelu,
-    LayerNorm { axis: i64, epsilon: u32, has_gamma: bool, has_beta: bool },
+    LayerNorm {
+        axis: i64,
+        epsilon: u32,
+        has_gamma: bool,
+        has_beta: bool,
+    },
     Softmax,
     CruxEntropia,
     Matmul,
-    Scala { factor: u32 },
+    Scala {
+        factor: u32,
+    },
     Forma,
-    Permute { axes: Vec<i64> },
-    Sectio { start: i64 },
+    Permute {
+        axes: Vec<i64>,
+    },
+    Sectio {
+        start: i64,
+    },
     Summa,
     Media,
 }
@@ -205,19 +216,13 @@ impl AutogradTape {
 
     pub(crate) fn exp(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
         self.ensure_member(value)?;
-        let tensor = self
-            .value(value.id)?
-            .exp()
-            .map_err(AutogradError::Tensor)?;
+        let tensor = self.value(value.id)?.exp().map_err(AutogradError::Tensor)?;
         Ok(self.record(AutogradOp::Exp, vec![value.id], tensor))
     }
 
     pub(crate) fn log(&mut self, value: &AutogradValue) -> Result<AutogradValue, AutogradError> {
         self.ensure_member(value)?;
-        let tensor = self
-            .value(value.id)?
-            .log()
-            .map_err(AutogradError::Tensor)?;
+        let tensor = self.value(value.id)?.log().map_err(AutogradError::Tensor)?;
         Ok(self.record(AutogradOp::Log, vec![value.id], tensor))
     }
 
@@ -418,7 +423,16 @@ impl AutogradTape {
             )
             .map_err(AutogradError::Tensor)?;
 
-        Ok(self.record(AutogradOp::LayerNorm { axis, epsilon: epsilon.to_bits(), has_gamma: gamma.is_some(), has_beta: beta.is_some() }, parents, tensor))
+        Ok(self.record(
+            AutogradOp::LayerNorm {
+                axis,
+                epsilon: epsilon.to_bits(),
+                has_gamma: gamma.is_some(),
+                has_beta: beta.is_some(),
+            },
+            parents,
+            tensor,
+        ))
     }
 
     pub(crate) fn reject_unsupported<T>(
@@ -726,7 +740,12 @@ impl AutogradTape {
                 }
                 // VJP: Ba, J. L., Kiros, J. R., & Hinton, G. E. (2016).
                 // Layer Normalization. arXiv:1607.06450.
-                AutogradOp::LayerNorm { axis, epsilon, has_gamma, has_beta } => {
+                AutogradOp::LayerNorm {
+                    axis,
+                    epsilon,
+                    has_gamma,
+                    has_beta,
+                } => {
                     let epsilon = f32::from_bits(epsilon);
                     let parents = node.parents.as_slice();
                     let input_id = parents[0];
@@ -757,10 +776,8 @@ impl AutogradTape {
                         let inv_std = 1.0 / (var + epsilon).sqrt();
 
                         // Pre-affine normalized y_i = (x_i - mean) * inv_std
-                        let y_norm: Vec<f32> = input_data
-                            .iter()
-                            .map(|&v| (v - mean) * inv_std)
-                            .collect();
+                        let y_norm: Vec<f32> =
+                            input_data.iter().map(|&v| (v - mean) * inv_std).collect();
 
                         // Chain dy through gamma to get dy_norm w.r.t. pre-affine y
                         let dy_data = dy.planata();
@@ -778,11 +795,8 @@ impl AutogradTape {
 
                         // Ba et al. 2016 VJP
                         let sum_dy: f32 = dy_norm.iter().sum();
-                        let sum_dy_y: f32 = dy_norm
-                            .iter()
-                            .zip(y_norm.iter())
-                            .map(|(d, y)| d * y)
-                            .sum();
+                        let sum_dy_y: f32 =
+                            dy_norm.iter().zip(y_norm.iter()).map(|(d, y)| d * y).sum();
 
                         let dx_data: Vec<f32> = dy_norm
                             .iter()
@@ -827,8 +841,11 @@ impl AutogradTape {
 
                         let normalize_along_cols = axis == 1;
 
-                        let (norm_dim, batch_dim): (usize, usize) =
-                            if normalize_along_cols { (cols, rows) } else { (rows, cols) };
+                        let (norm_dim, batch_dim): (usize, usize) = if normalize_along_cols {
+                            (cols, rows)
+                        } else {
+                            (rows, cols)
+                        };
                         let n = norm_dim as f32;
 
                         // Get gamma data if present
@@ -845,11 +862,7 @@ impl AutogradTape {
 
                         for b in 0..batch_dim {
                             let mut sum: f64 = 0.0;
-                            let slice_start = if normalize_along_cols {
-                                b * cols
-                            } else {
-                                b
-                            };
+                            let slice_start = if normalize_along_cols { b * cols } else { b };
                             for k in 0..norm_dim {
                                 let idx = if normalize_along_cols {
                                     slice_start + k
@@ -890,7 +903,11 @@ impl AutogradTape {
                                 .iter()
                                 .enumerate()
                                 .map(|(i, &d)| {
-                                    let k = if normalize_along_cols { i % cols } else { i / cols };
+                                    let k = if normalize_along_cols {
+                                        i % cols
+                                    } else {
+                                        i / cols
+                                    };
                                     d * gd[k]
                                 })
                                 .collect()
@@ -901,11 +918,7 @@ impl AutogradTape {
                         // Compute dx using Ba et al. 2016 VJP
                         let mut dx_data = vec![0.0_f32; rows * cols];
                         for b in 0..batch_dim {
-                            let slice_start = if normalize_along_cols {
-                                b * cols
-                            } else {
-                                b
-                            };
+                            let slice_start = if normalize_along_cols { b * cols } else { b };
                             let inv_std = inv_stds[b];
 
                             let mut sum_dy: f32 = 0.0;
@@ -997,8 +1010,8 @@ impl AutogradTape {
                         .multiplica(forward_output)
                         .map_err(AutogradError::Tensor)?;
                     let sum_y_up: f32 = y_mul_up.summa();
-                    let broadcast = Tensor::crea(&upstream_shape, sum_y_up)
-                        .map_err(AutogradError::Tensor)?;
+                    let broadcast =
+                        Tensor::crea(&upstream_shape, sum_y_up).map_err(AutogradError::Tensor)?;
                     let centered = upstream
                         .subtrahe(&broadcast)
                         .map_err(AutogradError::Tensor)?;
@@ -1022,9 +1035,7 @@ impl AutogradTape {
                     }
                     #[allow(clippy::cast_precision_loss)]
                     let n_f32 = last_dim as f32;
-                    let diff = softmax
-                        .subtrahe(targets)
-                        .map_err(AutogradError::Tensor)?;
+                    let diff = softmax.subtrahe(targets).map_err(AutogradError::Tensor)?;
                     let grad = diff.scala(upstream_scalar / n_f32);
                     gradients.accumulate(logits_id, grad)?;
                 }
@@ -2587,9 +2598,18 @@ mod tests {
         // exp(-2)=0.1353, exp(-1)=0.3679, exp(0)=1.0, sum=1.5032
         // [0.0900, 0.2447, 0.6652]
         let expected = vec![0.0900_f32, 0.2447, 0.6652];
-        for (i, (actual, expected)) in soft.tensor().planata().iter().zip(expected.iter()).enumerate() {
+        for (i, (actual, expected)) in soft
+            .tensor()
+            .planata()
+            .iter()
+            .zip(expected.iter())
+            .enumerate()
+        {
             let delta = (actual - expected).abs();
-            assert!(delta <= 1.0e-3, "softmax[{i}] expected {expected}, got {actual}, delta {delta}");
+            assert!(
+                delta <= 1.0e-3,
+                "softmax[{i}] expected {expected}, got {actual}, delta {delta}"
+            );
         }
         assert_eq!(soft.tensor().magnitudines(), vec![3]);
 
@@ -2639,11 +2659,7 @@ mod tests {
         // via summa). Compare against the forward softmax output directly.
         let weight_grad = gradients.gradient(weights.id()).expect("weights gradient");
         let soft_data = soft.tensor().planata();
-        assert_tensor_close(
-            weight_grad,
-            &soft_data,
-            &[3],
-        );
+        assert_tensor_close(weight_grad, &soft_data, &[3]);
     }
 
     #[test]
@@ -2651,6 +2667,8 @@ mod tests {
     fn autograd_tape_softmax_rejects_rank2() {
         let mut tape = AutogradTape::new();
         let value = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]));
-        let _soft = tape.softmax(&value).expect("softmax should be rejected at rank 2");
+        let _soft = tape
+            .softmax(&value)
+            .expect("softmax should be rejected at rank 2");
     }
 }

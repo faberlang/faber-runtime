@@ -2721,8 +2721,14 @@ fn gradient_create_accumulate_read_zero_round_trip() {
     assert_eq!(view.status, STATUS_OK);
     let view_ptr = view.value.cast::<gradient::GradientViewV1>();
     let view_ref = unsafe { &*view_ptr };
-    assert_eq!(unsafe { std::slice::from_raw_parts(view_ref.data, view_ref.len as usize) }, incoming);
-    assert_eq!(unsafe { std::slice::from_raw_parts(view_ref.shape, view_ref.rank as usize) }, shape);
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(view_ref.data, view_ref.len as usize) },
+        incoming
+    );
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(view_ref.shape, view_ref.rank as usize) },
+        shape
+    );
 
     // Accumulate again: same shape, different values.
     let more: [f32; 6] = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0];
@@ -2745,7 +2751,10 @@ fn gradient_create_accumulate_read_zero_round_trip() {
     let view2_ptr = view2.value.cast::<gradient::GradientViewV1>();
     let view2_ref = unsafe { &*view2_ptr };
     let expected: [f32; 6] = [11.0, 22.0, 33.0, 44.0, 55.0, 66.0];
-    assert_eq!(unsafe { std::slice::from_raw_parts(view2_ref.data, view2_ref.len as usize) }, expected);
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(view2_ref.data, view2_ref.len as usize) },
+        expected
+    );
 
     // Zero the gradient.
     assert_eq!(
@@ -2759,10 +2768,16 @@ fn gradient_create_accumulate_read_zero_round_trip() {
     let view3_ptr = view3.value.cast::<gradient::GradientViewV1>();
     let view3_ref = unsafe { &*view3_ptr };
     let zeros: [f32; 6] = [0.0; 6];
-    assert_eq!(unsafe { std::slice::from_raw_parts(view3_ref.data, view3_ref.len as usize) }, zeros);
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(view3_ref.data, view3_ref.len as usize) },
+        zeros
+    );
 
     // Verify shape is still preserved after zero.
-    assert_eq!(unsafe { std::slice::from_raw_parts(view3_ref.shape, view3_ref.rank as usize) }, shape);
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(view3_ref.shape, view3_ref.rank as usize) },
+        shape
+    );
 
     unsafe { __faber_rt_v1_shutdown(context) };
 }
@@ -2772,15 +2787,18 @@ fn gpu_placement_copy_in_readback_round_trip() {
     let input: [u8; 16] =
         unsafe { std::mem::transmute::<[f32; 4], [u8; 16]>([1.0_f32, 2.0, 3.0, 4.0]) };
 
-    let status = unsafe {
-        __faber_gpu_v1_copy_in(42, input.as_ptr(), input.len() as u64, 0)
-    };
+    let status = unsafe { __faber_gpu_v1_copy_in(42, input.as_ptr(), input.len() as u64, 0) };
     assert_eq!(status, STATUS_OK);
 
     let mut dest = [0_u8; 16];
     let mut actual_len = 0_u64;
     let status = unsafe {
-        __faber_gpu_v1_readback(42, dest.as_mut_ptr(), dest.len() as u64, &raw mut actual_len)
+        __faber_gpu_v1_readback(
+            42,
+            dest.as_mut_ptr(),
+            dest.len() as u64,
+            &raw mut actual_len,
+        )
     };
     assert_eq!(status, STATUS_OK);
     assert_eq!(actual_len, 16);
@@ -2800,8 +2818,7 @@ fn gpu_placement_copy_in_overwrites_existing_buffer() {
 
     let mut dest = [0_u8; 4];
     let mut actual_len = 0_u64;
-    let status =
-        unsafe { __faber_gpu_v1_readback(1, dest.as_mut_ptr(), 4, &raw mut actual_len) };
+    let status = unsafe { __faber_gpu_v1_readback(1, dest.as_mut_ptr(), 4, &raw mut actual_len) };
     assert_eq!(status, STATUS_OK);
     assert_eq!(actual_len, 4);
 
@@ -2813,8 +2830,7 @@ fn gpu_placement_copy_in_overwrites_existing_buffer() {
 fn gpu_placement_readback_unknown_buffer_fails() {
     let mut dest = [0_u8; 4];
     let mut actual_len = 0_u64;
-    let status =
-        unsafe { __faber_gpu_v1_readback(999, dest.as_mut_ptr(), 4, &raw mut actual_len) };
+    let status = unsafe { __faber_gpu_v1_readback(999, dest.as_mut_ptr(), 4, &raw mut actual_len) };
     assert_eq!(status, STATUS_INVALID_ARGUMENT);
 }
 
@@ -2825,15 +2841,13 @@ fn gpu_placement_readback_capacity_too_small_fails() {
 
     let mut dest = [0_u8; 4];
     let mut actual_len = 0_u64;
-    let status =
-        unsafe { __faber_gpu_v1_readback(77, dest.as_mut_ptr(), 4, &raw mut actual_len) };
+    let status = unsafe { __faber_gpu_v1_readback(77, dest.as_mut_ptr(), 4, &raw mut actual_len) };
     assert_eq!(status, STATUS_IO_ERROR);
 }
 
 #[test]
 fn gpu_placement_copy_in_null_ptr_with_positive_length_fails() {
-    let status =
-        unsafe { __faber_gpu_v1_copy_in(1, std::ptr::null(), 8, 0) };
+    let status = unsafe { __faber_gpu_v1_copy_in(1, std::ptr::null(), 8, 0) };
     assert_eq!(status, STATUS_INVALID_ARGUMENT);
 }
 
@@ -2844,8 +2858,7 @@ fn gpu_placement_copy_in_zero_length_allocates_empty_buffer() {
 
     let mut dest = [0_u8; 1];
     let mut actual_len = 0_u64;
-    let status =
-        unsafe { __faber_gpu_v1_readback(0, dest.as_mut_ptr(), 1, &raw mut actual_len) };
+    let status = unsafe { __faber_gpu_v1_readback(0, dest.as_mut_ptr(), 1, &raw mut actual_len) };
     assert_eq!(status, STATUS_OK);
     assert_eq!(actual_len, 0);
 }
@@ -2945,12 +2958,10 @@ fn llvm_device_execution_exemplar_multiply_by_two() {
     // ── Step 1: Copy-in input data ──────────────────────────────────
     // Stage f32 input [1.0, 2.0, 3.0, 4.0] as raw bytes.
     let input_f32: [f32; 4] = [1.0_f32, 2.0, 3.0, 4.0];
-    let input_bytes: [u8; 16] =
-        unsafe { std::mem::transmute::<[f32; 4], [u8; 16]>(input_f32) };
+    let input_bytes: [u8; 16] = unsafe { std::mem::transmute::<[f32; 4], [u8; 16]>(input_f32) };
 
-    let copy_in_status = unsafe {
-        __faber_gpu_v1_copy_in(42, input_bytes.as_ptr(), input_bytes.len() as u64, 0)
-    };
+    let copy_in_status =
+        unsafe { __faber_gpu_v1_copy_in(42, input_bytes.as_ptr(), input_bytes.len() as u64, 0) };
     assert_eq!(copy_in_status, STATUS_OK, "copy_in failed");
 
     // ── Step 2: Kernel dispatch (runtime FFI pattern) ──────────────
@@ -3037,32 +3048,21 @@ fn llvm_device_execution_exemplar_multiply_by_two() {
 
     // Create the input tensor [1.0, 2.0, 3.0, 4.0] shape [4].
     let input_tensor = unsafe {
-        __faber_rt_v1_tensor_from_flat(
-            context,
-            VALUE_KIND_F32,
-            flat_input.value,
-            shape.value,
-        )
+        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_F32, flat_input.value, shape.value)
     };
     assert_eq!(input_tensor.status, STATUS_OK);
 
     // Create the scalar multiplier tensor [2.0] shape [1].
     let two_tensor = unsafe {
-        __faber_rt_v1_tensor_from_flat(
-            context,
-            VALUE_KIND_F32,
-            flat_two.value,
-            scalar_shape.value,
-        )
+        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_F32, flat_two.value, scalar_shape.value)
     };
     assert_eq!(two_tensor.status, STATUS_OK);
 
     // Multiply: this is the @__faber_rt_v1_tensor_mul call that the
     // LLVM-emitted native kernel would make. Broadcast semantics in
     // the runtime handle the scalar broadcast automatically.
-    let product = unsafe {
-        __faber_rt_v1_tensor_mul(context, input_tensor.value, two_tensor.value)
-    };
+    let product =
+        unsafe { __faber_rt_v1_tensor_mul(context, input_tensor.value, two_tensor.value) };
     assert_eq!(product.status, STATUS_OK);
 
     // Flatten the result tensor to a lista<f32> to extract raw bytes.
@@ -3085,27 +3085,27 @@ fn llvm_device_execution_exemplar_multiply_by_two() {
     // In a real kernel, the native code writes directly to device
     // memory. Here we simulate by copying the kernel output back to a
     // device buffer so readback can retrieve it.
-    let copy_out_status = unsafe {
-        __faber_gpu_v1_copy_in(43, output_bytes.as_ptr(), output_bytes.len() as u64, 0)
-    };
+    let copy_out_status =
+        unsafe { __faber_gpu_v1_copy_in(43, output_bytes.as_ptr(), output_bytes.len() as u64, 0) };
     assert_eq!(copy_out_status, STATUS_OK);
 
     // ── Step 4: Readback and verify ─────────────────────────────────
     let mut dest = [0_u8; 16];
     let mut actual_len = 0_u64;
     let readback_status = unsafe {
-        __faber_gpu_v1_readback(43, dest.as_mut_ptr(), dest.len() as u64, &raw mut actual_len)
+        __faber_gpu_v1_readback(
+            43,
+            dest.as_mut_ptr(),
+            dest.len() as u64,
+            &raw mut actual_len,
+        )
     };
     assert_eq!(readback_status, STATUS_OK);
     assert_eq!(actual_len, 16);
     assert_eq!(dest, output_bytes, "readback bytes mismatch");
 
     let result: [f32; 4] = unsafe { std::mem::transmute::<[u8; 16], [f32; 4]>(dest) };
-    assert_eq!(
-        result,
-        [2.0_f32, 4.0, 6.0, 8.0],
-        "kernel output incorrect"
-    );
+    assert_eq!(result, [2.0_f32, 4.0, 6.0, 8.0], "kernel output incorrect");
 
     // ── Step 5: Sync and cleanup ────────────────────────────────────
     let sync_status = unsafe { __faber_gpu_v1_sync(43) };
@@ -3159,12 +3159,10 @@ fn llvm_golden_oracle_multiply_by_two() {
 
     // ── Step 1: Copy-in input data ──────────────────────────────────
     let input_f32: [f32; 4] = [1.0_f32, 2.0, 3.0, 4.0];
-    let input_bytes: [u8; 16] =
-        unsafe { std::mem::transmute::<[f32; 4], [u8; 16]>(input_f32) };
+    let input_bytes: [u8; 16] = unsafe { std::mem::transmute::<[f32; 4], [u8; 16]>(input_f32) };
 
-    let copy_in_status = unsafe {
-        __faber_gpu_v1_copy_in(42, input_bytes.as_ptr(), input_bytes.len() as u64, 0)
-    };
+    let copy_in_status =
+        unsafe { __faber_gpu_v1_copy_in(42, input_bytes.as_ptr(), input_bytes.len() as u64, 0) };
     assert_eq!(copy_in_status, STATUS_OK, "copy_in failed");
 
     // ── Step 2: Kernel dispatch (runtime FFI pattern) ──────────────
@@ -3241,30 +3239,19 @@ fn llvm_golden_oracle_multiply_by_two() {
 
     // Build input tensor.
     let input_tensor = unsafe {
-        __faber_rt_v1_tensor_from_flat(
-            context,
-            VALUE_KIND_F32,
-            flat_input.value,
-            shape.value,
-        )
+        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_F32, flat_input.value, shape.value)
     };
     assert_eq!(input_tensor.status, STATUS_OK);
 
     // Build scalar tensor [2.0].
     let two_tensor = unsafe {
-        __faber_rt_v1_tensor_from_flat(
-            context,
-            VALUE_KIND_F32,
-            flat_two.value,
-            scalar_shape.value,
-        )
+        __faber_rt_v1_tensor_from_flat(context, VALUE_KIND_F32, flat_two.value, scalar_shape.value)
     };
     assert_eq!(two_tensor.status, STATUS_OK);
 
     // Multiply: @__faber_rt_v1_tensor_mul — same FFI path emitted code uses.
-    let product = unsafe {
-        __faber_rt_v1_tensor_mul(context, input_tensor.value, two_tensor.value)
-    };
+    let product =
+        unsafe { __faber_rt_v1_tensor_mul(context, input_tensor.value, two_tensor.value) };
     assert_eq!(product.status, STATUS_OK);
 
     // Flatten to lista<f32>.
@@ -3291,21 +3278,24 @@ fn llvm_golden_oracle_multiply_by_two() {
     for (i, f) in output_f32.iter().enumerate() {
         output_bytes[i * 4..(i + 1) * 4].copy_from_slice(&f32::to_ne_bytes(*f));
     }
-    let copy_out_status = unsafe {
-        __faber_gpu_v1_copy_in(43, output_bytes.as_ptr(), output_bytes.len() as u64, 0)
-    };
+    let copy_out_status =
+        unsafe { __faber_gpu_v1_copy_in(43, output_bytes.as_ptr(), output_bytes.len() as u64, 0) };
     assert_eq!(copy_out_status, STATUS_OK);
 
     // ── Step 4: Readback ────────────────────────────────────────────
     let mut dest = [0_u8; 16];
     let mut actual_len = 0_u64;
     let readback_status = unsafe {
-        __faber_gpu_v1_readback(43, dest.as_mut_ptr(), dest.len() as u64, &raw mut actual_len)
+        __faber_gpu_v1_readback(
+            43,
+            dest.as_mut_ptr(),
+            dest.len() as u64,
+            &raw mut actual_len,
+        )
     };
     assert_eq!(readback_status, STATUS_OK);
     assert_eq!(actual_len, 16);
-    let llvm_result: [f32; 4] =
-        unsafe { std::mem::transmute::<[u8; 16], [f32; 4]>(dest) };
+    let llvm_result: [f32; 4] = unsafe { std::mem::transmute::<[u8; 16], [f32; 4]>(dest) };
 
     // ── Step 5: Elementwise oracle comparison ───────────────────────
     // Compare each element individually. On mismatch, report the index,
