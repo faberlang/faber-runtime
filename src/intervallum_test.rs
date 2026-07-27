@@ -42,23 +42,33 @@ fn ad_lista_honors_inclusivity() {
 }
 
 #[test]
-fn ad_lista_honors_inclusive_extrema() {
+fn ad_lista_near_max_inclusive() {
     let near_max = Intervallum::inclusive(i64::MAX - 2, i64::MAX);
     assert_eq!(
         near_max.ad_lista(),
         vec![i64::MAX - 2, i64::MAX - 1, i64::MAX]
     );
+}
 
+#[test]
+fn ad_lista_near_min_inclusive() {
     let near_min = Intervallum::inclusive(i64::MIN + 2, i64::MIN);
     assert_eq!(
         near_min.ad_lista(),
         vec![i64::MIN + 2, i64::MIN + 1, i64::MIN]
     );
+}
 
+#[test]
+fn ad_lista_single_max_inclusive() {
     assert_eq!(
         Intervallum::inclusive(i64::MAX, i64::MAX).ad_lista(),
         vec![i64::MAX]
     );
+}
+
+#[test]
+fn ad_lista_single_min_inclusive() {
     assert_eq!(
         Intervallum::inclusive(i64::MIN, i64::MIN).ad_lista(),
         vec![i64::MIN]
@@ -122,22 +132,27 @@ fn longitudo_counts_materialized_values() {
 }
 
 #[test]
-fn longitudo_matches_ad_lista_cardinality() {
-    for &(initium, finis, kind) in &[
-        (0, 10, IntervallumKind::Exclusive),
-        (0, 10, IntervallumKind::Inclusive),
-        (10, 0, IntervallumKind::Exclusive),
-        (5, 5, IntervallumKind::Inclusive),
-    ] {
-        let range = Intervallum {
-            initium,
-            finis,
-            kind,
-        };
-        #[allow(clippy::cast_possible_wrap)]
-        let len = range.ad_lista().len() as i64;
-        assert_eq!(range.longitudo(), len);
-    }
+fn longitudo_ascending_exclusive() {
+    let range = Intervallum { initium: 0, finis: 10, kind: IntervallumKind::Exclusive };
+    assert_eq!(range.longitudo(), range.ad_lista().len() as i64);
+}
+
+#[test]
+fn longitudo_ascending_inclusive() {
+    let range = Intervallum { initium: 0, finis: 10, kind: IntervallumKind::Inclusive };
+    assert_eq!(range.longitudo(), range.ad_lista().len() as i64);
+}
+
+#[test]
+fn longitudo_descending_exclusive() {
+    let range = Intervallum { initium: 10, finis: 0, kind: IntervallumKind::Exclusive };
+    assert_eq!(range.longitudo(), range.ad_lista().len() as i64);
+}
+
+#[test]
+fn longitudo_single_point_inclusive() {
+    let range = Intervallum { initium: 5, finis: 5, kind: IntervallumKind::Inclusive };
+    assert_eq!(range.longitudo(), range.ad_lista().len() as i64);
 }
 
 // --- Descending span tests (directional ranges) ---
@@ -264,43 +279,61 @@ fn ad_tensor_descending_preserves_order() {
 // ===========================================================================
 
 #[test]
-fn i8_ascending_ad_lista() {
+fn i8_ascending_exclusive_ad_lista() {
     let r = Intervallum::exclusive(0_i8, 5);
     assert_eq!(r.ad_lista(), vec![0, 1, 2, 3, 4]);
     assert_eq!(r.longitudo(), 5);
+}
 
+#[test]
+fn i8_ascending_inclusive_ad_lista() {
     let r = Intervallum::inclusive(0_i8, 5);
     assert_eq!(r.ad_lista(), vec![0, 1, 2, 3, 4, 5]);
     assert_eq!(r.longitudo(), 6);
 }
 
 #[test]
-fn i8_descending_ad_lista() {
+fn i8_descending_exclusive_ad_lista() {
     let r = Intervallum::exclusive(5_i8, 0);
     assert_eq!(r.ad_lista(), vec![5, 4, 3, 2, 1]);
+}
 
+#[test]
+fn i8_descending_inclusive_ad_lista() {
     let r = Intervallum::inclusive(5_i8, 0);
     assert_eq!(r.ad_lista(), vec![5, 4, 3, 2, 1, 0]);
 }
 
 #[test]
-fn i8_coercere_clamps() {
+fn i8_coercere_exclusive_clamps() {
     let r = Intervallum::exclusive(0_i8, 10);
     assert_eq!(r.coercere(15), 9);
     assert_eq!(r.coercere(-5), 0);
+}
 
+#[test]
+fn i8_coercere_inclusive_clamps() {
     let r = Intervallum::inclusive(0_i8, 10);
     assert_eq!(r.coercere(15), 10);
 }
 
 #[test]
-fn i8_inter_union() {
+fn i8_inter_adjacent_returns_none() {
     let a = Intervallum::exclusive(0_i8, 5);
     let b = Intervallum::exclusive(5_i8, 10);
     assert!(a.inter(b).is_none());
+}
+
+#[test]
+fn i8_union_adjacent_merges() {
+    let a = Intervallum::exclusive(0_i8, 5);
+    let b = Intervallum::exclusive(5_i8, 10);
     let u = a.union(b).expect("adjacent");
     assert_eq!(u, Intervallum::inclusive(0, 9));
+}
 
+#[test]
+fn i8_union_gap_returns_none() {
     let c = Intervallum::exclusive(0_i8, 5);
     let d = Intervallum::exclusive(6_i8, 10);
     assert!(c.union(d).is_none());
@@ -320,10 +353,15 @@ fn i16_descending_ad_lista() {
 }
 
 #[test]
-fn i16_continet_coercere() {
+fn i16_continet_exclusive() {
     let r = Intervallum::exclusive(0_i16, 100);
     assert!(r.continet(&50));
     assert!(!r.continet(&100));
+}
+
+#[test]
+fn i16_coercere_exclusive() {
+    let r = Intervallum::exclusive(0_i16, 100);
     assert_eq!(r.coercere(200), 99);
     assert_eq!(r.coercere(-1), 0);
 }
@@ -367,11 +405,14 @@ fn i32_longitudo_matches_list() {
 // ===========================================================================
 
 #[test]
-fn u8_ascending_ad_lista() {
+fn u8_ascending_exclusive_ad_lista() {
     let r = Intervallum::exclusive(0_u8, 5);
     assert_eq!(r.ad_lista(), vec![0, 1, 2, 3, 4]);
     assert_eq!(r.longitudo(), 5);
+}
 
+#[test]
+fn u8_ascending_inclusive_ad_lista() {
     let r = Intervallum::inclusive(0_u8, 5);
     assert_eq!(r.ad_lista(), vec![0, 1, 2, 3, 4, 5]);
     assert_eq!(r.longitudo(), 6);
@@ -395,10 +436,16 @@ fn u8_coercere_clamps() {
 }
 
 #[test]
-fn u8_inter_union() {
+fn u8_inter_adjacent_returns_none() {
     let a = Intervallum::exclusive(0_u8, 5);
     let b = Intervallum::exclusive(5_u8, 10);
     assert!(a.inter(b).is_none());
+}
+
+#[test]
+fn u8_union_adjacent_merges() {
+    let a = Intervallum::exclusive(0_u8, 5);
+    let b = Intervallum::exclusive(5_u8, 10);
     let u = a.union(b).expect("adjacent");
     assert_eq!(u, Intervallum::inclusive(0, 9));
 }
@@ -410,9 +457,13 @@ fn u16_ascending_ad_lista() {
 }
 
 #[test]
-fn u16_longitudo() {
+fn u16_longitudo_exclusive() {
     let r = Intervallum::exclusive(100_u16, 200);
     assert_eq!(r.longitudo(), 100);
+}
+
+#[test]
+fn u16_longitudo_inclusive() {
     let r = Intervallum::inclusive(100_u16, 200);
     assert_eq!(r.longitudo(), 101);
 }
@@ -441,10 +492,13 @@ fn u32_longitudo_matches_list() {
 }
 
 #[test]
-fn u64_ad_lista() {
+fn u64_exclusive_ad_lista() {
     let r = Intervallum::exclusive(0_u64, 4);
     assert_eq!(r.ad_lista(), vec![0, 1, 2, 3]);
+}
 
+#[test]
+fn u64_inclusive_ad_lista() {
     let r = Intervallum::inclusive(0_u64, 4);
     assert_eq!(r.ad_lista(), vec![0, 1, 2, 3, 4]);
 }
@@ -505,18 +559,33 @@ fn ambula_descending_inclusive() {
 }
 
 #[test]
-fn ambula_matches_ad_lista() {
-    let ranges = [
-        Intervallum::exclusive(0_i64, 10),
-        Intervallum::inclusive(0_i64, 10),
-        Intervallum::exclusive(10_i64, 0),
-        Intervallum::inclusive(10_i64, 0),
-        Intervallum::inclusive(5_i64, 5),
-    ];
-    for r in &ranges {
-        let walked: Vec<i64> = r.ambula().collect();
-        assert_eq!(walked, r.ad_lista(), "ambula mismatch for {r:?}");
-    }
+fn ambula_matches_ad_lista_ascending_exclusive() {
+    let r = Intervallum::exclusive(0_i64, 10);
+    assert_eq!(r.ambula().collect::<Vec<_>>(), r.ad_lista());
+}
+
+#[test]
+fn ambula_matches_ad_lista_ascending_inclusive() {
+    let r = Intervallum::inclusive(0_i64, 10);
+    assert_eq!(r.ambula().collect::<Vec<_>>(), r.ad_lista());
+}
+
+#[test]
+fn ambula_matches_ad_lista_descending_exclusive() {
+    let r = Intervallum::exclusive(10_i64, 0);
+    assert_eq!(r.ambula().collect::<Vec<_>>(), r.ad_lista());
+}
+
+#[test]
+fn ambula_matches_ad_lista_descending_inclusive() {
+    let r = Intervallum::inclusive(10_i64, 0);
+    assert_eq!(r.ambula().collect::<Vec<_>>(), r.ad_lista());
+}
+
+#[test]
+fn ambula_matches_ad_lista_single_point() {
+    let r = Intervallum::inclusive(5_i64, 5);
+    assert_eq!(r.ambula().collect::<Vec<_>>(), r.ad_lista());
 }
 
 #[test]
@@ -545,4 +614,107 @@ fn ambula_single_point() {
     let r = Intervallum::inclusive(42_i64, 42);
     let collected: Vec<i64> = r.ambula().collect();
     assert_eq!(collected, vec![42]);
+}
+
+// ===========================================================================
+// Edge and sad-path tests
+// ===========================================================================
+
+#[test]
+fn ad_lista_empty_exclusive_range() {
+    let r = Intervallum::exclusive(5_i64, 5);
+    assert!(r.ad_lista().is_empty());
+}
+
+#[test]
+fn ad_lista_single_point_exclusive_is_empty() {
+    // Exclusive where initium == finis means no values are included.
+    let r = Intervallum::exclusive(42_i64, 42);
+    assert_eq!(r.ad_lista(), vec![] as Vec<i64>);
+}
+
+#[test]
+fn inter_identical_ranges_exclusive() {
+    let r = Intervallum::exclusive(0_i64, 10);
+    let hit = r.inter(r).expect("identical overlap");
+    assert_eq!(hit, Intervallum::inclusive(0, 9));
+}
+
+#[test]
+fn inter_identical_ranges_inclusive() {
+    let r = Intervallum::inclusive(0_i64, 10);
+    let hit = r.inter(r).expect("identical overlap");
+    assert_eq!(hit, r);
+}
+
+#[test]
+fn inter_fully_contained() {
+    let outer = Intervallum::exclusive(0_i64, 100);
+    let inner = Intervallum::inclusive(30, 50);
+    let hit = outer.inter(inner).expect("contained overlap");
+    assert_eq!(hit, Intervallum::inclusive(30, 50));
+}
+
+#[test]
+fn inter_descending_fully_contained() {
+    let outer = Intervallum::exclusive(10_i64, 0);
+    let inner = Intervallum::inclusive(8, 2);
+    let hit = outer.inter(inner).expect("descending contained overlap");
+    assert_eq!(hit, Intervallum::inclusive(8, 2));
+}
+
+#[test]
+fn inter_descending_disjoint() {
+    let left = Intervallum::exclusive(0_i64, 5);
+    let right = Intervallum::exclusive(-3, -7);
+    assert!(left.inter(right).is_none());
+}
+
+#[test]
+fn union_identical_ranges_exclusive() {
+    let r = Intervallum::exclusive(0_i64, 10);
+    let merged = r.union(r).expect("identical union");
+    assert_eq!(merged, Intervallum::inclusive(0, 9));
+}
+
+#[test]
+fn union_identical_ranges_inclusive() {
+    let r = Intervallum::inclusive(0_i64, 10);
+    let merged = r.union(r).expect("identical union");
+    assert_eq!(merged, r);
+}
+
+#[test]
+fn ad_lista_u8_boundary_full_span() {
+    let r = Intervallum::inclusive(u8::MIN, u8::MAX);
+    assert_eq!(r.longitudo(), 256);
+    assert_eq!(r.ad_lista()[0], u8::MIN);
+    assert_eq!(r.ad_lista()[255], u8::MAX);
+}
+
+#[test]
+fn ambula_u8_boundary_full_span() {
+    let r = Intervallum::inclusive(u8::MIN, u8::MAX);
+    let collected: Vec<u8> = r.ambula().collect();
+    assert_eq!(collected.len(), 256);
+    assert_eq!(collected[0], u8::MIN);
+    assert_eq!(collected[255], u8::MAX);
+}
+
+#[test]
+fn longitudo_zero_exclusive() {
+    let r = Intervallum::exclusive(5_i64, 5);
+    assert_eq!(r.longitudo(), 0);
+}
+
+#[test]
+fn ad_lista_descending_empty_exclusive() {
+    let r = Intervallum::exclusive(5_i64, 5);
+    assert!(r.ad_lista().is_empty());
+}
+
+#[test]
+fn ambula_descending_empty_exclusive() {
+    let r = Intervallum::exclusive(5_i64, 5);
+    assert!(r.ambula().next().is_none());
 }

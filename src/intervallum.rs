@@ -242,6 +242,7 @@ impl<T: IntervallumNumeric> Intervallum<T> {
         IntervallumWalk {
             interval: *self,
             cursor: self.initium,
+            exhausted: false,
         }
     }
 
@@ -447,12 +448,19 @@ impl<T: IntervallumNumeric + Default> Intervallum<T> {
 pub struct IntervallumWalk<T> {
     interval: Intervallum<T>,
     cursor: T,
+    /// Set after the last value is yielded. Required when the endpoint is
+    /// `T::MAX`/`T::MIN` so inclusive walks cannot compare "past" the bound.
+    exhausted: bool,
 }
 
 impl<T: IntervallumNumeric> Iterator for IntervallumWalk<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<T> {
+        if self.exhausted {
+            return None;
+        }
+
         let ascending = self.interval.initium <= self.interval.finis;
         let done = if ascending {
             match self.interval.kind {
@@ -467,23 +475,22 @@ impl<T: IntervallumNumeric> Iterator for IntervallumWalk<T> {
         };
 
         if done {
+            self.exhausted = true;
             return None;
         }
 
         let current = self.cursor;
         if ascending {
-            if current >= T::MAX {
-                // Yield the last value and mark done for next call.
-                self.cursor = self.interval.finis; // force done next round
+            if current >= T::MAX || current >= self.interval.finis {
+                // Last yield — no representable successor (or endpoint reached).
+                self.exhausted = true;
             } else {
                 self.cursor = self.cursor.walk_ascend();
             }
+        } else if current <= T::MIN || current <= self.interval.finis {
+            self.exhausted = true;
         } else {
-            if current <= T::MIN {
-                self.cursor = self.interval.finis; // force done next round
-            } else {
-                self.cursor = self.cursor.walk_descend();
-            }
+            self.cursor = self.cursor.walk_descend();
         }
         Some(current)
     }

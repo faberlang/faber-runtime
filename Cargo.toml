@@ -29,3 +29,4 @@ ureq = "2"
 
 [dev-dependencies]
 radix-host-abi = { path = "../radix/crates/radix-host-abi" }
+tempfile = "3"

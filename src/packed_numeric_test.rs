@@ -6,15 +6,33 @@ use crate::packed_numeric::{
 use crate::Tensor;
 
 #[test]
-fn packed_u4_layout_records_toy_block_facts() {
-    let layout = PackedU4Layout::toy_u4();
+fn packed_u4_layout_records_element_width_bits() {
+    assert_eq!(PackedU4Layout::toy_u4().element_width_bits, 4);
+}
 
-    assert_eq!(layout.element_width_bits, 4);
-    assert_eq!(layout.values_per_byte, 2);
-    assert_eq!(layout.block_values, 8);
-    assert_eq!(layout.packed_bytes, 4);
-    assert_eq!(layout.bit_order, PackedBitOrder::LowNibbleFirst);
-    assert_eq!(layout.widened_type, PackedWidenedType::F32);
+#[test]
+fn packed_u4_layout_records_values_per_byte() {
+    assert_eq!(PackedU4Layout::toy_u4().values_per_byte, 2);
+}
+
+#[test]
+fn packed_u4_layout_records_block_values() {
+    assert_eq!(PackedU4Layout::toy_u4().block_values, 8);
+}
+
+#[test]
+fn packed_u4_layout_records_packed_bytes() {
+    assert_eq!(PackedU4Layout::toy_u4().packed_bytes, 4);
+}
+
+#[test]
+fn packed_u4_layout_records_bit_order() {
+    assert_eq!(PackedU4Layout::toy_u4().bit_order, PackedBitOrder::LowNibbleFirst);
+}
+
+#[test]
+fn packed_u4_layout_records_widened_type() {
+    assert_eq!(PackedU4Layout::toy_u4().widened_type, PackedWidenedType::F32);
 }
 
 #[test]
@@ -39,20 +57,47 @@ fn packed_u4_dequantizes_with_scale_and_zero_point() {
 }
 
 #[test]
-fn packed_u4_rejects_invalid_metadata_and_indices() {
+fn packed_u4_rejects_short_byte_slice() {
     assert_eq!(
         PackedU4Block::new(&[0x21, 0x43, 0x65], 1.0, 0).unwrap_err(),
         ERR_PACKED_U4_BYTE_COUNT
     );
+}
+
+#[test]
+fn packed_u4_rejects_long_byte_slice() {
+    assert_eq!(
+        PackedU4Block::new(&[0x21, 0x43, 0x65, 0x87, 0x99], 1.0, 0).unwrap_err(),
+        ERR_PACKED_U4_BYTE_COUNT
+    );
+}
+
+#[test]
+fn packed_u4_rejects_empty_byte_slice() {
+    assert_eq!(
+        PackedU4Block::new(&[], 1.0, 0).unwrap_err(),
+        ERR_PACKED_U4_BYTE_COUNT
+    );
+}
+
+#[test]
+fn packed_u4_rejects_nan_scale() {
     assert_eq!(
         PackedU4Block::new(&[0x21, 0x43, 0x65, 0x87], f32::NAN, 0).unwrap_err(),
         ERR_PACKED_U4_SCALE
     );
+}
+
+#[test]
+fn packed_u4_rejects_overflow_zero_point() {
     assert_eq!(
         PackedU4Block::new(&[0x21, 0x43, 0x65, 0x87], 1.0, 16).unwrap_err(),
         ERR_PACKED_U4_ZERO_POINT
     );
+}
 
+#[test]
+fn packed_u4_rejects_out_of_range_extract_index() {
     let block = PackedU4Block::new(&[0x21, 0x43, 0x65, 0x87], 1.0, 0).expect("valid toy block");
     assert_eq!(block.extract(8).unwrap_err(), ERR_PACKED_U4_INDEX);
 }

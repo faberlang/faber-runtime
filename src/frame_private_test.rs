@@ -23,3 +23,19 @@ fn solum_home_value_errors_without_either_environment_variable() {
         Err("no home directory environment variable")
     );
 }
+
+#[test]
+fn solum_home_value_accepts_empty_home() {
+    assert_eq!(
+        solum_home_value(Some("".into()), Some("C:\\Users\\faber".into())),
+        Ok("".into())
+    );
+}
+
+#[test]
+fn solum_home_value_empty_home_ignores_userprofile() {
+    assert_eq!(
+        solum_home_value(Some("".into()), None),
+        Ok("".into())
+    );
+}

@@ -160,3 +160,22 @@ fn to_rfc3339_roundtrips_utc_wire_at_same_precision() {
     .expect("parse");
     assert_eq!(parsed.to_rfc3339(), "1979-05-27T07:32:00.123456Z");
 }
+
+#[test]
+fn epoch_zero_parses_and_roundtrips() {
+    let valor = Valor::Instans("1970-01-01T00:00:00Z".to_string());
+    let instant =
+        Instans::try_from_valor(&valor, InstansPraecisio::Secunda).expect("epoch zero");
+    assert_eq!(instant.nanos(), 0);
+    assert_eq!(instant.to_rfc3339(), "1970-01-01T00:00:00Z");
+}
+
+#[test]
+fn pre_epoch_negative_offset_normalizes_correctly() {
+    // -08:00 offset with pre-epoch datetime
+    let valor = Valor::Instans("1969-12-31T16:00:00-08:00".to_string());
+    let instant =
+        Instans::try_from_valor(&valor, InstansPraecisio::Secunda).expect("pre-epoch offset");
+    assert_eq!(instant.nanos(), 0);
+    assert_eq!(instant.to_rfc3339(), "1970-01-01T00:00:00Z");
+}

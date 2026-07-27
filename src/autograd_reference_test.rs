@@ -1066,3 +1066,43 @@ fn test_autograd_crux_entropia_gradient() {
 
     assert_gradient_close(&actual, &reference);
 }
+
+#[test]
+fn test_autograd_log_gradient_at_one() {
+    // log(1) = 0, gradient = 1/1 = 1.0
+    let mut tape = AutogradTape::new();
+    let params = vec![1.0_f32];
+    let x = leaf(&mut tape, tensor(&params, &[1]));
+
+    let log_val = tape.log(&x).expect("log records");
+    let loss = tape.summa(&log_val).expect("scalar loss");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    let grad_x = gradients.gradient(x.id()).expect("x gradient");
+    assert_eq!(grad_x.planata(), vec![1.0_f32]);
+}
+
+#[test]
+fn test_autograd_relu_gradient_all_negative() {
+    // ReLU of all-negative input produces zero gradient for every element
+    let mut tape = AutogradTape::new();
+    let params = vec![-3.0_f32, -2.0, -1.0, -0.5];
+    let x = leaf(&mut tape, tensor(&params, &[4]));
+
+    let activated = tape.relu(&x).expect("relu records");
+    let loss = tape.media(&activated).expect("media reduces");
+    let gradients = tape.backward(&loss).expect("backward succeeds");
+
+    let grad_x = gradients.gradient(x.id()).expect("x gradient");
+    assert_eq!(grad_x.planata(), vec![0.0_f32, 0.0, 0.0, 0.0]);
+}
+
+#[test]
+fn test_autograd_gelu_gradient_zero() {
+    // GELU(0) = 0, numeric gradient at 0 should be well-defined
+    let params = vec![0.0_f32];
+    let reference = finite_difference_gradient(&params, gelu_loss);
+    let actual = gelu_autograd_gradient(&params);
+
+    assert_gradient_close(&actual, &reference);
+}

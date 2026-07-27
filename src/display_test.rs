@@ -28,12 +28,33 @@ fn display_text_payload_returns_payload_without_debug_wrapper() {
 }
 
 #[test]
-fn display_valor_uses_payload_spellings() {
+fn display_valor_nihil() {
     assert_eq!(display_valor(&Valor::Nihil), "nihil");
+}
+
+#[test]
+fn display_valor_bivalens() {
     assert_eq!(display_valor(&Valor::Bivalens(true)), "verum");
+}
+
+#[test]
+fn display_valor_numerus() {
     assert_eq!(display_valor(&Valor::Numerus(42)), "42");
+}
+
+#[test]
+fn display_valor_fractus() {
     assert_eq!(display_valor(&Valor::Fractus(1.0)), "1.0");
+}
+
+#[test]
+fn display_valor_textus() {
     assert_eq!(display_valor(&Valor::Textus("salve".into())), "salve");
+    assert_eq!(
+        display_valor(&Valor::Textus("".into())),
+        "",
+        "empty textus"
+    );
 }
 
 #[test]
@@ -52,6 +73,16 @@ fn display_valor_formats_aggregate_payloads_without_carrier_tags() {
 }
 
 #[test]
+fn display_valor_empty_lista() {
+    assert_eq!(display_valor(&Valor::Lista(vec![])), "[]");
+}
+
+#[test]
+fn display_valor_empty_tabula() {
+    assert_eq!(display_valor(&Valor::Tabula(BTreeMap::new())), "{}");
+}
+
+#[test]
 fn display_option_uses_payload_or_nihil() {
     let text = "Roma".to_owned();
 
@@ -60,11 +91,31 @@ fn display_option_uses_payload_or_nihil() {
 }
 
 #[test]
-fn display_option_preserves_faber_scalar_spellings() {
+fn display_option_bivalens_some_verum() {
     assert_eq!(display_option_bivalens(Some(true)), "verum");
+}
+
+#[test]
+fn display_option_bivalens_none_nihil() {
     assert_eq!(display_option_bivalens(None), "nihil");
+}
+
+#[test]
+fn display_option_fractus_some_preserves_spelling() {
     assert_eq!(display_option_fractus(Some(1.0_f64)), "1.0");
+}
+
+#[test]
+fn display_option_fractus_none_nihil() {
     assert_eq!(display_option_fractus::<f64>(None), "nihil");
+}
+
+#[test]
+fn display_option_vacuum_some_vacuum() {
     assert_eq!(display_option_vacuum(Some(())), "vacuum");
+}
+
+#[test]
+fn display_option_vacuum_none_nihil() {
     assert_eq!(display_option_vacuum::<()>(None), "nihil");
 }

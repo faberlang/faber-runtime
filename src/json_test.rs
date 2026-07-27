@@ -144,3 +144,24 @@ fn renders_compact_deterministic_json() {
 
     assert_eq!(json.to_wire(), r#"{"a":1,"b":"line\nbreak"}"#);
 }
+
+#[test]
+fn accepts_empty_root_object() {
+    let value = object([]);
+    let json = Json::try_from(value.clone()).expect("empty object");
+    assert_eq!(json.as_valor(), &value);
+    assert_eq!(json.to_wire(), "{}");
+}
+
+#[test]
+fn rejects_non_finite_float_in_nested_position() {
+    let err = Json::try_from(object([(
+        "nested",
+        Valor::Lista(vec![
+            object([("val", Valor::Fractus(f64::NEG_INFINITY))]),
+        ]),
+    )]))
+    .expect_err("neg infinity");
+    assert_eq!(err.path(), "$.nested[0].val");
+    assert_eq!(err.kind(), &JsonErrorKind::NonFiniteNumber);
+}

@@ -1415,7 +1415,7 @@ mod tests {
     }
 
     #[test]
-    fn autograd_rejects_cross_tape_binary_operands_without_recording_node() {
+    fn autograd_rejects_cross_tape_add_operand_without_recording_node() {
         let mut lhs_tape = AutogradTape::new();
         let mut rhs_tape = AutogradTape::new();
         let lhs = leaf(&mut lhs_tape, tensor(&[1.0, 2.0], &[2]));
@@ -1426,10 +1426,32 @@ mod tests {
             lhs_tape.add(&lhs, &rhs).unwrap_err(),
             AutogradError::ForeignTapeValue
         );
+        assert_eq!(lhs_tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_rejects_cross_tape_sub_operand_without_recording_node() {
+        let mut lhs_tape = AutogradTape::new();
+        let mut rhs_tape = AutogradTape::new();
+        let lhs = leaf(&mut lhs_tape, tensor(&[1.0, 2.0], &[2]));
+        let rhs = leaf(&mut rhs_tape, tensor(&[3.0, 4.0], &[2]));
+
+        let before = lhs_tape.nodes().len();
         assert_eq!(
             lhs_tape.sub(&lhs, &rhs).unwrap_err(),
             AutogradError::ForeignTapeValue
         );
+        assert_eq!(lhs_tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_rejects_cross_tape_mul_operand_without_recording_node() {
+        let mut lhs_tape = AutogradTape::new();
+        let mut rhs_tape = AutogradTape::new();
+        let lhs = leaf(&mut lhs_tape, tensor(&[1.0, 2.0], &[2]));
+        let rhs = leaf(&mut rhs_tape, tensor(&[3.0, 4.0], &[2]));
+
+        let before = lhs_tape.nodes().len();
         assert_eq!(
             lhs_tape.mul(&lhs, &rhs).unwrap_err(),
             AutogradError::ForeignTapeValue
@@ -2033,21 +2055,35 @@ mod tests {
     }
 
     #[test]
-    fn autograd_v0_explicitly_rejects_out_of_scope_operations() {
+    fn autograd_rejects_mutation_without_recording_node() {
         let tape = AutogradTape::new();
-
         assert_eq!(
             tape.reject_unsupported::<()>(UnsupportedAutogradOp::Mutation),
             Err(AutogradError::Unsupported(UnsupportedAutogradOp::Mutation))
         );
+    }
+
+    #[test]
+    fn autograd_rejects_view_without_recording_node() {
+        let tape = AutogradTape::new();
         assert_eq!(
             tape.reject_unsupported::<()>(UnsupportedAutogradOp::View),
             Err(AutogradError::Unsupported(UnsupportedAutogradOp::View))
         );
+    }
+
+    #[test]
+    fn autograd_rejects_hostabi_without_recording_node() {
+        let tape = AutogradTape::new();
         assert_eq!(
             tape.reject_unsupported::<()>(UnsupportedAutogradOp::HostAbi),
             Err(AutogradError::Unsupported(UnsupportedAutogradOp::HostAbi))
         );
+    }
+
+    #[test]
+    fn autograd_rejects_session_without_recording_node() {
+        let tape = AutogradTape::new();
         assert_eq!(
             tape.reject_unsupported::<()>(UnsupportedAutogradOp::Session),
             Err(AutogradError::Unsupported(UnsupportedAutogradOp::Session))
@@ -2503,7 +2539,7 @@ mod tests {
     }
 
     #[test]
-    fn autograd_tape_owned_sectio_rejects_invalid_bounds_without_recording_node() {
+    fn autograd_tape_owned_sectio_rejects_negative_start_without_recording_node() {
         let mut tape = AutogradTape::new();
         let base = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
 
@@ -2512,6 +2548,15 @@ mod tests {
             tape.sectio(&base, -1, 1).unwrap_err(),
             AutogradError::Tensor(crate::tensor::ERR_NEGATIVE_SLICE)
         );
+        assert_eq!(tape.nodes().len(), before);
+    }
+
+    #[test]
+    fn autograd_tape_owned_sectio_rejects_out_of_bounds_without_recording_node() {
+        let mut tape = AutogradTape::new();
+        let base = leaf(&mut tape, tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]));
+
+        let before = tape.nodes().len();
         assert_eq!(
             tape.sectio(&base, 0, 3).unwrap_err(),
             AutogradError::Tensor(crate::tensor::ERR_INDEX_OUT_OF_BOUNDS)
@@ -2670,5 +2715,135 @@ mod tests {
         let _soft = tape
             .softmax(&value)
             .expect("softmax should be rejected at rank 2");
+    }
+
+    #[test]
+    fn tape_new_creates_empty_tape() {
+        let tape = AutogradTape::new();
+        assert!(tape.nodes().is_empty());
+        assert!(tape.node(AutogradNodeId(0)).is_none());
+    }
+
+    #[test]
+    fn tape_new_assigns_unique_ids() {
+        let a = AutogradTape::new();
+        let b = AutogradTape::new();
+        assert_ne!(a.id(), b.id());
+    }
+
+    #[test]
+    fn backward_on_leaf_then_single_summa_propagates_upstream() {
+        let mut tape = AutogradTape::new();
+        let x = leaf(&mut tape, tensor(&[3.0, 5.0], &[2]));
+        let loss = tape.summa(&x).expect("scalar loss");
+        let gradients = tape.backward(&loss).expect("backward succeeds");
+        assert_tensor_close(
+            gradients.gradient(x.id()).expect("x gradient"),
+            &[1.0, 1.0],
+            &[2],
+        );
+    }
+
+    #[test]
+    fn reduce_broadcast_gradient_identical_shape_is_identity() {
+        let upstream = tensor(&[2.0, 4.0, 6.0, 8.0], &[2, 2]);
+        let result = reduce_broadcast_gradient(&upstream, &[2, 2])
+            .expect("broadcast reduction with identical shape");
+        assert_tensor_close(&result, &[2.0, 4.0, 6.0, 8.0], &[2, 2]);
+    }
+
+    #[test]
+    fn reduce_broadcast_gradient_scalar_target_is_sum() {
+        let upstream = tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+        let result = reduce_broadcast_gradient(&upstream, &[])
+            .expect("broadcast reduction to scalar");
+        assert_tensor_close(&result, &[10.0], &[]);
+    }
+
+    #[test]
+    fn broadcast_shape_rejects_incompatible_dimensions() {
+        assert_eq!(
+            broadcast_shape(&[2, 3], &[3, 2]).unwrap_err(),
+            AutogradError::ShapeMismatch
+        );
+    }
+
+    #[test]
+    fn broadcast_shape_matches_identical_ranks() {
+        let shape = broadcast_shape(&[2, 3], &[2, 3]).expect("identical shapes");
+        assert_eq!(shape, vec![2, 3]);
+    }
+
+    #[test]
+    fn broadcast_shape_handles_one_sided_dimensions() {
+        let shape = broadcast_shape(&[2, 1], &[1, 3]).expect("both sides broadcast");
+        assert_eq!(shape, vec![2, 3]);
+    }
+
+    #[test]
+    fn broadcast_shape_pads_shorter_rank() {
+        let shape = broadcast_shape(&[3], &[2, 3]).expect("scalar padded");
+        assert_eq!(shape, vec![2, 3]);
+    }
+
+    #[test]
+    fn unravel_index_returns_empty_for_scalar_shape() {
+        let index = unravel_index(0, &[]).expect("scalar unravel");
+        assert!(index.is_empty());
+    }
+
+    #[test]
+    fn unravel_index_produces_row_major_order() {
+        let index = unravel_index(3, &[2, 3]).expect("row-major unravel");
+        assert_eq!(index, vec![1, 0]);
+    }
+
+    #[test]
+    fn scalar_tensor_produces_rank_zero() {
+        let t = scalar_tensor(3.14).expect("scalar tensor");
+        assert!(t.magnitudines().is_empty());
+        assert_eq!(t.planata(), vec![3.14]);
+    }
+
+    #[test]
+    fn rank_zero_scalar_rejects_ranked_tensor() {
+        let t = tensor(&[1.0, 2.0], &[2]);
+        assert_eq!(
+            rank_zero_scalar(&t).unwrap_err(),
+            AutogradError::BackwardRequiresScalar
+        );
+    }
+
+    #[test]
+    fn scale_tensor_multiplies_all_elements() {
+        let t = tensor(&[1.0, -2.0, 3.0], &[3]);
+        let scaled = scale_tensor(&t, -0.5).expect("scaling succeeds");
+        assert_tensor_close(&scaled, &[-0.5, 1.0, -1.5], &[3]);
+    }
+
+    #[test]
+    fn gradient_accumulation_rejects_nonexistent_node_id() {
+        let mut gradients = AutogradGradients::new(vec![]);
+        assert_eq!(
+            gradients.accumulate(AutogradNodeId(0), tensor(&[1.0], &[])),
+            Err(AutogradError::MissingNode)
+        );
+    }
+
+    #[test]
+    fn autograd_node_id_ordering_is_sequential() {
+        let mut tape = AutogradTape::new();
+        let a = leaf(&mut tape, tensor(&[1.0], &[]));
+        let b = leaf(&mut tape, tensor(&[2.0], &[]));
+        let c = leaf(&mut tape, tensor(&[3.0], &[]));
+        assert_eq!(a.id(), AutogradNodeId(0));
+        assert_eq!(b.id(), AutogradNodeId(1));
+        assert_eq!(c.id(), AutogradNodeId(2));
+    }
+
+    #[test]
+    fn gradient_accessor_returns_none_for_unaccumulated_node() {
+        let gradients = AutogradGradients::new(vec![vec![2]]);
+        assert!(gradients.gradient(AutogradNodeId(0)).is_none());
     }
 }

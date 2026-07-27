@@ -33,12 +33,28 @@ fn crea_rejects_overflowing_shape_product() {
 }
 
 #[test]
-fn tensor_shape_element_count_rejects_negative_and_overflow() {
+fn tensor_shape_element_count_returns_some_for_valid_shape() {
     assert_eq!(tensor_shape_element_count(&[2, 3, 4]), Some(24));
+}
+
+#[test]
+fn tensor_shape_element_count_rejects_negative_dimension() {
     assert_eq!(tensor_shape_element_count(&[-1, 4]), None);
+}
+
+#[test]
+fn tensor_shape_element_count_rejects_overflow() {
     assert_eq!(tensor_shape_element_count(&[i64::MAX, i64::MAX]), None);
+}
+
+#[test]
+fn tensor_shape_has_element_count_matches() {
     assert!(tensor_shape_has_element_count(&[2, 3], 6));
     assert!(!tensor_shape_has_element_count(&[2, 3], 5));
+}
+
+#[test]
+fn error_element_count_overflow_string() {
     assert_eq!(ERR_ELEMENT_COUNT_OVERFLOW, "tensor element count overflow");
 }
 
@@ -51,18 +67,28 @@ fn tensor_flat_offset_checks_rank_bounds_and_overflow() {
 }
 
 #[test]
-fn ponde_reports_out_of_bounds_and_negative_index() {
+fn ponde_writes_value_at_valid_index() {
     let mut tensor = Tensor::crea(&[2, 2], 0.0f32).expect("valid shape");
     assert!(tensor.ponde(&[0, 0], 1.0).is_ok());
+    assert_eq!(tensor.accipe(&[0, 0]).expect("valid index"), Some(1.0));
+}
+
+#[test]
+fn ponde_rejects_out_of_bounds_index() {
+    let mut tensor = Tensor::crea(&[2, 2], 0.0f32).expect("valid shape");
     assert_eq!(
         tensor.ponde(&[9, 9], 9.0),
         Err("tensor index out of bounds")
     );
+}
+
+#[test]
+fn ponde_rejects_negative_index() {
+    let mut tensor = Tensor::crea(&[2, 2], 0.0f32).expect("valid shape");
     assert_eq!(
         tensor.ponde(&[-1, 0], 9.0),
         Err("tensor index must be non-negative")
     );
-    assert_eq!(tensor.accipe(&[0, 0]).expect("valid index"), Some(1.0));
 }
 
 #[test]
@@ -99,6 +125,14 @@ fn convert_elements_preserves_shape_and_maps_values() {
     });
     assert_eq!(converted.magnitudines(), vec![2, 2]);
     assert_eq!(converted.planata(), vec![1.0, 2.0, 3.0, 4.0]);
+}
+
+#[test]
+fn convert_elements_empty_tensor() {
+    let tensor: Tensor<i64> = Tensor::structa(Vec::new(), &[0, 5]).expect("zero-extent shape");
+    let converted: Tensor<f64> = tensor.convert_elements(|v| v as f64);
+    assert_eq!(converted.magnitudines(), vec![0, 5]);
+    assert_eq!(converted.planata(), Vec::<f64>::new());
 }
 
 #[test]
@@ -171,6 +205,19 @@ fn sectio_rejects_negative_bounds() {
 }
 
 #[test]
+fn sectio_rejects_out_of_bounds_start() {
+    let tensor = Tensor::crea(&[3, 2], 1.0f32).expect("valid shape");
+    assert_eq!(
+        tensor.sectio(3, 4).unwrap_err(),
+        "tensor index out of bounds"
+    );
+    assert_eq!(
+        tensor.sectio(10, 15).unwrap_err(),
+        "tensor index out of bounds"
+    );
+}
+
+#[test]
 fn addita_sums_elementwise() {
     let a = Tensor::structa(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
     let b = Tensor::structa(vec![10.0f32, 20.0, 30.0], &[3]).unwrap();
@@ -236,17 +283,31 @@ fn multiplica_broadcasts_zero_extent_with_size_one_axis_to_empty_result() {
 }
 
 #[test]
-fn zero_extent_broadcast_rejects_non_one_mismatch_for_each_arithmetic_op() {
+fn zero_extent_addita_rejects_non_one_mismatch() {
     let empty = Tensor::<f32>::structa(Vec::new(), &[0, 3]).unwrap();
     let rows = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
 
     assert_eq!(empty.addita(&rows).unwrap_err(), ERR_BROADCAST_SHAPE);
+}
+
+#[test]
+fn zero_extent_subtrahe_rejects_non_one_mismatch() {
+    let empty = Tensor::<f32>::structa(Vec::new(), &[0, 3]).unwrap();
+    let rows = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+
     assert_eq!(empty.subtrahe(&rows).unwrap_err(), ERR_BROADCAST_SHAPE);
+}
+
+#[test]
+fn zero_extent_multiplica_rejects_non_one_mismatch() {
+    let empty = Tensor::<f32>::structa(Vec::new(), &[0, 3]).unwrap();
+    let rows = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]).unwrap();
+
     assert_eq!(empty.multiplica(&rows).unwrap_err(), ERR_BROADCAST_SHAPE);
 }
 
 #[test]
-fn subtrahe_and_multiplica_are_elementwise() {
+fn subtrahe_is_elementwise() {
     let a = Tensor::structa(vec![10.0f32, 20.0, 30.0], &[3]).unwrap();
     let b = Tensor::structa(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
     assert_eq!(
@@ -255,6 +316,12 @@ fn subtrahe_and_multiplica_are_elementwise() {
             .planata(),
         vec![9.0, 18.0, 27.0]
     );
+}
+
+#[test]
+fn multiplica_is_elementwise() {
+    let a = Tensor::structa(vec![10.0f32, 20.0, 30.0], &[3]).unwrap();
+    let b = Tensor::structa(vec![1.0f32, 2.0, 3.0], &[3]).unwrap();
     assert_eq!(
         a.multiplica(&b)
             .expect("broadcast-compatible shape")
@@ -282,6 +349,15 @@ fn summa_folds_all_elements_to_element_type() {
 }
 
 #[test]
+fn summa_empty_tensor_returns_default() {
+    let empty_f32 = Tensor::<f32>::structa(Vec::new(), &[0]).unwrap();
+    assert_eq!(empty_f32.summa(), 0.0);
+
+    let empty_i64 = Tensor::<i64>::structa(Vec::new(), &[0, 0]).unwrap();
+    assert_eq!(empty_i64.summa(), 0);
+}
+
+#[test]
 fn neg_negates_f32_elements_and_preserves_shape() {
     let tensor = Tensor::structa(vec![1.0f32, -2.0, 0.0, 4.5], &[2, 2]).unwrap();
 
@@ -292,6 +368,16 @@ fn neg_negates_f32_elements_and_preserves_shape() {
 }
 
 #[test]
+fn neg_empty_tensor_preserves_shape() {
+    let tensor = Tensor::<f32>::structa(Vec::new(), &[0, 3]).unwrap();
+
+    let negated = tensor.neg();
+
+    assert_eq!(negated.magnitudines(), vec![0, 3]);
+    assert_eq!(negated.planata(), Vec::<f32>::new());
+}
+
+#[test]
 fn scala_scales_f32_elements_and_preserves_shape() {
     let tensor = Tensor::structa(vec![1.0f32, -2.0, 3.5, 4.0], &[2, 2]).unwrap();
 
@@ -299,6 +385,16 @@ fn scala_scales_f32_elements_and_preserves_shape() {
 
     assert_eq!(scaled.magnitudines(), vec![2, 2]);
     assert_eq!(scaled.planata(), vec![0.5, -1.0, 1.75, 2.0]);
+}
+
+#[test]
+fn scala_empty_tensor_preserves_shape() {
+    let tensor = Tensor::<f32>::structa(Vec::new(), &[0, 2]).unwrap();
+
+    let scaled = tensor.scala(2.0);
+
+    assert_eq!(scaled.magnitudines(), vec![0, 2]);
+    assert_eq!(scaled.planata(), Vec::<f32>::new());
 }
 
 #[test]
@@ -313,14 +409,17 @@ fn divide_broadcasts_finite_f32_tensors() {
 }
 
 #[test]
-fn reciproca_preserves_shape_and_checks_denominators() {
+fn reciproca_preserves_shape_and_values() {
     let tensor = Tensor::structa(vec![2.0f32, -4.0, 0.25, 8.0], &[2, 2]).unwrap();
 
     let reciprocal = tensor.reciproca().expect("finite reciprocal");
 
     assert_eq!(reciprocal.magnitudines(), vec![2, 2]);
     assert_eq!(reciprocal.planata(), vec![0.5, -0.25, 4.0, 0.125]);
+}
 
+#[test]
+fn reciproca_rejects_zero_denominator() {
     let zero = Tensor::structa(vec![1.0f32, 0.0], &[2]).unwrap();
     assert_eq!(zero.reciproca().unwrap_err(), ERR_DIVIDE_ZERO_DENOMINATOR);
 }
@@ -361,11 +460,16 @@ fn divide_rejects_broadcast_shape_mismatch() {
 }
 
 #[test]
-fn media_averages_f32_elements_and_rejects_empty_tensor() {
+fn media_averages_f32_elements() {
     let tensor = Tensor::structa(vec![1.0f32, 2.0, 3.0, 4.0], &[2, 2]).unwrap();
-    let empty = Tensor::<f32>::structa(Vec::new(), &[0]).unwrap();
 
     assert_eq!(tensor.media().unwrap(), 2.5);
+}
+
+#[test]
+fn media_rejects_empty_tensor() {
+    let empty = Tensor::<f32>::structa(Vec::new(), &[0]).unwrap();
+
     assert_eq!(empty.media().unwrap_err(), ERR_MEDIA_EMPTY);
 }
 
@@ -736,16 +840,26 @@ fn layernorm_rejects_non_finite_beta() {
 }
 
 #[test]
-fn layernorm_rejects_invalid_epsilon() {
+fn layernorm_rejects_zero_epsilon() {
     let input = Tensor::structa(vec![1.0f32, 2.0], &[2]).unwrap();
     assert_eq!(
         input.layernorm(0, 0.0, None, None).unwrap_err(),
         ERR_LAYERNORM_EPSILON_INVALID
     );
+}
+
+#[test]
+fn layernorm_rejects_negative_epsilon() {
+    let input = Tensor::structa(vec![1.0f32, 2.0], &[2]).unwrap();
     assert_eq!(
         input.layernorm(0, -1.0, None, None).unwrap_err(),
         ERR_LAYERNORM_EPSILON_INVALID
     );
+}
+
+#[test]
+fn layernorm_rejects_nan_epsilon() {
+    let input = Tensor::structa(vec![1.0f32, 2.0], &[2]).unwrap();
     assert_eq!(
         input.layernorm(0, f32::NAN, None, None).unwrap_err(),
         ERR_LAYERNORM_EPSILON_INVALID
@@ -824,6 +938,33 @@ fn softmax_rank2_identical_rows() {
         assert!(
             (data[i] - data[i + 3]).abs() < 1e-10,
             "rows must be identical; item {i}"
+        );
+    }
+}
+
+#[test]
+fn softmax_rank2_correct_values() {
+    // Different inputs per row: [1,2,3] and [7,8,9] as 2×3
+    let input = Tensor::structa(vec![1.0f32, 2.0, 3.0, 7.0, 8.0, 9.0], &[2, 3]).unwrap();
+    let output = input.softmax().unwrap();
+    let data = output.planata();
+    // softmax([1,2,3]) ≈ [0.09003057, 0.24472847, 0.66524096]
+    // softmax([7,8,9]) ≈ [0.09003057, 0.24472847, 0.66524096] (same because shift-invariant)
+    let expected_row = [0.090_030_57, 0.244_728_47, 0.665_240_96];
+    for i in 0..3 {
+        assert!(
+            (data[i] - expected_row[i]).abs() < 1e-6,
+            "row 0 item {i}: got {}, expected {}",
+            data[i],
+            expected_row[i]
+        );
+    }
+    for i in 0..3 {
+        assert!(
+            (data[i + 3] - expected_row[i]).abs() < 1e-6,
+            "row 1 item {i}: got {}, expected {}",
+            data[i + 3],
+            expected_row[i]
         );
     }
 }

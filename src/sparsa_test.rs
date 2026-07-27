@@ -179,3 +179,23 @@ fn densata_multiple_zero_dimensions() {
     assert_eq!(dense.element_count(), 0);
     assert_eq!(dense.magnitudines(), vec![2, 0, 3]);
 }
+
+#[test]
+fn ponde_and_accipe_round_trip_rank_zero() {
+    let mut s: Sparsa<f64> = Sparsa::vacua(&[]).expect("empty shape");
+    s.ponde(&[], 42.0).expect("store rank-zero");
+    assert_eq!(s.accipe(&[]), Ok(42.0));
+    assert_eq!(s.nonnihil(), Ok(1));
+    // Overwrite with default removes entry.
+    s.ponde(&[], 0.0).expect("store default rank-zero");
+    assert_eq!(s.nonnihil(), Ok(0));
+    assert_eq!(s.accipe(&[]), Ok(0.0));
+}
+
+#[test]
+fn accipe_rank_zero_after_densata() {
+    let s: Sparsa<i64> = Sparsa::vacua(&[]).expect("empty shape");
+    let dense = s.densata().expect("densata rank-zero");
+    assert_eq!(dense.element_count(), 1);
+    assert_eq!(dense.planata(), vec![0]);
+}

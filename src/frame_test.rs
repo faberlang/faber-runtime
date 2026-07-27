@@ -9,6 +9,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::task::{Context, Poll, Wake, Waker};
 
+/// Unique per-test temp directory. Drop cleans up (including on panic).
+fn test_dir() -> tempfile::TempDir {
+    tempfile::tempdir().expect("create temp dir")
+}
+
 #[derive(Default)]
 struct CountingWake {
     count: AtomicUsize,
@@ -573,33 +578,47 @@ fn tempus_dormiet_rejects_invalid_duration() {
     }
 }
 
+fn solum_crea_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = test_dir();
+    let file = dir.path().join("payload.bin");
+    (dir, file)
+}
+
 #[test]
-fn solum_crea_hauri_enumera_product_routes() {
-    let stem = frame::next_frame_id();
-    let dir = std::env::temp_dir().join(format!("faber-solum-crea-{stem}"));
-    let file = dir.join("payload.bin");
-    let dir_s = dir.to_string_lossy().into_owned();
-    let file_s = file.to_string_lossy().into_owned();
-    let _ = std::fs::remove_dir_all(&dir);
+fn solum_crea_creates_directory() {
+    let (dir, _file) = solum_crea_fixture();
+    let dir_s = dir.path().to_string_lossy().into_owned();
 
     let mut crea = frame::sermo_open("solum:crea");
-    frame::sermo_set_opener(&mut crea, Valor::Textus(dir_s.clone()));
+    frame::sermo_set_opener(&mut crea, Valor::Textus(dir_s));
     frame::sermo_materialize_vacuum(&mut crea);
-    assert!(dir.is_dir(), "crea must create directory");
+    assert!(dir.path().is_dir(), "crea must create directory");
+}
 
+#[test]
+fn solum_hauri_reads_file_bytes() {
+    let (dir, file) = solum_crea_fixture();
+    std::fs::create_dir_all(dir.path()).expect("create dir");
     std::fs::write(&file, [9u8, 8, 7]).expect("write fixture");
+    let file_s = file.to_string_lossy().into_owned();
 
     let mut hauri = frame::sermo_open("solum:hauri");
     frame::sermo_set_opener(&mut hauri, Valor::Textus(file_s));
     let bytes: Vec<u8> = frame::sermo_materialize_octeti(&mut hauri);
     assert_eq!(bytes, vec![9, 8, 7]);
+}
+
+#[test]
+fn solum_enumera_lists_directory_contents() {
+    let (dir, file) = solum_crea_fixture();
+    std::fs::create_dir_all(dir.path()).expect("create dir");
+    std::fs::write(&file, [9u8, 8, 7]).expect("write fixture");
+    let dir_s = dir.path().to_string_lossy().into_owned();
 
     let mut enumera = frame::sermo_open("solum:enumera");
     frame::sermo_set_opener(&mut enumera, Valor::Textus(dir_s));
     let names: Vec<String> = frame::sermo_materialize_lista(&mut enumera);
     assert_eq!(names, vec!["payload.bin".to_owned()]);
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -619,7 +638,8 @@ fn solum_temporarium_route_materializes_temp_dir_textus() {
 fn solum_tange_existing_socket_returns_error_instead_of_done() {
     use std::os::unix::net::UnixListener;
 
-    let path = std::env::temp_dir().join(format!("{}.socket", frame::next_frame_id()));
+    let dir = test_dir();
+    let path = dir.path().join("tange.socket");
     let listener = UnixListener::bind(&path).expect("bind socket fixture");
     let path_s = path.to_string_lossy().into_owned();
 
@@ -631,12 +651,12 @@ fn solum_tange_existing_socket_returns_error_instead_of_done() {
     assert!(error.to_string().contains(&path_s));
 
     drop(listener);
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
 fn solum_carpe_route_materializes_line_lista() {
-    let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
+    let dir = test_dir();
+    let path = dir.path().join("carpe.txt");
     std::fs::write(&path, "alpha\nbeta\ngamma\n").expect("write carpe fixture");
     let path_s = path.to_string_lossy().into_owned();
 
@@ -647,55 +667,77 @@ fn solum_carpe_route_materializes_line_lista() {
         lines,
         vec!["alpha".to_owned(), "beta".to_owned(), "gamma".to_owned()]
     );
-
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
-fn solum_lege_route_materializes_scalar_target_shape() {
-    let stem = frame::next_frame_id();
-    let text_path = std::env::temp_dir().join(format!("{stem}.txt"));
-    let bin_path = std::env::temp_dir().join(format!("{stem}.bin"));
+fn solum_lege_text_as_scalar() {
+    let dir = test_dir();
+    let text_path = dir.path().join("lege.txt");
     std::fs::write(&text_path, "prima\nsecunda\n").expect("write text fixture");
-    std::fs::write(&bin_path, [1u8, 2, 3]).expect("write byte fixture");
-
     let text_path = text_path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:lege");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus(text_path.clone()));
+    let text: String = frame::sermo_materialize_scalar(&mut sermo);
+    assert_eq!(text, "prima\nsecunda\n");
+}
+
+#[test]
+fn solum_lege_text_as_line_list() {
+    let dir = test_dir();
+    let text_path = dir.path().join("lege_lines.txt");
+    std::fs::write(&text_path, "prima\nsecunda\n").expect("write text fixture");
+    let text_path = text_path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:lege");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus(text_path.clone()));
+    let lines: Vec<String> = frame::sermo_materialize_lista(&mut sermo);
+    assert_eq!(lines, vec!["prima".to_owned(), "secunda".to_owned()]);
+}
+
+#[test]
+fn solum_lege_bytes_as_scalar() {
+    let dir = test_dir();
+    let bin_path = dir.path().join("lege.bin");
+    std::fs::write(&bin_path, [1u8, 2, 3]).expect("write byte fixture");
     let bin_path = bin_path.to_string_lossy().into_owned();
 
-    let mut text_sermo = frame::sermo_open("solum:lege");
-    frame::sermo_set_opener(&mut text_sermo, Valor::Textus(text_path.clone()));
-    let text: String = frame::sermo_materialize_scalar(&mut text_sermo);
-    assert_eq!(text, "prima\nsecunda\n");
-
-    // Contract: codegen uses try_sermo_materialize_lista (one Item per line), same as carpe.
-    let mut lines_sermo = frame::sermo_open("solum:lege");
-    frame::sermo_set_opener(&mut lines_sermo, Valor::Textus(text_path.clone()));
-    let lines: Vec<String> = frame::sermo_materialize_lista(&mut lines_sermo);
-    assert_eq!(lines, vec!["prima".to_owned(), "secunda".to_owned()]);
-
-    let mut bytes_sermo = frame::sermo_open("solum:lege");
-    frame::sermo_set_opener(&mut bytes_sermo, Valor::Textus(bin_path.clone()));
-    let bytes: Vec<u8> = frame::sermo_materialize_scalar(&mut bytes_sermo);
+    let mut sermo = frame::sermo_open("solum:lege");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus(bin_path.clone()));
+    let bytes: Vec<u8> = frame::sermo_materialize_scalar(&mut sermo);
     assert_eq!(bytes, vec![1, 2, 3]);
+}
 
-    // Generic monomorph path (provider lege<T>): auto picks lista for Vec<String>.
-    let mut auto_lines = frame::sermo_open("solum:lege");
-    frame::sermo_set_opener(&mut auto_lines, Valor::Textus(text_path.clone()));
-    let auto: Vec<String> = frame::try_sermo_materialize_auto(&mut auto_lines).expect("auto lista");
+#[test]
+fn solum_lege_auto_detects_lista_for_vec() {
+    let dir = test_dir();
+    let text_path = dir.path().join("auto_lista.txt");
+    std::fs::write(&text_path, "prima\nsecunda\n").expect("write text fixture");
+    let text_path = text_path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:lege");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus(text_path.clone()));
+    let auto: Vec<String> = frame::try_sermo_materialize_auto(&mut sermo).expect("auto lista");
     assert_eq!(auto, vec!["prima".to_owned(), "secunda".to_owned()]);
+}
 
-    let mut auto_text = frame::sermo_open("solum:lege");
-    frame::sermo_set_opener(&mut auto_text, Valor::Textus(text_path.clone()));
-    let auto_s: String = frame::try_sermo_materialize_auto(&mut auto_text).expect("auto text");
+#[test]
+fn solum_lege_auto_detects_scalar_for_string() {
+    let dir = test_dir();
+    let text_path = dir.path().join("auto_scalar.txt");
+    std::fs::write(&text_path, "prima\nsecunda\n").expect("write text fixture");
+    let text_path = text_path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:lege");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus(text_path.clone()));
+    let auto_s: String = frame::try_sermo_materialize_auto(&mut sermo).expect("auto text");
     assert_eq!(auto_s, "prima\nsecunda\n");
-
-    let _ = std::fs::remove_file(text_path);
-    let _ = std::fs::remove_file(bin_path);
 }
 
 #[test]
 fn solum_inveni_empty_pattern_is_found_at_start() {
-    let path = std::env::temp_dir().join(format!("{}.bin", frame::next_frame_id()));
+    let dir = test_dir();
+    let path = dir.path().join("inveni_empty.bin");
     std::fs::write(&path, b"payload").expect("write search fixture");
     let path = path.to_string_lossy().into_owned();
 
@@ -711,13 +753,12 @@ fn solum_inveni_empty_pattern_is_found_at_start() {
     );
     let offset: i64 = frame::sermo_materialize_scalar(&mut sermo);
     assert_eq!(offset, 3);
-
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
 fn solum_dele_missing_path_is_success() {
-    let missing = std::env::temp_dir().join(format!("{}.missing", frame::next_frame_id()));
+    let dir = test_dir();
+    let missing = dir.path().join("dele_missing.txt");
     let missing = missing.to_string_lossy().into_owned();
     assert!(!std::path::Path::new(&missing).exists());
 
@@ -728,7 +769,8 @@ fn solum_dele_missing_path_is_success() {
 
 #[test]
 fn solum_partem_route_materializes_dense_bounded_byte_range() {
-    let path = std::env::temp_dir().join(format!("{}.bin", frame::next_frame_id()));
+    let dir = test_dir();
+    let path = dir.path().join("partem_dense.bin");
     std::fs::write(&path, [10u8, 11, 12, 13, 14]).expect("write byte range fixture");
     let path = path.to_string_lossy().into_owned();
 
@@ -746,13 +788,12 @@ fn solum_partem_route_materializes_dense_bounded_byte_range() {
     assert_eq!(chunk.data, Valor::Octeti(vec![11, 12, 13]));
     let done = frame::sermo_recv(&mut sermo).expect("done frame");
     assert_eq!(done.status, FrameStatus::Done);
-
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
 fn solum_partem_route_materializes_large_range_without_valor_list() {
-    let path = std::env::temp_dir().join(format!("{}.bin", frame::next_frame_id()));
+    let dir = test_dir();
+    let path = dir.path().join("partem_large.bin");
     let mut data = vec![42u8; 2 * 1024 * 1024];
     data[0] = 7;
     let last = data.len() - 1;
@@ -779,13 +820,12 @@ fn solum_partem_route_materializes_large_range_without_valor_list() {
     assert_eq!(bytes.len(), data.len());
     assert_eq!(bytes[0], 7);
     assert_eq!(bytes[bytes.len() - 1], 9);
-
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
 fn solum_partem_route_materializes_octeti() {
-    let path = std::env::temp_dir().join(format!("{}.bin", frame::next_frame_id()));
+    let dir = test_dir();
+    let path = dir.path().join("partem_octeti.bin");
     std::fs::write(&path, [20u8, 21, 22, 23, 24]).expect("write octeti range fixture");
     let path = path.to_string_lossy().into_owned();
 
@@ -800,13 +840,12 @@ fn solum_partem_route_materializes_octeti() {
     );
     let bytes = frame::sermo_materialize_octeti(&mut sermo);
     assert_eq!(bytes, vec![22, 23]);
-
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
 fn solum_mensura_route_materializes_file_size() {
-    let path = std::env::temp_dir().join(format!("{}.bin", frame::next_frame_id()));
+    let dir = test_dir();
+    let path = dir.path().join("mensura.bin");
     std::fs::write(&path, [30u8, 31, 32, 33]).expect("write size fixture");
     let path = path.to_string_lossy().into_owned();
 
@@ -814,13 +853,12 @@ fn solum_mensura_route_materializes_file_size() {
     frame::sermo_set_opener(&mut sermo, Valor::Textus(path.clone()));
     let size: i64 = frame::sermo_materialize_scalar(&mut sermo);
     assert_eq!(size, 4);
-
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
 fn solum_inveni_route_materializes_pattern_offset() {
-    let path = std::env::temp_dir().join(format!("{}.bin", frame::next_frame_id()));
+    let dir = test_dir();
+    let path = dir.path().join("inveni_pattern.bin");
     std::fs::write(&path, b"prefix-general.file_type-suffix").expect("write search fixture");
     let path = path.to_string_lossy().into_owned();
 
@@ -836,15 +874,14 @@ fn solum_inveni_route_materializes_pattern_offset() {
     );
     let offset: i64 = frame::sermo_materialize_scalar(&mut sermo);
     assert_eq!(offset, 7);
-
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
 fn solum_exstat_route_materializes_bool() {
-    let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
+    let dir = test_dir();
+    let path = dir.path().join("exstat.txt");
     std::fs::write(&path, "present").expect("write existence fixture");
-    let missing = path.with_extension("missing");
+    let missing = dir.path().join("exstat.missing");
     let path = path.to_string_lossy().into_owned();
     let missing = missing.to_string_lossy().into_owned();
 
@@ -855,45 +892,62 @@ fn solum_exstat_route_materializes_bool() {
     let mut missing_sermo = frame::sermo_open("solum:exstat");
     frame::sermo_set_opener(&mut missing_sermo, Valor::Textus(missing));
     assert!(!frame::sermo_materialize_scalar::<bool>(&mut missing_sermo));
+}
 
-    let _ = std::fs::remove_file(path);
+fn solum_bool_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let dir = test_dir();
+    let path = dir.path().join("bool.txt");
+    let sub = dir.path().join("bool.dir");
+    std::fs::write(&path, "present").expect("write path bool fixture");
+    std::fs::create_dir(&sub).expect("create path bool directory");
+    (dir, path, sub)
 }
 
 #[test]
-fn solum_path_bool_routes_materialize_bool() {
-    let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
-    let dir = std::env::temp_dir().join(format!("{}.dir", frame::next_frame_id()));
-    std::fs::write(&path, "present").expect("write path bool fixture");
-    std::fs::create_dir(&dir).expect("create path bool directory");
-
+fn solum_regularene_true_for_regular_file() {
+    let (_dir, path, sub) = solum_bool_fixture();
     let file_path = path.to_string_lossy().into_owned();
-    let dir_path = dir.to_string_lossy().into_owned();
 
     let mut regular_sermo = frame::sermo_open("solum:regularene");
-    frame::sermo_set_opener(&mut regular_sermo, Valor::Textus(file_path.clone()));
+    frame::sermo_set_opener(&mut regular_sermo, Valor::Textus(file_path));
     assert!(frame::sermo_materialize_scalar::<bool>(&mut regular_sermo));
+    let _ = sub;
+}
+
+#[test]
+fn solum_regularene_false_for_directory() {
+    let (_dir, _path, sub) = solum_bool_fixture();
+    let dir_path = sub.to_string_lossy().into_owned();
 
     let mut dir_regular_sermo = frame::sermo_open("solum:regularene");
-    frame::sermo_set_opener(&mut dir_regular_sermo, Valor::Textus(dir_path.clone()));
-    assert!(!frame::sermo_materialize_scalar::<bool>(
-        &mut dir_regular_sermo
-    ));
+    frame::sermo_set_opener(&mut dir_regular_sermo, Valor::Textus(dir_path));
+    assert!(!frame::sermo_materialize_scalar::<bool>(&mut dir_regular_sermo));
+}
+
+#[test]
+fn solum_directoriumne_true_for_directory() {
+    let (_dir, _path, sub) = solum_bool_fixture();
+    let dir_path = sub.to_string_lossy().into_owned();
 
     let mut dir_sermo = frame::sermo_open("solum:directoriumne");
     frame::sermo_set_opener(&mut dir_sermo, Valor::Textus(dir_path));
     assert!(frame::sermo_materialize_scalar::<bool>(&mut dir_sermo));
+}
+
+#[test]
+fn solum_legibilene_true_for_readable_file() {
+    let (_dir, path, _sub) = solum_bool_fixture();
+    let file_path = path.to_string_lossy().into_owned();
 
     let mut readable_sermo = frame::sermo_open("solum:legibilene");
-    frame::sermo_set_opener(&mut readable_sermo, Valor::Textus(file_path.clone()));
+    frame::sermo_set_opener(&mut readable_sermo, Valor::Textus(file_path));
     assert!(frame::sermo_materialize_scalar::<bool>(&mut readable_sermo));
-
-    let _ = std::fs::remove_file(file_path);
-    let _ = std::fs::remove_dir(dir);
 }
 
 #[test]
 fn solum_scribe_route_materializes_vacuum_after_writing_file() {
-    let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
+    let dir = test_dir();
+    let path = dir.path().join("scribe.txt");
     let path = path.to_string_lossy().into_owned();
     let mut sermo = frame::sermo_open("solum:scribe");
     frame::sermo_set_opener(
@@ -910,12 +964,12 @@ fn solum_scribe_route_materializes_vacuum_after_writing_file() {
         std::fs::read_to_string(&path).expect("read written file"),
         "salve"
     );
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
 fn externally_supplied_incoming_frames_suppress_runtime_fallback() {
-    let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
+    let dir = test_dir();
+    let path = dir.path().join("appone.txt");
     let path = path.to_string_lossy().into_owned();
     let mut sermo = frame::sermo_open("solum:appone");
     frame::sermo_set_opener(
@@ -943,7 +997,8 @@ fn externally_supplied_incoming_frames_suppress_runtime_fallback() {
 
 #[test]
 fn solum_dele_route_materializes_vacuum_after_removing_file() {
-    let path = std::env::temp_dir().join(format!("{}.txt", frame::next_frame_id()));
+    let dir = test_dir();
+    let path = dir.path().join("dele.txt");
     std::fs::write(&path, "stale").expect("write temp file");
     let path = path.to_string_lossy().into_owned();
     let mut sermo = frame::sermo_open("solum:dele");
@@ -954,16 +1009,17 @@ fn solum_dele_route_materializes_vacuum_after_removing_file() {
     assert!(!std::path::Path::new(&path).exists());
 }
 
-#[test]
-fn solum_sequere_vincula_modum_product_routes() {
-    let stem = frame::next_frame_id();
-    let dir = std::env::temp_dir().join(format!("faber-solum-link-{stem}"));
-    let target = dir.join("target.txt");
-    let link = dir.join("link.txt");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("dir");
-    std::fs::write(&target, b"x").expect("target");
+fn solum_link_dir() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let dir = test_dir();
+    let target = dir.path().join("target.txt");
+    let link = dir.path().join("link.txt");
+    std::fs::write(&target, b"x").expect("write target");
+    (dir, target, link)
+}
 
+#[test]
+fn solum_vincula_creates_symlink() {
+    let (_dir, target, link) = solum_link_dir();
     let mut vincula = frame::sermo_open("solum:vincula");
     frame::sermo_set_opener(
         &mut vincula,
@@ -974,6 +1030,21 @@ fn solum_sequere_vincula_modum_product_routes() {
     );
     frame::sermo_materialize_vacuum(&mut vincula);
     assert!(link.is_symlink() || std::fs::symlink_metadata(&link).is_ok());
+}
+
+#[test]
+fn solum_sequere_follows_symlink() {
+    let (_dir, target, link) = solum_link_dir();
+    // Create the link via solum:vincula
+    let mut vincula = frame::sermo_open("solum:vincula");
+    frame::sermo_set_opener(
+        &mut vincula,
+        Valor::Lista(vec![
+            Valor::Textus(target.to_string_lossy().into_owned()),
+            Valor::Textus(link.to_string_lossy().into_owned()),
+        ]),
+    );
+    frame::sermo_materialize_vacuum(&mut vincula);
 
     let mut sequere = frame::sermo_open("solum:sequere");
     frame::sermo_set_opener(
@@ -985,7 +1056,11 @@ fn solum_sequere_vincula_modum_product_routes() {
         followed.ends_with("target.txt") || followed.contains("target.txt"),
         "sequere={followed}"
     );
+}
 
+#[test]
+fn solum_modum_sets_file_mode() {
+    let (_dir, target, _link) = solum_link_dir();
     let mut modum = frame::sermo_open("solum:modum");
     frame::sermo_set_opener(
         &mut modum,
@@ -995,6 +1070,17 @@ fn solum_sequere_vincula_modum_product_routes() {
         ]),
     );
     frame::sermo_materialize_vacuum(&mut modum);
+}
+
+#[test]
+fn solum_modus_reads_file_mode() {
+    let (_dir, target, _link) = solum_link_dir();
+    // Set mode first
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).expect("set mode");
+    }
 
     let mut get_modus = frame::sermo_open("solum:modus");
     frame::sermo_set_opener(
@@ -1003,12 +1089,17 @@ fn solum_sequere_vincula_modum_product_routes() {
     );
     let mode: i64 = frame::sermo_materialize_scalar(&mut get_modus);
     assert_eq!(mode & 0o777, 0o644);
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
-fn aleator_fractum_sortire_uuid_product_routes() {
+fn aleator_semina_seeds_rng() {
+    let mut semina = frame::sermo_open("aleator:semina");
+    frame::sermo_set_opener(&mut semina, Valor::Numerus(42));
+    frame::sermo_materialize_vacuum(&mut semina);
+}
+
+#[test]
+fn aleator_sortire_returns_bounded_value() {
     let mut semina = frame::sermo_open("aleator:semina");
     frame::sermo_set_opener(&mut semina, Valor::Numerus(42));
     frame::sermo_materialize_vacuum(&mut semina);
@@ -1020,11 +1111,21 @@ fn aleator_fractum_sortire_uuid_product_routes() {
     );
     let n1: i64 = frame::sermo_materialize_scalar(&mut a);
     assert!((1..=10).contains(&n1));
+}
+
+#[test]
+fn aleator_fractum_returns_unit_range() {
+    let mut semina = frame::sermo_open("aleator:semina");
+    frame::sermo_set_opener(&mut semina, Valor::Numerus(42));
+    frame::sermo_materialize_vacuum(&mut semina);
 
     let mut fractum = frame::sermo_open("aleator:fractum");
     let f: f64 = frame::sermo_materialize_scalar(&mut fractum);
     assert!((0.0..1.0).contains(&f));
+}
 
+#[test]
+fn aleator_uuid_returns_formatted_string() {
     let mut uuid = frame::sermo_open("aleator:uuid");
     let id = frame::sermo_materialize_textus(&mut uuid);
     assert_eq!(id.len(), 36);
@@ -1032,20 +1133,28 @@ fn aleator_fractum_sortire_uuid_product_routes() {
 }
 
 #[test]
-fn consolum_dic_scribe_mone_product_routes() {
-    // dic: no newline; scribe: with newline — both vacuum success on builtin.
+fn consolum_dic_no_newline_succeeds() {
     let mut dic = frame::sermo_open("consolum:dic");
     frame::sermo_set_opener(&mut dic, Valor::Textus("salve".into()));
     frame::sermo_materialize_vacuum(&mut dic);
+}
 
+#[test]
+fn consolum_scribe_with_newline_succeeds() {
     let mut scribe = frame::sermo_open("consolum:scribe");
     frame::sermo_set_opener(&mut scribe, Valor::Textus("salve".into()));
     frame::sermo_materialize_vacuum(&mut scribe);
+}
 
+#[test]
+fn consolum_mone_warning_succeeds() {
     let mut mone = frame::sermo_open("consolum:mone");
     frame::sermo_set_opener(&mut mone, Valor::Textus("cave".into()));
     frame::sermo_materialize_vacuum(&mut mone);
+}
 
+#[test]
+fn consolum_audit_returns_bool() {
     let mut audit = frame::sermo_open("consolum:audit");
     let _is_tty: bool = frame::sermo_materialize_scalar(&mut audit);
 }
@@ -1119,7 +1228,7 @@ fn processus_captura_route_materializes_status_stdout_and_stderr() {
 }
 
 #[test]
-fn processus_lege_sedes_identitas_scribe_muta_product_routes() {
+fn processus_scribe_sets_env_var() {
     let key = format!("FABER_PROCESSUS_TEST_{}", frame::next_frame_id());
     let value = "runtime-env-ok";
     let mut scribe = frame::sermo_open("processus:scribe");
@@ -1131,22 +1240,42 @@ fn processus_lege_sedes_identitas_scribe_muta_product_routes() {
         ]),
     );
     frame::sermo_materialize_vacuum(&mut scribe);
+    // Verify env var was set
+    assert_eq!(std::env::var(&key).ok().as_deref(), Some(value));
+    std::env::remove_var(&key);
+}
+
+#[test]
+fn processus_lege_reads_env_var() {
+    let key = format!("FABER_PROCESSUS_TEST_{}", frame::next_frame_id());
+    let value = "runtime-env-ok";
+    std::env::set_var(&key, value);
 
     let mut lege = frame::sermo_open("processus:lege");
     frame::sermo_set_opener(&mut lege, Valor::Textus(key.clone()));
     let read = frame::sermo_materialize_textus(&mut lege);
     assert_eq!(read, value);
+    std::env::remove_var(&key);
+}
 
+#[test]
+fn processus_sedes_returns_non_empty_cwd() {
     let mut sedes = frame::sermo_open("processus:sedes");
     let cwd = frame::sermo_materialize_textus(&mut sedes);
     assert!(!cwd.is_empty());
     assert!(std::path::Path::new(&cwd).is_dir());
+}
 
+#[test]
+fn processus_identitas_returns_process_pid() {
     let mut identitas = frame::sermo_open("processus:identitas");
     let pid = frame::sermo_materialize_scalar::<i64>(&mut identitas);
     assert!(pid > 0);
     assert_eq!(pid, i64::from(std::process::id()));
+}
 
+#[test]
+fn processus_muta_changes_and_restores_cwd() {
     let original = std::env::current_dir().expect("cwd");
     let target = std::env::temp_dir();
     let mut muta = frame::sermo_open("processus:muta");
@@ -1160,7 +1289,6 @@ fn processus_lege_sedes_identitas_scribe_muta_product_routes() {
         target.canonicalize().unwrap_or(target)
     );
     std::env::set_current_dir(original).expect("restore cwd");
-    std::env::remove_var(&key);
 }
 
 #[test]
@@ -1255,7 +1383,7 @@ fn sermo_materialize_scalar_multiple_content_frames_panics() {
 }
 
 #[test]
-fn async_materializer_twins_mirror_sync_materializers() {
+fn vacuum_async_mirrors_sync_materializer() {
     let mut vacuum = frame::sermo_open("test:vacuum-async");
     vacuum.push_incoming(Scrinium {
         id: "done".into(),
@@ -1269,14 +1397,20 @@ fn async_materializer_twins_mirror_sync_materializers() {
     });
     block_on(frame::sermo_materialize_vacuum_async(&mut vacuum));
     assert!(vacuum.incoming_drained());
+}
 
+#[test]
+fn textus_async_mirrors_sync_materializer() {
     let mut textus = frame::sermo_open("runtime:echo");
     frame::sermo_set_opener(&mut textus, Valor::Textus("salve".into()));
     assert_eq!(
         block_on(frame::sermo_materialize_textus_async(&mut textus)),
         "salve"
     );
+}
 
+#[test]
+fn octeti_async_mirrors_sync_materializer() {
     let mut octeti = frame::sermo_open("test:octeti-async");
     octeti.push_incoming(Scrinium {
         id: "bytes".into(),
@@ -1302,14 +1436,20 @@ fn async_materializer_twins_mirror_sync_materializers() {
         block_on(frame::sermo_materialize_octeti_async(&mut octeti)),
         vec![1, 2, 3]
     );
+}
 
+#[test]
+fn valor_async_mirrors_sync_materializer() {
     let mut valor = frame::sermo_open("runtime:echo");
     frame::sermo_set_opener(&mut valor, Valor::Numerus(7));
     assert_eq!(
         block_on(frame::sermo_materialize_valor_async(&mut valor)),
         Valor::Numerus(7)
     );
+}
 
+#[test]
+fn lista_async_mirrors_sync_materializer() {
     let mut lista = frame::sermo_open("test:lista-async");
     lista.push_incoming(Scrinium {
         id: "one".into(),
@@ -1335,14 +1475,20 @@ fn async_materializer_twins_mirror_sync_materializers() {
         block_on(frame::sermo_materialize_lista_async::<String>(&mut lista)),
         vec!["one".to_owned()]
     );
+}
 
+#[test]
+fn scalar_async_mirrors_sync_materializer() {
     let mut scalar = frame::sermo_open("runtime:echo");
     frame::sermo_set_opener(&mut scalar, Valor::Numerus(9));
     assert_eq!(
         block_on(frame::sermo_materialize_scalar_async::<i64>(&mut scalar)),
         9
     );
+}
 
+#[test]
+fn instans_async_mirrors_sync_materializer() {
     let mut instans = frame::sermo_open("tempus:nunc");
     let materialized = block_on(frame::sermo_materialize_instans_async(
         &mut instans,
@@ -1351,5 +1497,133 @@ fn async_materializer_twins_mirror_sync_materializers() {
     assert_eq!(
         materialized.praecisio(),
         crate::InstansPraecisio::Nanosecunda
+    );
+}
+
+// ===========================================================================
+// Edge and sad-path tests
+// ===========================================================================
+
+#[test]
+fn tempus_dormiet_zero_duration_succeeds() {
+    // Zero millis is a valid sleep duration.
+    let mut sermo = frame::sermo_open("tempus:dormiet");
+    frame::sermo_set_opener(&mut sermo, Valor::Numerus(0));
+    frame::sermo_materialize_vacuum(&mut sermo);
+}
+
+#[test]
+fn solum_lege_missing_file_returns_error() {
+    let dir = test_dir();
+    let missing = dir.path().join("lege_missing.txt");
+    let missing = missing.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:lege");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus(missing));
+    let frame = frame::sermo_recv(&mut sermo).expect("lege missing terminal");
+    assert_eq!(frame.status, FrameStatus::Error);
+}
+
+#[test]
+fn solum_mensura_missing_file_returns_error() {
+    let dir = test_dir();
+    let missing = dir.path().join("mensura_missing.txt");
+    let missing = missing.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:mensura");
+    frame::sermo_set_opener(&mut sermo, Valor::Textus(missing));
+    let error = frame::try_sermo_materialize_scalar::<i64>(&mut sermo)
+        .expect_err("mensura missing must fail");
+    assert_eq!(error.issue, "frame_materialization_terminal_error");
+}
+
+#[test]
+fn solum_partem_empty_file_returns_byte_frame() {
+    let dir = test_dir();
+    let path = dir.path().join("partem_empty.bin");
+    std::fs::write(&path, []).expect("write empty fixture");
+    let path = path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:partem");
+    frame::sermo_set_opener(
+        &mut sermo,
+        Valor::Lista(vec![
+            Valor::Textus(path.clone()),
+            Valor::Numerus(0),
+            Valor::Numerus(0),
+        ]),
+    );
+    let frame = frame::sermo_recv(&mut sermo).expect("empty byte frame");
+    assert_eq!(frame.status, FrameStatus::Byte);
+    assert_eq!(frame.data, Valor::Octeti(vec![]));
+    let done = frame::sermo_recv(&mut sermo).expect("done after empty");
+    assert_eq!(done.status, FrameStatus::Done);
+}
+
+#[test]
+fn solum_inveni_pattern_not_found_returns_neg_one() {
+    let dir = test_dir();
+    let path = dir.path().join("inveni_notfound.bin");
+    std::fs::write(&path, b"abcdef").expect("write search fixture");
+    let path = path.to_string_lossy().into_owned();
+
+    let mut sermo = frame::sermo_open("solum:inveni");
+    frame::sermo_set_opener(
+        &mut sermo,
+        Valor::Lista(vec![
+            Valor::Textus(path.clone()),
+            Valor::Textus("notfound".to_owned()),
+            Valor::Numerus(0),
+            Valor::Numerus(64),
+        ]),
+    );
+    let offset: i64 = frame::sermo_materialize_scalar(&mut sermo);
+    assert_eq!(offset, -1);
+}
+
+#[test]
+fn try_sermo_materialize_octeti_empty_lista_returns_empty_bytes() {
+    let mut sermo = frame::sermo_open("test:bytes");
+    sermo.push_incoming(Scrinium {
+        id: "b1".into(),
+        parent_id: Some(sermo.conversation_id()),
+        call: "test:bytes".into(),
+        status: FrameStatus::Item,
+        data: Valor::Lista(vec![]),
+        created_ms: 0,
+        from: None,
+        trace: None,
+    });
+    sermo.push_incoming(Scrinium {
+        id: "done".into(),
+        parent_id: Some(sermo.conversation_id()),
+        call: "test:bytes".into(),
+        status: FrameStatus::Done,
+        data: Valor::Nihil,
+        created_ms: 0,
+        from: None,
+        trace: None,
+    });
+    let out = frame::sermo_materialize_octeti(&mut sermo);
+    assert!(out.is_empty());
+}
+
+#[test]
+fn solum_scribe_route_writes_empty_content() {
+    let dir = test_dir();
+    let path = dir.path().join("scribe_empty.txt");
+    let path = path.to_string_lossy().into_owned();
+    let mut sermo = frame::sermo_open("solum:scribe");
+    frame::sermo_set_opener(
+        &mut sermo,
+        Valor::Lista(vec![
+            Valor::Textus(path.clone()),
+            Valor::Textus(String::new()),
+        ]),
+    );
+    frame::sermo_materialize_vacuum(&mut sermo);
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("read written file"),
+        ""
     );
 }

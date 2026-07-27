@@ -23,44 +23,86 @@ fn gradient_symbols_cohere_with_radix_host_abi() {
 }
 
 #[test]
-fn host_abi_v1_carriers_have_stable_host_layout() {
+fn host_abi_v1_slice_carrier_layout() {
     assert_eq!(size_of::<FaberRtSliceV1>(), 16);
     assert_eq!(align_of::<FaberRtSliceV1>(), 8);
+}
+
+#[test]
+fn host_abi_v1_status_carrier_layout() {
     assert_eq!(size_of::<FaberRtStatusV1>(), 4);
     assert_eq!(align_of::<FaberRtStatusV1>(), 4);
+}
+
+#[test]
+fn host_abi_v1_ptr_result_carrier_layout() {
     assert_eq!(size_of::<FaberRtPtrResultV1>(), size_of::<usize>() * 2);
     assert_eq!(align_of::<FaberRtPtrResultV1>(), align_of::<*mut c_void>());
+}
+
+#[test]
+fn host_abi_v1_exit_carrier_layout() {
     assert_eq!(size_of::<FaberRtExitV1>(), 8);
     assert_eq!(align_of::<FaberRtExitV1>(), 4);
+}
+
+#[test]
+fn host_abi_v1_context_carrier_layout() {
     assert_eq!(size_of::<FaberRtContextV1>(), 0);
     assert_eq!(align_of::<FaberRtContextV1>(), align_of::<*mut c_void>());
 }
 
 #[test]
-fn host_abi_v1_diagnostic_family_is_complete_and_unique() {
+fn host_abi_v1_diagnostic_symbol_count_is_17() {
     assert_eq!(DIAGNOSTIC_SYMBOLS_V1.len(), 17);
+}
+
+#[test]
+fn host_abi_v1_diagnostic_symbols_are_unique() {
     let symbols = DIAGNOSTIC_SYMBOLS_V1
         .iter()
         .map(|(_, _, symbol)| *symbol)
         .collect::<BTreeSet<_>>();
     assert_eq!(symbols.len(), DIAGNOSTIC_SYMBOLS_V1.len());
-    for (kind, carrier, symbol) in DIAGNOSTIC_SYMBOLS_V1 {
-        assert_eq!(diagnostic_symbol_v1(kind, carrier), Some(*symbol));
+}
+
+#[test]
+fn host_abi_v1_diagnostic_symbols_have_v1_prefix() {
+    for (_, _, symbol) in DIAGNOSTIC_SYMBOLS_V1 {
         assert!(symbol.starts_with("__faber_rt_v1_"), "{symbol}");
     }
+}
+
+#[test]
+fn host_abi_v1_diagnostic_symbol_is_recoverable_from_kind_and_carrier() {
+    for (kind, carrier, symbol) in DIAGNOSTIC_SYMBOLS_V1 {
+        assert_eq!(diagnostic_symbol_v1(kind, carrier), Some(*symbol));
+    }
+}
+
+#[test]
+fn host_abi_v1_diagnostic_symbol_nota_float() {
     assert_eq!(
         diagnostic_symbol_v1("nota", "float"),
         Some("__faber_rt_v1_diagnostic_nota_f32")
     );
+}
+
+#[test]
+fn host_abi_v1_diagnostic_symbol_nota_double() {
     assert_eq!(
         diagnostic_symbol_v1("nota", "double"),
         Some("__faber_rt_v1_diagnostic_nota_f64")
     );
+}
+
+#[test]
+fn host_abi_v1_diagnostic_unsupported_differs_from_ok() {
     assert_ne!(STATUS_UNSUPPORTED, STATUS_OK);
 }
 
 #[test]
-fn host_abi_v1_symbol_namespace_is_versioned() {
+fn host_abi_v1_core_symbols_have_v1_prefix() {
     for symbol in [
         SYMBOL_INIT,
         SYMBOL_SHUTDOWN,
@@ -82,6 +124,14 @@ fn host_abi_v1_symbol_namespace_is_versioned() {
         SYMBOL_VALOR_I64,
         SYMBOL_VALOR_F64,
         SYMBOL_VALOR_I1,
+    ] {
+        assert!(symbol.starts_with("__faber_rt_v1_"), "{symbol}");
+    }
+}
+
+#[test]
+fn host_abi_v1_array_symbols_have_v1_prefix() {
+    for symbol in [
         SYMBOL_ARRAY_NEW,
         SYMBOL_ARRAY_PUSH,
         SYMBOL_ARRAY_EXTEND,
@@ -96,6 +146,14 @@ fn host_abi_v1_symbol_namespace_is_versioned() {
         SYMBOL_ARRAY_OPTION,
         SYMBOL_ARRAY_SORT,
         SYMBOL_ARRAY_SUM,
+    ] {
+        assert!(symbol.starts_with("__faber_rt_v1_"), "{symbol}");
+    }
+}
+
+#[test]
+fn host_abi_v1_option_symbols_have_v1_prefix() {
+    for symbol in [
         SYMBOL_OPTION_NONE,
         SYMBOL_OPTION_SOME,
         SYMBOL_OPTION_IS_PRESENT,
@@ -104,7 +162,15 @@ fn host_abi_v1_symbol_namespace_is_versioned() {
     ] {
         assert!(symbol.starts_with("__faber_rt_v1_"), "{symbol}");
     }
+}
+
+#[test]
+fn host_abi_v1_program_entry_exact_value() {
     assert_eq!(SYMBOL_PROGRAM_ENTRY, "__faber_program_entry_v1");
+}
+
+#[test]
+fn host_abi_v1_array_option_symbols_are_distinct() {
     assert_eq!(
         [
             ARRAY_OPTION_INDEX,
@@ -118,6 +184,10 @@ fn host_abi_v1_symbol_namespace_is_versioned() {
         .len(),
         5
     );
+}
+
+#[test]
+fn host_abi_v1_value_kind_symbols_are_distinct() {
     assert_eq!(
         [
             VALUE_KIND_I1,
@@ -139,6 +209,10 @@ fn host_abi_v1_symbol_namespace_is_versioned() {
         .len(),
         13
     );
+}
+
+#[test]
+fn host_abi_v1_array_range_symbols_are_distinct() {
     assert_eq!(
         [
             ARRAY_RANGE_SLICE,
@@ -151,14 +225,26 @@ fn host_abi_v1_symbol_namespace_is_versioned() {
         .len(),
         4
     );
+}
+
+#[test]
+fn host_abi_v1_llvm_slice_type_definition() {
     assert_eq!(
         LLVM_SLICE_TYPE_DEFINITION,
         "%FaberRtSliceV1 = type { ptr, i64 }"
     );
+}
+
+#[test]
+fn host_abi_v1_llvm_exit_type_definition() {
     assert_eq!(
         LLVM_EXIT_TYPE_DEFINITION,
         "%FaberRtExitV1 = type { i32, i32 }"
     );
+}
+
+#[test]
+fn host_abi_v1_llvm_ptr_result_type_definition() {
     assert_eq!(
         LLVM_PTR_RESULT_TYPE_DEFINITION,
         "%FaberRtPtrResultV1 = type { i32, ptr }"
@@ -166,7 +252,7 @@ fn host_abi_v1_symbol_namespace_is_versioned() {
 }
 
 #[test]
-fn host_abi_v1_gradient_symbol_family_is_complete() {
+fn host_abi_v1_gradient_symbols_have_v1_gradient_prefix() {
     for symbol in [
         SYMBOL_GRADIENT_CREATE,
         SYMBOL_GRADIENT_ACCUMULATE,
@@ -175,6 +261,10 @@ fn host_abi_v1_gradient_symbol_family_is_complete() {
     ] {
         assert!(symbol.starts_with("__faber_rt_v1_gradient_"), "{symbol}");
     }
+}
+
+#[test]
+fn host_abi_v1_gradient_symbols_are_distinct() {
     let expected = [
         "SYMBOL_GRADIENT_CREATE",
         "SYMBOL_GRADIENT_ACCUMULATE",
