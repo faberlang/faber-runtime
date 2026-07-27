@@ -8,16 +8,14 @@ use std::collections::HashMap;
 
 use crate::tensor::{tensor_dim_non_negative, tensor_shape_element_count, Tensor};
 
-pub const ERR_NEGATIVE_DIM: &str = "sparsa shape dimension must be non-negative";
-pub const ERR_NEGATIVE_INDEX: &str = "sparsa index must be non-negative";
-pub const ERR_INDEX_OUT_OF_BOUNDS: &str = "sparsa index out of bounds";
-pub const ERR_RANK_MISMATCH: &str = "sparsa index rank does not match shape rank";
-pub const ERR_NONNIHIL_COUNT_OVERFLOW: &str = "sparsa nonnihil count overflow";
-pub const ERR_ELEMENT_COUNT_OVERFLOW: &str = "sparsa element count overflow";
-pub const ERR_CONVERSIO_RANK_MISMATCH: &str =
-    "sparsa conversio index rank does not match shape rank";
-pub const ERR_ACCIPE_INVALID_INDEX: &str = "sparsa accipe invalid index";
-pub const ERR_PONDE_INVALID_INDEX: &str = "sparsa ponde invalid index";
+// ── Contract-authority re-exports ───────────────────────────────────────────
+// Single canonical definition lives at
+// radix-runtime-contract/src/sparsa.rs (the compiler-side authority).
+pub use radix_runtime_contract::sparsa::{
+    ERR_ACCIPE_INVALID_INDEX, ERR_CONVERSIO_RANK_MISMATCH, ERR_ELEMENT_COUNT_OVERFLOW,
+    ERR_INDEX_OUT_OF_BOUNDS, ERR_NEGATIVE_DIM, ERR_NEGATIVE_INDEX, ERR_NONNIHIL_COUNT_OVERFLOW,
+    ERR_PONDE_INVALID_INDEX, ERR_RANK_MISMATCH,
+};
 
 /// Homogeneous sparse numeric buffer with runtime shape metadata.
 ///

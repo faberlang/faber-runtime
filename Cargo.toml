@@ -25,6 +25,7 @@ name = "faber"
 path = "src/lib.rs"
 
 [dependencies]
+radix-runtime-contract = { path = "../radix/crates/radix-runtime-contract" }
 ureq = "2"
 
 [dev-dependencies]

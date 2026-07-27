@@ -13,32 +13,20 @@ pub struct Tensor<T> {
     view: bool,
 }
 
-pub const ERR_NEGATIVE_DIM: &str = "tensor shape dimension must be non-negative";
-pub const ERR_NEGATIVE_INDEX: &str = "tensor index must be non-negative";
-pub const ERR_NEGATIVE_SLICE: &str = "tensor slice bounds must be non-negative";
-pub const ERR_INVALID_SLICE_RANGE: &str = "tensor slice end must be at least start";
-pub const ERR_INDEX_OUT_OF_BOUNDS: &str = "tensor index out of bounds";
-pub const ERR_ELEMENT_COUNT_OVERFLOW: &str = "tensor element count overflow";
-
-pub const ERR_FORMA_RESHAPE_COUNT: &str = "tensor forma (reshape) element count mismatch";
-pub const ERR_FORMA_ELEMENT_COUNT: &str = "tensor forma element count mismatch";
-pub const ERR_ACCIPE_INVALID_INDEX: &str = "tensor accipe invalid index";
-pub const ERR_PONDE_INVALID_INDEX: &str = "tensor ponde invalid index";
-pub const ERR_CREA_INVALID_SHAPE: &str = "tensor crea invalid shape";
-pub const ERR_SECTIO_INVALID_SLICE_BOUNDS: &str = "tensor sectio invalid slice bounds";
-pub const ERR_BROADCAST_SHAPE: &str = "tensor broadcast shape mismatch";
-pub const ERR_MATMUL_RECEIVER_RANK: &str = "tensor matmul requires rank-2 tensor receiver";
-pub const ERR_MATMUL_ARGUMENT_RANK: &str = "tensor matmul requires rank-2 tensor argument";
-pub const ERR_MATMUL_INNER_DIMENSION: &str = "tensor matmul inner dimension mismatch";
-pub const ERR_TRANSPOSE_RANK: &str = "tensor transpose requires rank-2 tensor";
-pub const ERR_PERMUTE_RANK: &str = "tensor permute axis count must equal tensor rank";
-pub const ERR_PERMUTE_NEGATIVE_AXIS: &str = "tensor permute axis must be non-negative";
-pub const ERR_PERMUTE_AXIS_OUT_OF_RANGE: &str = "tensor permute axis out of range";
-pub const ERR_PERMUTE_DUPLICATE_AXIS: &str = "tensor permute axis must appear exactly once";
-pub const ERR_MEDIA_EMPTY: &str = "tensor media (mean) requires at least one element";
-pub const ERR_DIVIDE_NON_FINITE_INPUT: &str = "tensor division input must be finite";
-pub const ERR_DIVIDE_ZERO_DENOMINATOR: &str = "tensor division denominator must be non-zero";
-pub const ERR_DIVIDE_NON_FINITE_RESULT: &str = "tensor division result must be finite";
+// ── Contract-authority re-exports ───────────────────────────────────────────
+// Single canonical definition lives at
+// radix-runtime-contract/src/tensor.rs (the compiler-side authority).
+pub use radix_runtime_contract::tensor::{
+    ERR_ACCIPE_INVALID_INDEX, ERR_BROADCAST_SHAPE, ERR_CREA_INVALID_SHAPE,
+    ERR_DIVIDE_NON_FINITE_INPUT, ERR_DIVIDE_NON_FINITE_RESULT, ERR_DIVIDE_ZERO_DENOMINATOR,
+    ERR_ELEMENT_COUNT_OVERFLOW, ERR_FORMA_ELEMENT_COUNT, ERR_FORMA_RESHAPE_COUNT,
+    ERR_INDEX_OUT_OF_BOUNDS, ERR_INVALID_SLICE_RANGE, ERR_MATMUL_ARGUMENT_RANK,
+    ERR_MATMUL_INNER_DIMENSION, ERR_MATMUL_RECEIVER_RANK, ERR_MEDIA_EMPTY,
+    ERR_NEGATIVE_DIM, ERR_NEGATIVE_INDEX, ERR_NEGATIVE_SLICE, ERR_PERMUTE_AXIS_OUT_OF_RANGE,
+    ERR_PERMUTE_DUPLICATE_AXIS, ERR_PERMUTE_NEGATIVE_AXIS, ERR_PERMUTE_RANK,
+    ERR_PONDE_INVALID_INDEX, ERR_SECTIO_INVALID_SLICE_BOUNDS, ERR_TRANSPOSE_RANK,
+    tensor_dim_non_negative, tensor_flat_offset, tensor_shape_element_count,
+};
 pub(crate) const ERR_RELU_NON_FINITE_INPUT: &str =
     "ReLU requires finite input; NaN or inf was given.";
 pub(crate) const ERR_SQRT_NON_FINITE_INPUT: &str =
@@ -79,40 +67,8 @@ pub const ERR_LAYERNORM_BETA_NON_FINITE: &str =
 pub const ERR_LAYERNORM_EPSILON_INVALID: &str = "layernorm epsilon must be > 0 and finite.";
 
 #[must_use]
-pub fn tensor_dim_non_negative(value: i64) -> bool {
-    value >= 0
-}
-
-#[must_use]
-pub fn tensor_shape_element_count(shape: &[i64]) -> Option<usize> {
-    shape.iter().try_fold(1_usize, |acc, dim| {
-        let dim = usize::try_from(*dim).ok()?;
-        acc.checked_mul(dim)
-    })
-}
-
-#[must_use]
 pub fn tensor_shape_has_element_count(shape: &[i64], actual: usize) -> bool {
     tensor_shape_element_count(shape) == Some(actual)
-}
-
-#[must_use]
-pub fn tensor_flat_offset(shape: &[i64], index: &[i64]) -> Option<usize> {
-    if shape.len() != index.len() {
-        return None;
-    }
-    let mut offset = 0_usize;
-    let mut stride = 1_usize;
-    for (dim, idx) in shape.iter().zip(index.iter()).rev() {
-        let dim = usize::try_from(*dim).ok()?;
-        let idx = usize::try_from(*idx).ok()?;
-        if idx >= dim {
-            return None;
-        }
-        offset = offset.checked_add(idx.checked_mul(stride)?)?;
-        stride = stride.checked_mul(dim)?;
-    }
-    Some(offset)
 }
 
 fn shape_dims(shape: &[i64]) -> Result<Vec<usize>, &'static str> {
