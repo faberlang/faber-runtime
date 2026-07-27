@@ -9,6 +9,14 @@ readme = "README.md"
 [workspace]
 members = ["hosts/llvm"]
 
+[profile.dev]
+debug = 1
+codegen-units = 256
+
+[profile.test]
+debug = 1
+codegen-units = 256
+
 [features]
 test-support = []
 
