@@ -32,13 +32,51 @@ fn faber_manifest_path() -> String {
     format!("{}/../faber/Cargo.toml", manifest_dir)
 }
 
-/// Run `faber run <bert_tiny_exemplum_path>`.
+/// Copy the exemplum to a temp dir so `faber run` writes its MIR image there
+/// instead of polluting `examples/training/bert-tiny-fragment/target/`.
+fn copy_exemplum_to_temp() -> std::path::PathBuf {
+    let src = bert_tiny_exemplum_path();
+    let src = std::path::Path::new(&src);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let dest = std::env::temp_dir().join(format!("faber-runtime-test-bert-tiny-{nanos}"));
+    std::fs::create_dir_all(&dest).expect("create temp exemplum dir");
+    copy_dir_recursive(src, &dest);
+    dest
+}
+
+/// Recursively copy a directory tree, skipping `target/` dirs.
+fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) {
+    for entry in std::fs::read_dir(src).expect("read exemplum dir") {
+        let entry = entry.expect("read dir entry");
+        let src_path = entry.path();
+        let dest_path = dest.join(entry.file_name());
+        if src_path.is_dir() {
+            if entry.file_name() == "target" {
+                continue;
+            }
+            std::fs::create_dir_all(&dest_path).expect("create sub dir");
+            copy_dir_recursive(&src_path, &dest_path);
+        } else {
+            std::fs::copy(&src_path, &dest_path).expect("copy file");
+        }
+    }
+}
+
+/// Run `faber run` on a temp copy of the BERT-tiny exemplum.
+/// The temp copy is cleaned up after the command completes.
 fn run_bert_tiny_exemplum() -> std::io::Result<std::process::Output> {
     let faber_toml = faber_manifest_path();
-    let exemplum = bert_tiny_exemplum_path();
-    Command::new("cargo")
+    let temp_exemplum = copy_exemplum_to_temp();
+    let exemplum = temp_exemplum.display().to_string();
+
+    let result = Command::new("cargo")
         .args(["run", "--manifest-path", &faber_toml, "--", "run", "-t", "fmir", &exemplum])
-        .output()
+        .output();
+
+    let _ = std::fs::remove_dir_all(&temp_exemplum);
+    result
 }
 
 /// Extract all f32 values from stdout, handling `nota` output formats.
