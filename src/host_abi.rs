@@ -162,6 +162,10 @@ pub const SYMBOL_GRADIENT_ACCUMULATE: &str = "__faber_rt_v1_gradient_accumulate"
 pub const SYMBOL_GRADIENT_READ: &str = "__faber_rt_v1_gradient_read";
 pub const SYMBOL_GRADIENT_ZERO: &str = "__faber_rt_v1_gradient_zero";
 
+pub const SYMBOL_GPU_COPY_IN: &str = "__faber_gpu_v1_copy_in";
+pub const SYMBOL_GPU_READBACK: &str = "__faber_gpu_v1_readback";
+pub const SYMBOL_GPU_SYNC: &str = "__faber_gpu_v1_sync";
+
 pub const SYMBOL_PROGRAM_ENTRY: &str = "__faber_program_entry_v1";
 
 pub type FaberRtValueKindV1 = u32;
