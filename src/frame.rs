@@ -12,29 +12,10 @@ use std::thread;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Frame lifecycle status for stream `ad` conversations.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FrameStatus {
-    Request,
-    Item,
-    Byte,
-    Bulk,
-    Done,
-    Error,
-    Cancel,
-}
-
-impl FrameStatus {
-    #[must_use]
-    pub fn is_terminal(self) -> bool {
-        matches!(self, Self::Done | Self::Error | Self::Cancel)
-    }
-
-    #[must_use]
-    pub fn is_content(self) -> bool {
-        matches!(self, Self::Item | Self::Byte | Self::Bulk)
-    }
-}
+// ── Contract-authority re-export ────────────────────────────────────────────
+// Single canonical definition lives at
+// radix-runtime-contract/src/frame.rs (the compiler-side authority).
+pub use radix_runtime_contract::frame::FrameStatus;
 
 /// Opaque frame record carried on a `Sermo` handle.
 #[derive(Clone, Debug, PartialEq)]

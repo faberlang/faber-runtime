@@ -1,4 +1,15 @@
 //! Shared scalar display helpers for generated Rust and interpreter paths.
+//!
+//! ## Contract authority
+//!
+//! [`FractusDisplay`], [`display_fractus`], [`display_bivalens`] and
+//! [`display_text_payload`] mirror the definitions in
+//! `radix-runtime-contract/src/display.rs`.  The contract is the canonical
+//! authority; the runtime copy must stay in sync.
+//!
+//! Unlike `tensor`/`sparsa`, items cannot be `pub use`-re-exported from the
+//! contract because `FractusDisplay` has orphan-rule-bound `impl`s for `f32`
+//! and `f64` that prevent importing the trait from another crate.
 
 use crate::Valor;
 use std::fmt::Display;

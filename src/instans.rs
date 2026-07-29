@@ -3,6 +3,15 @@
 //! WHY: all precision variants store i64 nanoseconds since Unix epoch; the
 //! precision parameter declares how many trailing digits are meaningful
 //! (significant-figures semantics), not a different storage width.
+//!
+//! ## Contract authority
+//!
+//! [`Instans`] and [`InstansPraecisio`] mirror the definitions in
+//! `radix-runtime-contract/src/instans.rs`.  The contract is the canonical
+//! authority; the runtime copy must stay in sync.  Items cannot be
+//! `pub use`-re-exported because the runtime adds orphan-rule-relevant
+//! trait impls (`From<Instans> for Valor`) and inherent methods
+//! (`try_from_valor`).
 
 use crate::valor::Valor;
 
@@ -121,7 +130,20 @@ impl Instans {
         }
     }
 
-    fn from_epoch_integer(epoch: i64, praecisio: InstansPraecisio) -> Self {
+    /// Parse an RFC3339 wire string into an instant at the requested precision.
+    ///
+    /// WHY: standalone entry point for codegen paths that have a text wire
+    /// without a `Valor` carrier.
+    #[must_use]
+    pub fn from_rfc3339(text: &str, praecisio: InstansPraecisio) -> Option<Self> {
+        let nanos = parse_rfc3339(text)?;
+        Some(Self::from_nanos(nanos, praecisio))
+    }
+
+    /// Build an instant from an epoch integer interpreted in the requested
+    /// precision's native units (seconds/ms/µs/ns).
+    #[must_use]
+    pub fn from_epoch_integer(epoch: i64, praecisio: InstansPraecisio) -> Self {
         match praecisio {
             InstansPraecisio::Secunda => Self::from_epoch_seconds(epoch, praecisio),
             InstansPraecisio::Millisecunda => Self::from_epoch_millis(epoch, praecisio),
