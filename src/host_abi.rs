@@ -24,6 +24,8 @@ pub const SYMBOL_FORMAT_TEXT_TEXT_TEXT: &str = "__faber_rt_v1_format_text_text_t
 pub const SYMBOL_FORMAT_TEXT_I64_I1: &str = "__faber_rt_v1_format_text_i64_i1";
 pub const SYMBOL_TEXT_LENGTH: &str = "__faber_rt_v1_text_length";
 pub const SYMBOL_TEXT_CONCAT: &str = "__faber_rt_v1_text_concat";
+pub const SYMBOL_TEXT_EQ: &str = "__faber_rt_v1_text_eq";
+pub const SYMBOL_TEXT_NE: &str = "__faber_rt_v1_text_ne";
 pub const SYMBOL_TEXT_IS_EMPTY: &str = "__faber_rt_v1_text_is_empty";
 pub const SYMBOL_TEXT_CONTAINS: &str = "__faber_rt_v1_text_contains";
 pub const SYMBOL_TEXT_STARTS_WITH: &str = "__faber_rt_v1_text_starts_with";
@@ -36,6 +38,8 @@ pub const SYMBOL_TEXT_SPLIT: &str = "__faber_rt_v1_text_split";
 pub const SYMBOL_TEXT_REPLACE: &str = "__faber_rt_v1_text_replace";
 pub const SYMBOL_TEXT_PARSE_INTEGER: &str = "__faber_rt_v1_text_parse_integer";
 pub const SYMBOL_TEXT_PARSE_FLOAT: &str = "__faber_rt_v1_text_parse_float";
+pub const SYMBOL_TEXT_PARSE_INTEGER_OR: &str = "__faber_rt_v1_text_parse_integer_or";
+pub const SYMBOL_TEXT_PARSE_FLOAT_OR: &str = "__faber_rt_v1_text_parse_float_or";
 pub const SYMBOL_TEXT_TRUTHY: &str = "__faber_rt_v1_text_truthy";
 pub const SYMBOL_TEXT_I64: &str = "__faber_rt_v1_text_i64";
 pub const SYMBOL_TEXT_F64: &str = "__faber_rt_v1_text_f64";
@@ -234,6 +238,11 @@ pub const DIAGNOSTIC_SYMBOLS_V1: &[(&str, &str, &str)] = &[
     ("mone", "text", "__faber_rt_v1_diagnostic_mone_text"),
     ("mone", "ascii", "__faber_rt_v1_diagnostic_mone_ascii"),
     ("mone", "i64", "__faber_rt_v1_diagnostic_mone_i64"),
+    ("scribe", "ptr", "__faber_rt_v1_diagnostic_scribe_ptr"),
+    ("scribe", "text", "__faber_rt_v1_diagnostic_scribe_text"),
+    ("scribe", "i64", "__faber_rt_v1_diagnostic_scribe_i64"),
+    ("scribe", "i32", "__faber_rt_v1_diagnostic_scribe_i32"),
+    ("scribe", "double", "__faber_rt_v1_diagnostic_scribe_f64"),
     ("vide", "ptr", "__faber_rt_v1_diagnostic_vide_ptr"),
     ("vide", "text", "__faber_rt_v1_diagnostic_vide_text"),
     ("vide", "ascii", "__faber_rt_v1_diagnostic_vide_ascii"),

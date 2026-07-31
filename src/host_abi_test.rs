@@ -53,8 +53,8 @@ fn host_abi_v1_context_carrier_layout() {
 }
 
 #[test]
-fn host_abi_v1_diagnostic_symbol_count_is_17() {
-    assert_eq!(DIAGNOSTIC_SYMBOLS_V1.len(), 17);
+fn host_abi_v1_diagnostic_symbol_count_is_22() {
+    assert_eq!(DIAGNOSTIC_SYMBOLS_V1.len(), 22);
 }
 
 #[test]
