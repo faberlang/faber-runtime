@@ -157,9 +157,7 @@ fn accepts_empty_root_object() {
 fn rejects_non_finite_float_in_nested_position() {
     let err = Json::try_from(object([(
         "nested",
-        Valor::Lista(vec![
-            object([("val", Valor::Fractus(f64::NEG_INFINITY))]),
-        ]),
+        Valor::Lista(vec![object([("val", Valor::Fractus(f64::NEG_INFINITY))])]),
     )]))
     .expect_err("neg infinity");
     assert_eq!(err.path(), "$.nested[0].val");

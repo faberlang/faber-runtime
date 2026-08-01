@@ -133,25 +133,41 @@ fn longitudo_counts_materialized_values() {
 
 #[test]
 fn longitudo_ascending_exclusive() {
-    let range = Intervallum { initium: 0, finis: 10, kind: IntervallumKind::Exclusive };
+    let range = Intervallum {
+        initium: 0,
+        finis: 10,
+        kind: IntervallumKind::Exclusive,
+    };
     assert_eq!(range.longitudo(), range.ad_lista().len() as i64);
 }
 
 #[test]
 fn longitudo_ascending_inclusive() {
-    let range = Intervallum { initium: 0, finis: 10, kind: IntervallumKind::Inclusive };
+    let range = Intervallum {
+        initium: 0,
+        finis: 10,
+        kind: IntervallumKind::Inclusive,
+    };
     assert_eq!(range.longitudo(), range.ad_lista().len() as i64);
 }
 
 #[test]
 fn longitudo_descending_exclusive() {
-    let range = Intervallum { initium: 10, finis: 0, kind: IntervallumKind::Exclusive };
+    let range = Intervallum {
+        initium: 10,
+        finis: 0,
+        kind: IntervallumKind::Exclusive,
+    };
     assert_eq!(range.longitudo(), range.ad_lista().len() as i64);
 }
 
 #[test]
 fn longitudo_single_point_inclusive() {
-    let range = Intervallum { initium: 5, finis: 5, kind: IntervallumKind::Inclusive };
+    let range = Intervallum {
+        initium: 5,
+        finis: 5,
+        kind: IntervallumKind::Inclusive,
+    };
     assert_eq!(range.longitudo(), range.ad_lista().len() as i64);
 }
 

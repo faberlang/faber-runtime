@@ -34,8 +34,5 @@ fn solum_home_value_accepts_empty_home() {
 
 #[test]
 fn solum_home_value_empty_home_ignores_userprofile() {
-    assert_eq!(
-        solum_home_value(Some("".into()), None),
-        Ok("".into())
-    );
+    assert_eq!(solum_home_value(Some("".into()), None), Ok("".into()));
 }

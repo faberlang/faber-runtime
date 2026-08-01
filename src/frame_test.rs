@@ -921,7 +921,9 @@ fn solum_regularene_false_for_directory() {
 
     let mut dir_regular_sermo = frame::sermo_open("solum:regularene");
     frame::sermo_set_opener(&mut dir_regular_sermo, Valor::Textus(dir_path));
-    assert!(!frame::sermo_materialize_scalar::<bool>(&mut dir_regular_sermo));
+    assert!(!frame::sermo_materialize_scalar::<bool>(
+        &mut dir_regular_sermo
+    ));
 }
 
 #[test]
@@ -1079,7 +1081,8 @@ fn solum_modus_reads_file_mode() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).expect("set mode");
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644))
+            .expect("set mode");
     }
 
     let mut get_modus = frame::sermo_open("solum:modus");

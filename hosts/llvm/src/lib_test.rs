@@ -196,7 +196,10 @@ fn format_single_substitution_scalars_renders_correct_text() {
     assert_eq!(float.status, STATUS_OK);
     assert_eq!(boolean.status, STATUS_OK);
     assert_eq!(unsafe { &*one.value.cast::<RuntimeText>() }.value, "n=42");
-    assert_eq!(unsafe { &*float.value.cast::<RuntimeText>() }.value, "x=1.5");
+    assert_eq!(
+        unsafe { &*float.value.cast::<RuntimeText>() }.value,
+        "x=1.5"
+    );
     assert_eq!(
         unsafe { &*boolean.value.cast::<RuntimeText>() }.value,
         "b=verum"
@@ -747,10 +750,8 @@ fn typed_set_preserves_value_semantics() {
         }
     }
     let union = unsafe { __faber_rt_v1_set_union(context, left.value, right.value) };
-    let intersection =
-        unsafe { __faber_rt_v1_set_intersection(context, left.value, right.value) };
-    let difference =
-        unsafe { __faber_rt_v1_set_difference(context, left.value, right.value) };
+    let intersection = unsafe { __faber_rt_v1_set_intersection(context, left.value, right.value) };
+    let difference = unsafe { __faber_rt_v1_set_difference(context, left.value, right.value) };
     let symmetric =
         unsafe { __faber_rt_v1_set_symmetric_difference(context, left.value, right.value) };
     assert_eq!(

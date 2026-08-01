@@ -2754,8 +2754,8 @@ mod tests {
     #[test]
     fn reduce_broadcast_gradient_scalar_target_is_sum() {
         let upstream = tensor(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
-        let result = reduce_broadcast_gradient(&upstream, &[])
-            .expect("broadcast reduction to scalar");
+        let result =
+            reduce_broadcast_gradient(&upstream, &[]).expect("broadcast reduction to scalar");
         assert_tensor_close(&result, &[10.0], &[]);
     }
 

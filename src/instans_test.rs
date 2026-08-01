@@ -164,8 +164,7 @@ fn to_rfc3339_roundtrips_utc_wire_at_same_precision() {
 #[test]
 fn epoch_zero_parses_and_roundtrips() {
     let valor = Valor::Instans("1970-01-01T00:00:00Z".to_string());
-    let instant =
-        Instans::try_from_valor(&valor, InstansPraecisio::Secunda).expect("epoch zero");
+    let instant = Instans::try_from_valor(&valor, InstansPraecisio::Secunda).expect("epoch zero");
     assert_eq!(instant.nanos(), 0);
     assert_eq!(instant.to_rfc3339(), "1970-01-01T00:00:00Z");
 }

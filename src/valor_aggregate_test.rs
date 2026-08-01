@@ -19,7 +19,10 @@ fn from_valor_extracts_lista_atomically() {
 #[test]
 fn from_valor_lista_rejects_wrong_valor_variant() {
     assert_eq!(Vec::<i64>::from_valor(&Valor::Nihil), None);
-    assert_eq!(Vec::<i64>::from_valor(&Valor::Tabula(BTreeMap::new())), None);
+    assert_eq!(
+        Vec::<i64>::from_valor(&Valor::Tabula(BTreeMap::new())),
+        None
+    );
     assert_eq!(Vec::<i64>::from_valor(&Valor::Numerus(42)), None);
 }
 

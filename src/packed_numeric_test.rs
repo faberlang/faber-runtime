@@ -27,12 +27,18 @@ fn packed_u4_layout_records_packed_bytes() {
 
 #[test]
 fn packed_u4_layout_records_bit_order() {
-    assert_eq!(PackedU4Layout::toy_u4().bit_order, PackedBitOrder::LowNibbleFirst);
+    assert_eq!(
+        PackedU4Layout::toy_u4().bit_order,
+        PackedBitOrder::LowNibbleFirst
+    );
 }
 
 #[test]
 fn packed_u4_layout_records_widened_type() {
-    assert_eq!(PackedU4Layout::toy_u4().widened_type, PackedWidenedType::F32);
+    assert_eq!(
+        PackedU4Layout::toy_u4().widened_type,
+        PackedWidenedType::F32
+    );
 }
 
 #[test]

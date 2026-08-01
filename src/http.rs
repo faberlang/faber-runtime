@@ -182,11 +182,7 @@ mod tests {
 
     #[test]
     fn empty_body_response_produces_nihil_json() {
-        let response = Replicatio::new(
-            200,
-            b"".to_vec(),
-            HashMap::new(),
-        );
+        let response = Replicatio::new(200, b"".to_vec(), HashMap::new());
 
         assert_eq!(response.status(), 200);
         assert_eq!(response.corpus(), "");
@@ -210,9 +206,18 @@ mod tests {
             HashMap::from([("X-Custom-Header".to_owned(), "value".to_owned())]),
         );
 
-        assert_eq!(response.caput("x-custom-header".to_owned()), Some("value".to_owned()));
-        assert_eq!(response.caput("X-CUSTOM-HEADER".to_owned()), Some("value".to_owned()));
-        assert_eq!(response.caput("X-Custom-Header".to_owned()), Some("value".to_owned()));
+        assert_eq!(
+            response.caput("x-custom-header".to_owned()),
+            Some("value".to_owned())
+        );
+        assert_eq!(
+            response.caput("X-CUSTOM-HEADER".to_owned()),
+            Some("value".to_owned())
+        );
+        assert_eq!(
+            response.caput("X-Custom-Header".to_owned()),
+            Some("value".to_owned())
+        );
     }
 
     #[test]
@@ -231,11 +236,7 @@ mod tests {
 
     #[test]
     fn text_corpus_preserves_body_as_string() {
-        let response = Replicatio::new(
-            200,
-            b"hello world".to_vec(),
-            HashMap::new(),
-        );
+        let response = Replicatio::new(200, b"hello world".to_vec(), HashMap::new());
         assert_eq!(response.corpus(), "hello world");
     }
 
