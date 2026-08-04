@@ -1,3 +1,7 @@
++++
+locale = "la"
++++
+
 # G-SPINE-08 S2: LLVM device execution exemplar — multiply-by-2 kernel.
 #
 # Contract: elementwise multiply-by-2 on rank-1 f32, 4 elements.
