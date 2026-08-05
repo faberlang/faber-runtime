@@ -6,6 +6,7 @@
 pub mod arena;
 pub mod ascii;
 mod autograd;
+pub mod bound_plan;
 pub mod device;
 pub mod device_identity;
 pub mod device_set;
