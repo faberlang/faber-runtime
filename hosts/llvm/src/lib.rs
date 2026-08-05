@@ -9,6 +9,7 @@ mod instans;
 mod intervallum;
 mod octeti;
 mod option;
+mod provider;
 mod regex_rt;
 mod solum;
 mod sparsa;
@@ -29,7 +30,8 @@ use array::{
 use array_numeric::{__faber_rt_v1_array_sort, __faber_rt_v1_array_sum};
 #[cfg(test)]
 use collection_map::{
-    __faber_rt_v1_array_from_set, __faber_rt_v1_map_contains, __faber_rt_v1_map_delete,
+    __faber_rt_v1_aggregate_set_index_ptr_i64, __faber_rt_v1_array_from_set,
+    __faber_rt_v1_map_contains, __faber_rt_v1_map_delete, __faber_rt_v1_map_get,
     __faber_rt_v1_map_is_empty, __faber_rt_v1_map_keys, __faber_rt_v1_map_length,
     __faber_rt_v1_map_new, __faber_rt_v1_map_option, __faber_rt_v1_map_put,
     __faber_rt_v1_map_values, __faber_rt_v1_set_add, __faber_rt_v1_set_contains,
@@ -41,10 +43,11 @@ use collection_map::{
 use collection_map::{RuntimeMap, RuntimeSet};
 #[cfg(test)]
 use convert::{
-    __faber_rt_v1_valor_ascii, __faber_rt_v1_valor_f64, __faber_rt_v1_valor_get_ascii,
-    __faber_rt_v1_valor_get_f64, __faber_rt_v1_valor_get_i1, __faber_rt_v1_valor_get_i64,
-    __faber_rt_v1_valor_get_nihil, __faber_rt_v1_valor_get_text, __faber_rt_v1_valor_i1,
-    __faber_rt_v1_valor_i64, __faber_rt_v1_valor_nihil, __faber_rt_v1_valor_text,
+    __faber_rt_v1_convert_runtime_1_ptr_to_ptr, __faber_rt_v1_valor_ascii,
+    __faber_rt_v1_valor_f64, __faber_rt_v1_valor_get_ascii, __faber_rt_v1_valor_get_f64,
+    __faber_rt_v1_valor_get_i1, __faber_rt_v1_valor_get_i64, __faber_rt_v1_valor_get_nihil,
+    __faber_rt_v1_valor_get_text, __faber_rt_v1_valor_i1, __faber_rt_v1_valor_i64,
+    __faber_rt_v1_valor_nihil, __faber_rt_v1_valor_text,
 };
 #[cfg(not(test))]
 use faber::host_abi::FaberRtExitV1;
@@ -82,8 +85,10 @@ use gradient::{
 };
 #[cfg(test)]
 use instans::{
+    __faber_rt_v1_compare_gt_2_ptr_ptr_to_i1, __faber_rt_v1_compare_gte_2_ptr_ptr_to_i1,
+    __faber_rt_v1_compare_lt_2_ptr_ptr_to_i1, __faber_rt_v1_compare_lte_2_ptr_ptr_to_i1,
     __faber_rt_v1_instans_from_text, __faber_rt_v1_instans_from_valor,
-    __faber_rt_v1_instans_get_text, __faber_rt_v1_instans_retag,
+    __faber_rt_v1_instans_get_text, __faber_rt_v1_instans_retag, __faber_rt_v1_tempus_nunc,
 };
 #[cfg(test)]
 use intervallum::{
@@ -103,7 +108,12 @@ use option::RuntimeOption;
 #[cfg(test)]
 use option::{
     __faber_rt_v1_option_get, __faber_rt_v1_option_get_or, __faber_rt_v1_option_is_present,
-    __faber_rt_v1_option_none, __faber_rt_v1_option_some,
+    __faber_rt_v1_option_none, __faber_rt_v1_option_some, __faber_rt_v1_option_unwrap_ptr,
+};
+#[cfg(test)]
+use provider::{
+    __faber_rt_v1_json_pange, __faber_rt_v1_json_solve, __faber_rt_v1_json_tempta,
+    __faber_rt_v1_toml_solve, __faber_rt_v1_valor_cape,
 };
 #[cfg(test)]
 use regex_rt::{
@@ -225,6 +235,7 @@ struct RuntimeContext {
     gradient_views: Vec<StableBox<gradient::GradientViewV1>>,
     regexes: Vec<StableBox<faber::Regex>>,
     intervals: Vec<StableBox<faber::Intervallum<i64>>>,
+    union_boxes: Vec<StableBox<*mut std::ffi::c_void>>,
 }
 
 /// Initialize one process-lifetime LLVM host context.
@@ -273,6 +284,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             gradient_views: Vec::new(),
             regexes: Vec::new(),
             intervals: Vec::new(),
+            union_boxes: Vec::new(),
         });
         *out_context = Box::into_raw(context).cast();
         STATUS_OK

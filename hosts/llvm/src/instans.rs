@@ -119,3 +119,79 @@ pub unsafe extern "C" fn __faber_rt_v1_instans_get_text(
         store_text(context, value.to_rfc3339())
     })
 }
+
+/// Ordered comparison of two opaque `instans` handles.
+///
+/// The v1 ABI contract requires both handles to be live `instans` handles
+/// created by this runtime. The comparison reads the two [`Instans`] values
+/// directly through the handle pointers (no context argument crosses this
+/// ABI); the result is `1` when the predicate holds.
+fn compare_instans(
+    lhs: *mut c_void,
+    rhs: *mut c_void,
+    predicate: impl Fn(&Instans, &Instans) -> bool,
+) -> u8 {
+    let (Some(lhs), Some(rhs)) = (
+        // SAFETY: the v1 ABI contract requires both handles to be live
+        // `instans` handles; reading them through the handle pointer is the
+        // only way to compare without a context argument.
+        unsafe { (lhs as *const Instans).as_ref() },
+        unsafe { (rhs as *const Instans).as_ref() },
+    ) else {
+        return 0;
+    };
+    u8::from(predicate(lhs, rhs))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_compare_lt_2_ptr_ptr_to_i1(
+    lhs: *mut c_void,
+    rhs: *mut c_void,
+) -> u8 {
+    compare_instans(lhs, rhs, |lhs, rhs| lhs < rhs)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_compare_gt_2_ptr_ptr_to_i1(
+    lhs: *mut c_void,
+    rhs: *mut c_void,
+) -> u8 {
+    compare_instans(lhs, rhs, |lhs, rhs| lhs > rhs)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_compare_lte_2_ptr_ptr_to_i1(
+    lhs: *mut c_void,
+    rhs: *mut c_void,
+) -> u8 {
+    compare_instans(lhs, rhs, |lhs, rhs| lhs <= rhs)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_compare_gte_2_ptr_ptr_to_i1(
+    lhs: *mut c_void,
+    rhs: *mut c_void,
+) -> u8 {
+    compare_instans(lhs, rhs, |lhs, rhs| lhs >= rhs)
+}
+
+/// Current wall-clock instant as an `instans<ns>` handle (`norma:tempus.nunc`).
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_tempus_nunc(
+    context: *mut FaberRtContextV1,
+) -> FaberRtPtrResultV1 {
+    ffi(|| {
+        let Some(runtime) = runtime(context) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        // SAFETY: nanoseconds since epoch fit in i64 for the foreseeable future.
+        #[allow(clippy::cast_possible_truncation)]
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_nanos() as i64);
+        store(
+            runtime,
+            Instans::from_nanos(nanos, InstansPraecisio::Nanosecunda),
+        )
+    })
+}

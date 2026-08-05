@@ -1,11 +1,12 @@
 //! Arena-owned typed maps and sets for the LLVM host ABI.
 
 use super::array::{find_array, read_value, store_array, valid_kind, write_value, RuntimeValue};
+use super::format::text_value;
 use super::option::store_option;
 use super::RuntimeContext;
 use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, FaberRtValueKindV1,
-    STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_TEXT,
+    STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_I64, VALUE_KIND_TEXT,
 };
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
@@ -74,6 +75,50 @@ pub unsafe extern "C" fn __faber_rt_v1_map_put(
         }
         STATUS_OK
     })
+}
+
+/// Set one entry of a `tabula<textus, numerus>` map through a direct handle.
+///
+/// The generic aggregate index-assignment path (`aggregate[text_key] ← i64`)
+/// emits `set_index(aggregate, key, value)` with a text key and an i64 value
+/// when the destination aggregate is not a recognized collection carrier. The
+/// aggregate handle must be a live map created by this runtime with text keys
+/// and i64 values; unrecognized shapes fail closed by leaving the map
+/// unchanged.
+///
+/// # Safety
+///
+/// `aggregate` must be a live map handle created by this runtime; `key` must
+/// be a readable text descriptor.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_aggregate_set_index_ptr_i64(
+    aggregate: *mut c_void,
+    key: *const FaberRtSliceV1,
+    value: i64,
+) {
+    let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+        let Some(_key_text) = text_value(key) else {
+            return;
+        };
+        // SAFETY: per the v1 ABI contract, `aggregate` is a live map handle
+        // created by this runtime; the handle is a stable box pointer.
+        let Some(map) = (unsafe { (aggregate as *mut RuntimeMap).as_mut() }) else {
+            return;
+        };
+        if map.key_kind != VALUE_KIND_TEXT || map.value_kind != VALUE_KIND_I64 {
+            return;
+        }
+        let key = RuntimeValue::Ptr(key.cast::<c_void>().cast_mut());
+        if let Some((_, existing)) = map
+            .entries
+            .iter_mut()
+            .find(|(candidate, _)| values_equal(VALUE_KIND_TEXT, *candidate, key))
+        {
+            *existing = RuntimeValue::I64(value);
+        } else {
+            map.entries.push((key, RuntimeValue::I64(value)));
+        }
+    }));
 }
 
 #[no_mangle]

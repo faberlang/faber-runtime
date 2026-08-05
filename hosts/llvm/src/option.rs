@@ -125,6 +125,22 @@ pub unsafe extern "C" fn __faber_rt_v1_option_get_or(
     })
 }
 
+/// Unwrap a local opaque option whose payload is a boxed aggregate value.
+///
+/// The generic LLVM option path represents `T ∪ nihil` values with a
+/// non-arena payload as a pointer to the boxed payload; unwrapping is the
+/// pointer-preserving box passthrough (the emitted program dereferences the
+/// box itself).
+///
+/// # Safety
+///
+/// `option` must be a live box pointer produced by the option construction
+/// path for the same payload type.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_option_unwrap_ptr(option: *mut c_void) -> *mut c_void {
+    option
+}
+
 pub(super) fn store_option(
     runtime: &mut RuntimeContext,
     kind: FaberRtValueKindV1,

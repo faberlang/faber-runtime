@@ -203,3 +203,25 @@ pub(super) fn store_valor(context: *mut FaberRtContextV1, value: Valor) -> Faber
     }))
     .unwrap_or(FaberRtPtrResultV1::failure(STATUS_PANIC))
 }
+
+/// Re-tag one opaque runtime handle as another opaque carrier (`↦` between
+/// carrier types that share the same runtime representation).
+///
+/// The LLVM emitter routes opaque `ptr → ptr` runtime conversions through this
+/// symbol. The host represents json values and `valor` values with the same
+/// [`Valor`] storage, and union boxes as opaque handle pointers, so the
+/// conversion is a pointer-preserving re-interpretation: the returned handle
+/// is the input handle. A null or dangling handle fails closed.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_convert_runtime_1_ptr_to_ptr(
+    context: *mut FaberRtContextV1,
+    value: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    panic::catch_unwind(AssertUnwindSafe(|| {
+        if context.is_null() || value.is_null() {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        }
+        FaberRtPtrResultV1::success(value)
+    }))
+    .unwrap_or(FaberRtPtrResultV1::failure(STATUS_PANIC))
+}

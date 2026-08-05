@@ -3611,3 +3611,210 @@ fn opaque_nota_renders_lista_textus_and_octeti_in_rust_debug_shape() {
 
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn instans_compare_family_orders_handles() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let earlier = FaberRtSliceV1::from_static(b"1979-05-27T07:32:00Z");
+    let later = FaberRtSliceV1::from_static(b"1980-01-01T00:00:00Z");
+    let earlier =
+        unsafe { __faber_rt_v1_instans_from_text(context, &raw const earlier, INSTANS_PRECISION_SECONDS) };
+    let later =
+        unsafe { __faber_rt_v1_instans_from_text(context, &raw const later, INSTANS_PRECISION_SECONDS) };
+    assert_eq!(earlier.status, STATUS_OK);
+    assert_eq!(later.status, STATUS_OK);
+    let (a, b) = (earlier.value, later.value);
+    assert_eq!(unsafe { __faber_rt_v1_compare_lt_2_ptr_ptr_to_i1(a, b) }, 1);
+    assert_eq!(unsafe { __faber_rt_v1_compare_lt_2_ptr_ptr_to_i1(b, a) }, 0);
+    assert_eq!(unsafe { __faber_rt_v1_compare_gt_2_ptr_ptr_to_i1(b, a) }, 1);
+    assert_eq!(unsafe { __faber_rt_v1_compare_gt_2_ptr_ptr_to_i1(a, b) }, 0);
+    assert_eq!(unsafe { __faber_rt_v1_compare_lte_2_ptr_ptr_to_i1(a, b) }, 1);
+    assert_eq!(unsafe { __faber_rt_v1_compare_lte_2_ptr_ptr_to_i1(a, a) }, 1);
+    assert_eq!(unsafe { __faber_rt_v1_compare_gte_2_ptr_ptr_to_i1(b, a) }, 1);
+    assert_eq!(unsafe { __faber_rt_v1_compare_gte_2_ptr_ptr_to_i1(a, b) }, 0);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn tempus_nunc_returns_current_instant_handle() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let nunc = unsafe { __faber_rt_v1_tempus_nunc(context) };
+    assert_eq!(nunc.status, STATUS_OK);
+    assert!(!nunc.value.is_null());
+    let rendered = unsafe { __faber_rt_v1_instans_get_text(context, nunc.value) };
+    assert_eq!(rendered.status, STATUS_OK);
+    let rendered = unsafe { &*rendered.value.cast::<FaberRtSliceV1>() };
+    let text = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(rendered.data, rendered.len as usize)) };
+    assert!(text.ends_with('Z'), "RFC3339 wire should end with Z, got {text}");
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn provider_valor_cape_reads_tabula_field() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let map = unsafe { __faber_rt_v1_map_new(context, VALUE_KIND_TEXT, VALUE_KIND_I64) };
+    assert_eq!(map.status, STATUS_OK);
+    let key = FaberRtSliceV1::from_static(b"creatus");
+    let key_handle = ptr::from_ref(&key).cast_mut().cast::<c_void>();
+    let value = 42_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_map_put(
+                context,
+                map.value,
+                VALUE_KIND_TEXT,
+                ptr::from_ref(&key_handle).cast(),
+                VALUE_KIND_I64,
+                ptr::from_ref(&value).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    let valor = unsafe { __faber_rt_v1_valor_map(context, map.value) };
+    assert_eq!(valor.status, STATUS_OK);
+    let field = unsafe { __faber_rt_v1_valor_cape(context, valor.value.cast(), &raw const key) };
+    assert_eq!(field.status, STATUS_OK);
+    assert_eq!(unsafe { &*field.value.cast::<Valor>() }, &Valor::Numerus(42));
+    let missing = FaberRtSliceV1::from_static(b"absentia");
+    let field = unsafe { __faber_rt_v1_valor_cape(context, valor.value.cast(), &raw const missing) };
+    assert_eq!(field.status, STATUS_INVALID_ARGUMENT);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn provider_json_solve_pange_round_trip() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let wire = FaberRtSliceV1::from_static(br#"{"nomen":"Ada"}"#);
+    let solved = unsafe { __faber_rt_v1_json_solve(context, &raw const wire) };
+    assert_eq!(solved.status, STATUS_OK);
+    let panged = unsafe { __faber_rt_v1_json_pange(context, solved.value.cast()) };
+    assert_eq!(panged.status, STATUS_OK);
+    let panged = unsafe { &*panged.value.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(panged.data, panged.len as usize) },
+        br#"{"nomen":"Ada"}"#
+    );
+    let bad = FaberRtSliceV1::from_static(b"{ nope");
+    let solved = unsafe { __faber_rt_v1_json_solve(context, &raw const bad) };
+    assert_eq!(solved.status, STATUS_INVALID_ARGUMENT);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn provider_json_tempta_boxes_text_payload() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let wire = FaberRtSliceV1::from_static(br#"{"ok":true}"#);
+    let tentativa = unsafe { __faber_rt_v1_json_tempta(context, &raw const wire) };
+    assert_eq!(tentativa.status, STATUS_OK);
+    assert!(!tentativa.value.is_null());
+    // The union box holds the text form of the payload.
+    let payload = unsafe { *(tentativa.value.cast::<*mut c_void>()) };
+    let payload = unsafe { &*payload.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(payload.data, payload.len as usize) },
+        br#"{"ok":true}"#
+    );
+    let nil = FaberRtSliceV1::from_static(b"{ nope");
+    let tentativa = unsafe { __faber_rt_v1_json_tempta(context, &raw const nil) };
+    assert_eq!(tentativa.status, STATUS_OK);
+    let payload = unsafe { *(tentativa.value.cast::<*mut c_void>()) };
+    let payload = unsafe { &*payload.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(payload.data, payload.len as usize) },
+        b"nihil"
+    );
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn provider_toml_solve_fails_closed_unsupported() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let wire = FaberRtSliceV1::from_static(b"creatus = 1979-05-27T07:32:00Z");
+    let solved = unsafe { __faber_rt_v1_toml_solve(context, &raw const wire) };
+    assert_eq!(solved.status, STATUS_UNSUPPORTED);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn opaque_ptr_conversion_preserves_handle() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let wire = FaberRtSliceV1::from_static(b"ada");
+    let text = unsafe { __faber_rt_v1_valor_text(context, &raw const wire) };
+    assert_eq!(text.status, STATUS_OK);
+    let converted = unsafe { __faber_rt_v1_convert_runtime_1_ptr_to_ptr(context, text.value) };
+    assert_eq!(converted.status, STATUS_OK);
+    assert_eq!(converted.value, text.value);
+    let null = unsafe { __faber_rt_v1_convert_runtime_1_ptr_to_ptr(context, ptr::null_mut()) };
+    assert_eq!(null.status, STATUS_INVALID_ARGUMENT);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn option_unwrap_ptr_passes_through_box() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let boxed = super::StableBox::new(ptr::null_mut::<c_void>());
+    let handle = boxed.handle();
+    assert_eq!(unsafe { __faber_rt_v1_option_unwrap_ptr(handle) }, handle);
+    drop(boxed);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn aggregate_set_index_ptr_i64_sets_text_i64_map_entry() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let map = unsafe { __faber_rt_v1_map_new(context, VALUE_KIND_TEXT, VALUE_KIND_I64) };
+    assert_eq!(map.status, STATUS_OK);
+    let key = FaberRtSliceV1::from_static(b"alpha");
+    unsafe { __faber_rt_v1_aggregate_set_index_ptr_i64(map.value, &raw const key, 7) };
+    let mut output = 0_i64;
+    let key_handle = ptr::from_ref(&key).cast_mut().cast::<c_void>();
+    let status = unsafe {
+        __faber_rt_v1_map_get(
+            context,
+            map.value,
+            VALUE_KIND_TEXT,
+            ptr::from_ref(&key_handle).cast(),
+            VALUE_KIND_I64,
+            ptr::from_mut(&mut output).cast(),
+        )
+    };
+    assert_eq!(status, STATUS_OK);
+    assert_eq!(output, 7);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
