@@ -21,6 +21,7 @@ pub mod json;
 pub mod packed_numeric;
 pub mod partition;
 pub mod policy;
+pub mod quantized_tensor_layout;
 pub mod regex;
 pub mod sparsa;
 pub mod tensor;
@@ -104,3 +105,7 @@ mod frame_live_test;
 #[cfg(test)]
 #[path = "gguf_test.rs"]
 mod gguf_test;
+
+#[cfg(test)]
+#[path = "quantized_tensor_layout_test.rs"]
+mod quantized_tensor_layout_test;
