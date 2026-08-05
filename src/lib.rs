@@ -26,6 +26,7 @@ pub mod regex;
 pub mod sparsa;
 pub mod tensor;
 pub mod textus;
+pub mod tokenizer;
 pub mod valor;
 
 pub use arena::{Arena, ArenaHandle};
@@ -109,3 +110,7 @@ mod gguf_test;
 #[cfg(test)]
 #[path = "quantized_tensor_layout_test.rs"]
 mod quantized_tensor_layout_test;
+
+#[cfg(test)]
+#[path = "tokenizer_test.rs"]
+mod tokenizer_test;
