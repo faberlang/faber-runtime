@@ -109,6 +109,11 @@ use option::{
 use regex_rt::{
     __faber_rt_v1_regex_from_ascii, __faber_rt_v1_regex_from_text, __faber_rt_v1_regex_get_text,
 };
+#[cfg(test)]
+use solum::{
+    __faber_rt_v1_solum_read_bytes, __faber_rt_v1_solum_read_lines, __faber_rt_v1_solum_read_text,
+    __faber_rt_v1_solum_write_text,
+};
 use sparsa::RuntimeSparse;
 #[cfg(test)]
 use sparsa::{

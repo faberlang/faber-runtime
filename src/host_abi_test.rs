@@ -23,6 +23,26 @@ fn gradient_symbols_cohere_with_radix_host_abi() {
 }
 
 #[test]
+fn solum_symbols_cohere_with_radix_host_abi() {
+    assert_eq!(
+        radix_host_abi::SYMBOL_SOLUM_READ_TEXT,
+        SYMBOL_SOLUM_READ_TEXT,
+    );
+    assert_eq!(
+        radix_host_abi::SYMBOL_SOLUM_READ_LINES,
+        SYMBOL_SOLUM_READ_LINES,
+    );
+    assert_eq!(
+        radix_host_abi::SYMBOL_SOLUM_READ_BYTES,
+        SYMBOL_SOLUM_READ_BYTES,
+    );
+    assert_eq!(
+        radix_host_abi::SYMBOL_SOLUM_WRITE_TEXT,
+        SYMBOL_SOLUM_WRITE_TEXT,
+    );
+}
+
+#[test]
 fn host_abi_v1_slice_carrier_layout() {
     assert_eq!(size_of::<FaberRtSliceV1>(), 16);
     assert_eq!(align_of::<FaberRtSliceV1>(), 8);

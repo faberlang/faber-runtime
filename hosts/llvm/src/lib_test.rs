@@ -3496,3 +3496,66 @@ fn llvm_golden_oracle_multiply_by_two() {
 
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn solum_read_lines_splits_file_into_text_lista() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let path =
+        std::env::temp_dir().join(format!("faber-solum-read-lines-{}.txt", std::process::id()));
+    std::fs::write(&path, "prima\nsecunda\n").expect("write fixture file");
+    let path = path.to_string_lossy().into_owned();
+    let path_slice = FaberRtSliceV1 {
+        data: path.as_ptr(),
+        len: path.len() as u64,
+    };
+
+    let result = unsafe { __faber_rt_v1_solum_read_lines(context, &raw const path_slice) };
+    assert_eq!(result.status, STATUS_OK);
+    let array = unsafe { &*result.value.cast::<RuntimeArray>() };
+    assert_eq!(array.kind, VALUE_KIND_PTR);
+    let lines = array
+        .values
+        .iter()
+        .map(|value| match value {
+            array::RuntimeValue::Ptr(handle) => {
+                unsafe { &*handle.cast::<RuntimeText>() }.value.as_str()
+            }
+            _ => panic!("read_lines produced non-text carrier"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(lines, ["prima", "secunda"]);
+
+    std::fs::remove_file(&path).ok();
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn solum_read_bytes_reads_raw_file_bytes() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let path =
+        std::env::temp_dir().join(format!("faber-solum-read-bytes-{}.txt", std::process::id()));
+    std::fs::write(&path, b"\x00\x01prima\nsecunda\n").expect("write fixture file");
+    let path = path.to_string_lossy().into_owned();
+    let path_slice = FaberRtSliceV1 {
+        data: path.as_ptr(),
+        len: path.len() as u64,
+    };
+
+    let result = unsafe { __faber_rt_v1_solum_read_bytes(context, &raw const path_slice) };
+    assert_eq!(result.status, STATUS_OK);
+    assert_eq!(
+        unsafe { &*result.value.cast::<Vec<u8>>() },
+        b"\x00\x01prima\nsecunda\n"
+    );
+
+    std::fs::remove_file(&path).ok();
+    unsafe { __faber_rt_v1_shutdown(context) };
+}

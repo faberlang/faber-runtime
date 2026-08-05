@@ -1,9 +1,12 @@
 //! Filesystem boundaries used by LLVM-host `norma:solum` providers.
 
+use super::array::{store_array, RuntimeValue};
 use super::format::{store_text, text_value};
+use super::valor_aggregate::store_octeti;
+use super::RuntimeContext;
 use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT,
-    STATUS_IO_ERROR, STATUS_OK,
+    STATUS_IO_ERROR, STATUS_OK, VALUE_KIND_PTR,
 };
 
 #[no_mangle]
@@ -16,6 +19,50 @@ pub unsafe extern "C" fn __faber_rt_v1_solum_read_text(
     };
     match std::fs::read_to_string(path) {
         Ok(text) => store_text(context, text),
+        Err(_) => FaberRtPtrResultV1::failure(STATUS_IO_ERROR),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_solum_read_lines(
+    context: *mut FaberRtContextV1,
+    path: *const FaberRtSliceV1,
+) -> FaberRtPtrResultV1 {
+    let Some(path) = text_value(path) else {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    };
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return FaberRtPtrResultV1::failure(STATUS_IO_ERROR);
+    };
+    if context.is_null() {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    }
+    let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
+    let mut values = Vec::new();
+    for line in content.lines() {
+        let result = store_text(context, line.to_owned());
+        if result.status != STATUS_OK {
+            return result;
+        }
+        values.push(RuntimeValue::Ptr(result.value));
+    }
+    store_array(runtime, VALUE_KIND_PTR, values)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_solum_read_bytes(
+    context: *mut FaberRtContextV1,
+    path: *const FaberRtSliceV1,
+) -> FaberRtPtrResultV1 {
+    let Some(path) = text_value(path) else {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    };
+    if context.is_null() {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    }
+    let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
+    match std::fs::read(path) {
+        Ok(bytes) => store_octeti(runtime, bytes),
         Err(_) => FaberRtPtrResultV1::failure(STATUS_IO_ERROR),
     }
 }
