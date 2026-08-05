@@ -12,6 +12,7 @@ pub mod device_set;
 pub mod discovery;
 pub mod display;
 pub mod frame;
+pub mod gguf;
 pub mod host_abi;
 pub mod http;
 pub mod instans;
@@ -99,3 +100,7 @@ mod frame_test;
 #[cfg(test)]
 #[path = "frame_live_test.rs"]
 mod frame_live_test;
+
+#[cfg(test)]
+#[path = "gguf_test.rs"]
+mod gguf_test;
