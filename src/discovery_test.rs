@@ -1,0 +1,270 @@
+//! MD1-D1 discovery tests: T1 pharos fact round-trip (both memory reports
+//! kept distinct), byte determinism, health-epoch gating, and the locator
+//! semantics. SHA-256 known-answer vectors prove the content-addressing
+//! digest.
+
+use crate::device::DeviceBackend;
+use crate::device_identity::{
+    DeviceHealthGeneration, DeviceOrdinal, IdentityChange, PhysicalDeviceId,
+};
+use crate::discovery::{
+    ComputeCapability, DeviceCapabilities, DeviceDiscoveryEntry, DeviceDiscoverySnapshot,
+    DeviceHealth, DeviceMemory, DtypeSurface, P2pProbeState, ProbeProvenance,
+};
+use std::collections::BTreeMap;
+
+// T1 measured facts on pharos (md0-topology-evidence.md §2/§3).
+const PCI_UUID: &str = "GPU-3e017562-9ec3-da9a-962d-b8bd5f9e24be";
+const DRIVER_UUID: &str = "3e017562-9ec3-da9a-962d-b8bd5f9e24be";
+const T1_NVIDIA_SMI_MIB: u64 = 12_227; // 12227 MiB
+const T1_DRIVER_BYTES: u64 = 12_343_705_600; // cuDeviceTotalMem
+const PROBE_TIME: u64 = 1_752_717_600_000_000_000; // fixed sample time
+
+fn t1_entry() -> DeviceDiscoveryEntry {
+    DeviceDiscoveryEntry {
+        ordinal: DeviceOrdinal::new(0),
+        identity: PhysicalDeviceId::cuda(PCI_UUID, Some(DRIVER_UUID.to_owned())),
+        device_model: Some("NVIDIA GeForce RTX 5070".to_owned()),
+        capabilities: DeviceCapabilities {
+            compute_capability: ComputeCapability {
+                major: 12,
+                minor: 0,
+            },
+            sm_count: 48,
+            dtype_surface: DtypeSurface {
+                f32: true,
+                f64: true,
+                f16: true,
+                bf16: true,
+                i8: true,
+                i32: true,
+            },
+        },
+        memory: DeviceMemory {
+            tool_report_total_mib: Some(T1_NVIDIA_SMI_MIB),
+            api_total_bytes: T1_DRIVER_BYTES,
+        },
+        health: DeviceHealth::Healthy,
+        health_generation: DeviceHealthGeneration::initial(),
+        probe_provenance: ProbeProvenance {
+            probe: "device_enum + nvidia-smi".to_owned(),
+            tool_versions: "driver 595.71.05 / CUDA 13.2".to_owned(),
+        },
+    }
+}
+
+fn t1_snapshot() -> DeviceDiscoverySnapshot {
+    let mut devices = BTreeMap::new();
+    devices.insert(DeviceOrdinal::new(0), t1_entry());
+    DeviceDiscoverySnapshot::new(PROBE_TIME, devices, P2pProbeState::NotAttempted)
+}
+
+/// The T1 pharos facts round-trip through a snapshot with every field intact
+/// (FC9; exit gate: discovery snapshot round-trips the T1 facts).
+#[test]
+fn t1_pharos_facts_round_trip() {
+    let snap = t1_snapshot();
+    let entry = snap
+        .entry(DeviceOrdinal::new(0))
+        .expect("ordinal 0 present in the pharos snapshot");
+
+    // Identity: PCI UUID + corroborating driver UUID, both kept.
+    assert_eq!(entry.ordinal, DeviceOrdinal::new(0));
+    assert_eq!(entry.backend(), DeviceBackend::Cuda);
+    assert_eq!(
+        entry.identity,
+        PhysicalDeviceId::cuda(PCI_UUID, Some(DRIVER_UUID.to_owned()))
+    );
+
+    // Model descriptor.
+    assert_eq!(
+        entry.device_model.as_deref(),
+        Some("NVIDIA GeForce RTX 5070")
+    );
+
+    // Capabilities: CC 12.0, 48 SMs, dtype smoke all PASS (T1 §2).
+    assert_eq!(
+        entry.capabilities.compute_capability,
+        ComputeCapability {
+            major: 12,
+            minor: 0
+        }
+    );
+    assert_eq!(entry.capabilities.sm_count, 48);
+    assert!(entry.capabilities.dtype_surface.f32);
+    assert!(entry.capabilities.dtype_surface.f64);
+    assert!(entry.capabilities.dtype_surface.f16);
+    assert!(entry.capabilities.dtype_surface.bf16);
+    assert!(entry.capabilities.dtype_surface.i8);
+    assert!(entry.capabilities.dtype_surface.i32);
+
+    // Memory: BOTH reports kept distinct — never conflated (T1 §8). 12227 MiB
+    // (nvidia-smi) is not the same number as 12 343 705 600 B (driver).
+    assert_eq!(entry.memory.tool_report_total_mib, Some(T1_NVIDIA_SMI_MIB));
+    assert_eq!(entry.memory.api_total_bytes, T1_DRIVER_BYTES);
+    assert_ne!(
+        entry.memory.api_total_bytes,
+        entry.memory.tool_report_total_mib.unwrap() * 1024 * 1024
+    );
+
+    // Health: healthy, epoch 1 (T1 §2).
+    assert_eq!(entry.health, DeviceHealth::Healthy);
+    assert_eq!(entry.health_generation, DeviceHealthGeneration::initial());
+
+    // P2P: one device — every directed pair is NOT ATTEMPTED, explicit (T1 §3).
+    assert_eq!(snap.p2p_state(), P2pProbeState::NotAttempted);
+
+    // Provenance + explicit sample time.
+    assert_eq!(entry.probe_provenance.probe, "device_enum + nvidia-smi");
+    assert_eq!(
+        entry.probe_provenance.tool_versions,
+        "driver 595.71.05 / CUDA 13.2"
+    );
+    assert_eq!(snap.probe_utc_nanos(), PROBE_TIME);
+}
+
+/// Identical input facts produce identical canonical bytes and an identical
+/// content-addressed id (exit gate: byte-deterministic for identical input).
+#[test]
+fn identical_facts_produce_identical_bytes_and_id() {
+    let a = t1_snapshot();
+    let b = t1_snapshot();
+    assert_eq!(a.canonical_bytes(), b.canonical_bytes());
+    assert_eq!(a.id(), b.id());
+    assert_eq!(a.id().hex(), b.id().hex());
+    assert_eq!(a.id().as_bytes().len(), 32);
+
+    // The id is the SHA-256 of the canonical bytes (content-addressed).
+    assert_eq!(a.id().hex(), sha256_hex_of(&a.canonical_bytes()));
+}
+
+/// A stale health generation rejects a snapshot before it gates admission or
+/// planning (exit gate: device removal/replacement invalidates stale
+/// identities; MD1-Q3 default).
+#[test]
+fn stale_generation_rejects_stale_snapshot() {
+    let snap = t1_snapshot(); // recorded under epoch 1
+    let current = DeviceHealthGeneration::initial().advance(); // observed change → epoch 2
+
+    assert!(snap.is_stale(current));
+    assert!(!snap.is_current_generation(current));
+    assert!(current.is_stale(snap.entry(DeviceOrdinal::new(0)).unwrap().health_generation));
+
+    // A snapshot recorded at the current generation is accepted.
+    let mut entry = t1_entry();
+    entry.health_generation = current;
+    let mut devices = BTreeMap::new();
+    devices.insert(DeviceOrdinal::new(0), entry);
+    let fresh = DeviceDiscoverySnapshot::new(PROBE_TIME + 1, devices, P2pProbeState::NotAttempted);
+    assert!(!fresh.is_stale(current));
+    assert!(fresh.is_current_generation(current));
+}
+
+/// A capability change (an admission-gating fact) advances the health epoch.
+#[test]
+fn capability_change_advances_the_health_epoch() {
+    let gen = DeviceHealthGeneration::initial();
+    let changed_gen = gen.advance();
+    let mut changed = t1_entry();
+    changed.capabilities.sm_count = 32; // capability set changed
+    changed.health_generation = changed_gen;
+
+    assert!(gen < changed_gen);
+    let mut devices = BTreeMap::new();
+    devices.insert(DeviceOrdinal::new(0), changed);
+    let snap = DeviceDiscoverySnapshot::new(PROBE_TIME, devices, P2pProbeState::NotAttempted);
+    assert!(snap.is_stale(gen));
+    assert!(snap.is_current_generation(changed_gen));
+}
+
+/// A replacement at the same ordinal (different identity facts) yields a
+/// distinct id and an epoch advance.
+#[test]
+fn replacement_at_same_ordinal_advances_the_health_epoch() {
+    let gen = DeviceHealthGeneration::initial();
+    let old = PhysicalDeviceId::cuda(PCI_UUID, Some(DRIVER_UUID.to_owned()));
+    let replaced = PhysicalDeviceId::cuda("GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", None);
+
+    assert_eq!(replaced.change_against(&old), IdentityChange::Replaced);
+    assert_ne!(replaced, old);
+    let next = gen.advance();
+    assert!(next > gen);
+    assert!(gen.is_stale(next));
+}
+
+/// Device removal is a presence change: the epoch advances and the old sample
+/// becomes stale.
+#[test]
+fn removal_advances_the_health_epoch() {
+    let gen = DeviceHealthGeneration::initial();
+    let empty: BTreeMap<DeviceOrdinal, DeviceDiscoveryEntry> = BTreeMap::new();
+    let removed = DeviceDiscoverySnapshot::new(PROBE_TIME + 2, empty, P2pProbeState::NotAttempted);
+
+    assert!(removed.devices().is_empty());
+    let next = gen.advance();
+    assert!(next > gen);
+    assert!(t1_snapshot().is_stale(next));
+}
+
+/// Renaming the ordinal locator keeps the identity; a different device that
+/// happens to reuse an ordinal is a distinct id (locator-only rule).
+#[test]
+fn ordinal_rename_keeps_identity_but_snapshot_records_locator() {
+    let mut renamed = t1_entry();
+    renamed.ordinal = DeviceOrdinal::new(7);
+    assert_eq!(renamed.identity, t1_entry().identity);
+
+    let mut other = t1_entry();
+    other.identity = PhysicalDeviceId::cuda("GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", None);
+    assert_ne!(other.identity, t1_entry().identity);
+    assert_eq!(other.ordinal, DeviceOrdinal::new(0));
+}
+
+/// A snapshot entry whose ordinal disagrees with its map key is a programmer
+/// error and fails fast.
+#[test]
+#[should_panic(expected = "discovery entry ordinal must match its map key")]
+fn mismatched_ordinal_key_panics() {
+    let mut entry = t1_entry();
+    entry.ordinal = DeviceOrdinal::new(9);
+    let mut devices = BTreeMap::new();
+    devices.insert(DeviceOrdinal::new(0), entry);
+    let _ = DeviceDiscoverySnapshot::new(PROBE_TIME, devices, P2pProbeState::NotAttempted);
+}
+
+/// The hand-rolled SHA-256 matches published FIPS 180-4 test vectors.
+#[test]
+fn sha256_known_answer_vectors() {
+    assert_eq!(
+        super::Sha256::digest(b""),
+        hex_decode("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    );
+    assert_eq!(
+        super::Sha256::digest(b"abc"),
+        hex_decode("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    );
+    assert_eq!(
+        super::Sha256::digest(b"The quick brown fox jumps over the lazy dog"),
+        hex_decode("d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592")
+    );
+}
+
+fn sha256_hex_of(bytes: &[u8]) -> String {
+    let digest = super::Sha256::digest(bytes);
+    let mut s = String::with_capacity(64);
+    for b in digest {
+        use std::fmt::Write;
+        write!(s, "{b:02x}").expect("writing to a String cannot fail");
+    }
+    s
+}
+
+fn hex_decode(hex: &str) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    for (i, byte) in hex.as_bytes().chunks_exact(2).enumerate() {
+        let hi = (byte[0] as char).to_digit(16).expect("hex digit");
+        let lo = (byte[1] as char).to_digit(16).expect("hex digit");
+        out[i] = ((hi << 4) | lo) as u8;
+    }
+    out
+}
