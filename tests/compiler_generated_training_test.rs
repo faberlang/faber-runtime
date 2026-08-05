@@ -14,10 +14,11 @@ use std::process::Command;
 
 const FINITE_DIFFERENCE_TOLERANCE: f32 = 2.0e-3;
 
-// MLP: 64 trainable params × 8 FD-oracle SGD steps accumulates ~0.020
-// error (measured max delta 0.020). Tighter FD step (eps) would reduce
-// truncation but amplify floating-point noise; the value is documented
-// rather than silently discarding oracle steps.
+// MLP: 64 trainable params × 8 FD-oracle SGD steps (fixture lr 0.1)
+// accumulates ~0.02 error (measured max delta 0.016 vs the device trace).
+// Tighter FD step (eps) would reduce truncation but amplify floating-point
+// noise; the value is documented rather than silently discarding oracle
+// steps.
 const MLP_FD_TOLERANCE: f32 = 2.5e-2;
 
 // Fixed initial parameters — same-shape bias (2×2) to avoid broadcast
@@ -185,19 +186,81 @@ fn parse_f32_values(stdout: &str) -> Vec<f32> {
             continue;
         }
         // Bracketed list: [val, val, ...]
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            let inner = &trimmed[1..trimmed.len() - 1];
-            for part in inner.split(',') {
-                let part = part.trim();
-                if !part.is_empty() {
-                    if let Ok(v) = part.parse::<f32>() {
-                        values.push(v);
-                    }
-                }
+        values.extend(parse_bracketed_f32_list(trimmed));
+    }
+    values
+}
+
+/// Parse a bracketed f32 list: `[3.14, 1.23, ...]`. Returns an empty vec for
+/// any other input shape.
+fn parse_bracketed_f32_list(line: &str) -> Vec<f32> {
+    let line = line.trim();
+    if !(line.starts_with('[') && line.ends_with(']')) {
+        return Vec::new();
+    }
+    let inner = &line[1..line.len() - 1];
+    let mut values = Vec::new();
+    for part in inner.split(',') {
+        let part = part.trim();
+        if !part.is_empty() {
+            if let Ok(v) = part.parse::<f32>() {
+                values.push(v);
             }
         }
     }
     values
+}
+
+/// Extract the per-step loss trace from the device route's training report.
+///
+/// The RepeatingStep route (S5-U5, `faber/src/package/device/run.rs`) prints
+/// the loss trace as one line per step:
+///
+/// ```text
+/// device: training: 100 step(s) on ONE session; per-step observation (loss) trace:
+/// device:   step 0: [1.5764482]
+/// device:   step 1: [1.3989581]
+/// ...
+/// ```
+///
+/// Values are placed at their explicit step index — not by stdout position —
+/// because the route prints the final loss observation buffer line *before*
+/// the trace, so a naive line-order scan would misorder the first value.
+fn parse_step_loss_trace(stdout: &str) -> Vec<f32> {
+    let mut trace: Vec<f32> = Vec::new();
+    for line in stdout.lines() {
+        let line = line.trim();
+        let Some(after_step) = line
+            .strip_prefix("device:")
+            .and_then(|rest| rest.trim().strip_prefix("step "))
+        else {
+            continue;
+        };
+        let digit_len = after_step
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .count();
+        if digit_len == 0 {
+            continue;
+        }
+        let Ok(step) = after_step[..digit_len].parse::<usize>() else {
+            continue;
+        };
+        let Some(list) = after_step[digit_len..].strip_prefix(':') else {
+            continue;
+        };
+        let values = parse_bracketed_f32_list(list);
+        if values.is_empty() {
+            continue;
+        }
+        if trace.len() <= step {
+            trace.resize(step + values.len(), 0.0);
+        }
+        for (offset, &value) in values.iter().enumerate() {
+            trace[step + offset] = value;
+        }
+    }
+    trace
 }
 
 /// Parse the loss value from `nota` output.
@@ -363,9 +426,14 @@ fn mlp_forward_loss(params: &[f32]) -> f32 {
     squared.media().expect("mean")
 }
 
-/// Oracle MLP loss trace with finite-difference SGD over 8 steps.
+/// Oracle MLP loss trace with finite-difference SGD over `steps` steps.
 /// Only trainable params (weight1, bias1, weight2, bias2 = indices 16..80)
 /// are updated by SGD. Input (0..16) and target (constant) are frozen.
+///
+/// The fixture is the S5-U7 100-step device product fixture
+/// (`examples/training/mlp`, declared `inputs.lr = [0.1]`); the test compares
+/// its FIRST 8 steps, so the oracle runs from the same pinned initial params
+/// with the fixture's declared lr.
 fn oracle_mlp_loss_trace(steps: usize) -> Vec<f32> {
     let init_params: Vec<f32> = vec![
         // input (16)
@@ -380,7 +448,8 @@ fn oracle_mlp_loss_trace(steps: usize) -> Vec<f32> {
         0.1, -0.2, 0.1, 0.0, 0.0, 0.1, -0.1, 0.2, -0.1, 0.0, 0.2, -0.1, 0.1, -0.1, 0.0, 0.1,
     ];
     let mut params = init_params;
-    let lr = 0.01_f32;
+    // The fixture's declared device lr (faber.toml `inputs.lr = [0.1]`).
+    let lr = 0.1_f32;
     let eps = 1.0e-3_f32;
     let mut trace = Vec::with_capacity(steps);
 
@@ -438,8 +507,9 @@ fn compiler_generated_mlp_loss_trace_matches_tape_oracle() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Parse loss trace from nota output (8 values).
-    let exemplum_trace_raw = parse_f32_values(&stdout);
+    // Parse the loss trace from the device route's per-step observation
+    // lines (the S5-U5 training report), in step order.
+    let exemplum_trace_raw = parse_step_loss_trace(&stdout);
 
     const STEPS: usize = 8;
     assert!(
@@ -455,7 +525,7 @@ fn compiler_generated_mlp_loss_trace_matches_tape_oracle() {
     // All 8 steps: compare against FD oracle.
     // Step 0 uses tight tolerance (pure forward, no gradient error).
     // Steps 1-7 use MLP_FD_TOLERANCE: 64 trainable params × 8 SGD steps
-    // accumulate ~0.020 FD truncation error (measured, not guessed).
+    // accumulate ~0.02 FD truncation error (measured, not guessed).
     for (i, (&actual, &expected)) in exemplum_trace.iter().zip(oracle_trace.iter()).enumerate() {
         let tolerance = if i == 0 {
             FINITE_DIFFERENCE_TOLERANCE
