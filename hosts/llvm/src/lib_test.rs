@@ -3559,3 +3559,55 @@ fn solum_read_bytes_reads_raw_file_bytes() {
     std::fs::remove_file(&path).ok();
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn opaque_nota_renders_lista_textus_and_octeti_in_rust_debug_shape() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
+
+    // lista<textus>: array of text handles renders ["prima", "secunda"].
+    let mut handles = Vec::new();
+    for line in ["prima", "secunda"] {
+        let text = format::store_text(context, line.to_owned());
+        assert_eq!(text.status, STATUS_OK);
+        handles.push(array::RuntimeValue::Ptr(text.value));
+    }
+    let array = array::store_array(
+        runtime,
+        faber::host_abi::VALUE_KIND_PTR,
+        handles,
+    );
+    assert_eq!(array.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, array.value),
+        Some(r#"["prima", "secunda"]"#.to_owned())
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_ptr(context, array.value.cast()) },
+        STATUS_OK
+    );
+
+    // octeti: byte payload renders as decimal byte list.
+    let octeti = valor_aggregate::store_octeti(runtime, b"prima\n".to_vec());
+    assert_eq!(octeti.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, octeti.value),
+        Some("[112, 114, 105, 109, 97, 10]".to_owned())
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_ptr(context, octeti.value.cast()) },
+        STATUS_OK
+    );
+
+    // Unrecognized handle stays fail-closed.
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_ptr(context, ptr::null()) },
+        STATUS_UNSUPPORTED
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}

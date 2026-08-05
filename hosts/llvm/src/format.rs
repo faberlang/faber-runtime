@@ -6,6 +6,7 @@ use faber::host_abi::{
     STATUS_OK, STATUS_PANIC,
 };
 use faber::{display_bivalens, display_fractus};
+use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 
 fn ffi_ptr_result(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrResultV1 {
@@ -249,6 +250,16 @@ pub(super) fn text_value(text: *const FaberRtSliceV1) -> Option<String> {
         unsafe { std::slice::from_raw_parts(text.data, len) }
     };
     std::str::from_utf8(bytes).ok().map(str::to_owned)
+}
+
+/// Resolve an arena text handle to its [`RuntimeText`] (pointer-equality
+/// lookup; never dereferences an unknown handle).
+pub(super) fn find_text(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeText> {
+    runtime
+        .texts
+        .iter()
+        .find(|text| std::ptr::eq(text.as_ref(), handle.cast_const().cast::<RuntimeText>()))
+        .map(super::StableBox::as_ref)
 }
 
 pub(super) fn store_text(context: *mut FaberRtContextV1, value: String) -> FaberRtPtrResultV1 {

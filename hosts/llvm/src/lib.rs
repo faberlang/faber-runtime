@@ -120,7 +120,7 @@ use sparsa::{
     __faber_rt_v1_sparse_densify, __faber_rt_v1_sparse_from_tensor, __faber_rt_v1_sparse_get,
     __faber_rt_v1_sparse_new, __faber_rt_v1_sparse_nonzero, __faber_rt_v1_sparse_set,
 };
-use std::ffi::{c_char, c_int};
+use std::ffi::{c_char, c_int, c_void};
 use std::fmt::Display;
 use std::io::{self, Write};
 use std::ops::{Deref, DerefMut};
@@ -451,17 +451,65 @@ fn unsupported_opaque_diagnostic(context: *mut FaberRtContextV1) -> FaberRtStatu
     }
 }
 
-/// Report an unsupported opaque `nota` value.
+/// Render an opaque `nota`/`mone` handle the LLVM host can display: an
+/// arena-owned `lista<textus>` handle or an `octeti` byte payload. Both render
+/// in the Rust oracle's Debug shape (`["prima", "secunda"]` / `[112, 114, …]`).
+/// Returns `None` for unrecognized or unsupported handles (fail-closed).
+fn opaque_diagnostic_text(runtime: &RuntimeContext, handle: *mut c_void) -> Option<String> {
+    if let Some(array) = array::find_array(runtime, handle) {
+        if array.kind != faber::host_abi::VALUE_KIND_PTR {
+            return None;
+        }
+        let mut rendered = Vec::with_capacity(array.values.len());
+        for element in &array.values {
+            let array::RuntimeValue::Ptr(element_handle) = element else {
+                return None;
+            };
+            let text = format::find_text(runtime, *element_handle)?;
+            rendered.push(text.value.clone());
+        }
+        return Some(format!("{rendered:?}"));
+    }
+    if let Some(bytes) = valor_aggregate::find_octeti(runtime, handle) {
+        return Some(format!("{bytes:?}"));
+    }
+    None
+}
+
+/// Render an opaque `nota`/`mone` value (see [`opaque_diagnostic_text`]).
 ///
 /// # Safety
 ///
-/// `context` must be null or a live runtime context. `_value` is ignored.
+/// `context` must be null or a live runtime context. `value` is only used for
+/// pointer-equality arena lookups; it is never dereferenced directly.
+fn render_opaque_diagnostic(
+    context: *mut FaberRtContextV1,
+    stderr: bool,
+    value: *const u8,
+) -> FaberRtStatusV1 {
+    if context.is_null() {
+        return STATUS_INVALID_ARGUMENT;
+    }
+    let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+    let handle = value.cast_mut().cast::<c_void>();
+    let Some(text) = opaque_diagnostic_text(runtime, handle) else {
+        return unsupported_opaque_diagnostic(context);
+    };
+    write_diagnostic(context, stderr, text)
+}
+
+/// Report an opaque `nota` value (`lista<textus>` / `octeti` when displayable).
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `value` is only used for
+/// pointer-equality arena lookups.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_ptr(
     context: *mut FaberRtContextV1,
-    _value: *const u8,
+    value: *const u8,
 ) -> FaberRtStatusV1 {
-    unsupported_opaque_diagnostic(context)
+    render_opaque_diagnostic(context, false, value)
 }
 
 /// Report a text `nota` value.
@@ -578,9 +626,9 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i32(
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_ptr(
     context: *mut FaberRtContextV1,
-    _value: *const u8,
+    value: *const u8,
 ) -> FaberRtStatusV1 {
-    unsupported_opaque_diagnostic(context)
+    render_opaque_diagnostic(context, true, value)
 }
 
 /// Report a text `mone` value.
