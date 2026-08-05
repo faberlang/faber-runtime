@@ -2,11 +2,19 @@
 //! kept distinct), byte determinism, health-epoch gating, and the locator
 //! semantics. SHA-256 known-answer vectors prove the content-addressing
 //! digest.
+//!
+//! MD1-D2 (evidence + determinism, added below): the T1 pharos fixture's
+//! content-addressed hash is **frozen** in a golden test, and the NOT
+//! ATTEMPTED rows (two-physical-identity, every directed P2P pair,
+//! independent device-loss) are proven explicit in the snapshot
+//! representation — an absent/not-attempted fact can never be mistaken for a
+//! pass (T1 §8; CTO `2f90eafd` §5b).
 
 use crate::device::DeviceBackend;
 use crate::device_identity::{
     DeviceHealthGeneration, DeviceOrdinal, IdentityChange, PhysicalDeviceId,
 };
+use crate::device_set::{DeviceLinkState, DeviceTopologySnapshot, LinkGateError};
 use crate::discovery::{
     ComputeCapability, DeviceCapabilities, DeviceDiscoveryEntry, DeviceDiscoverySnapshot,
     DeviceHealth, DeviceMemory, DtypeSurface, P2pProbeState, ProbeProvenance,
@@ -267,4 +275,144 @@ fn hex_decode(hex: &str) -> [u8; 32] {
         out[i] = ((hi << 4) | lo) as u8;
     }
     out
+}
+
+// ============================================================================
+// MD1-D2 — discovery snapshot evidence + determinism.
+//
+// The [`t1_snapshot`] fixture above is built from the T1 measured facts
+// (FC9). The tests in this section (a) pin the fixture's content-addressed
+// hash so any drift in the facts or the canonical encoding breaks loudly
+// instead of silently changing the evidence, and (b) prove the NOT ATTEMPTED
+// rows are EXPLICIT in the snapshot representation: two-physical-identity,
+// every directed P2P pair `i→j, i≠j`, and independent device-loss can never
+// be mistaken for a pass (T1 §8; CTO `2f90eafd` §5b).
+// ============================================================================
+
+/// The frozen content hash of the T1 pharos fixture (MD1-D2 evidence).
+///
+/// `DeviceDiscoverySnapshot` ids are content-addressed — SHA-256 over the
+/// canonical bytes of every fact, including the explicit probe time
+/// (identical facts → identical hash). Pinning the fixture id makes the
+/// evidence durable: any change to the T1 facts or the canonical encoding
+/// breaks this golden test.
+///
+/// Computed 2026-08-05 from the MD1-D2 pharos re-run (facts unchanged) via
+/// the `t1_snapshot()` fixture — see
+/// `~/work/ianzepp/trials/multi-device-md1/raw/receipt.md`.
+const T1_PHAROS_FIXTURE_HASH_HEX: &str =
+    "9ca98f77629c571080fc9d7d59ed04d6d69b513fc908532f89872c9fb25c324d";
+
+/// MD1-D2: the pharos snapshot fixture validates and is byte-deterministic —
+/// its content-addressed id is frozen evidence.
+#[test]
+fn t1_pharos_fixture_hash_is_frozen() {
+    let snap = t1_snapshot();
+    assert_eq!(snap.id().hex(), T1_PHAROS_FIXTURE_HASH_HEX);
+    assert_eq!(snap.id().as_bytes().len(), 32);
+
+    // Determinism for identical input facts: rebuilding the identical
+    // fixture yields identical canonical bytes and an identical id.
+    assert_eq!(t1_snapshot().canonical_bytes(), snap.canonical_bytes());
+    assert_eq!(t1_snapshot().id(), snap.id());
+}
+
+/// MD1-D2: two-physical-identity is NOT ATTEMPTED — the snapshot carries
+/// exactly one physical identity row, and no second identity is claimed
+/// anywhere in the representation (T1 §8; CTO `2f90eafd` §5b).
+#[test]
+fn two_physical_identity_row_is_explicitly_not_attempted() {
+    let snap = t1_snapshot();
+
+    // Exhaustive enumeration: exactly one device entry, one identity.
+    assert_eq!(snap.devices().len(), 1);
+    let identities: Vec<&PhysicalDeviceId> =
+        snap.devices().values().map(|e| &e.identity).collect();
+    assert_eq!(identities.len(), 1);
+    assert_eq!(
+        *identities[0],
+        PhysicalDeviceId::cuda(PCI_UUID, Some(DRIVER_UUID.to_owned()))
+    );
+
+    // No second identity is recorded at any other ordinal locator — a
+    // consumer cannot read a second physical identity out of this sample.
+    assert!(snap.entry(DeviceOrdinal::new(0)).is_some());
+    assert!(snap.entry(DeviceOrdinal::new(1)).is_none());
+
+    // The probe-level P2P state is the explicit marker that multi-device
+    // rows were never probed on this host.
+    assert_eq!(snap.p2p_state(), P2pProbeState::NotAttempted);
+}
+
+/// MD1-D2: every directed P2P pair `i→j, i≠j` is NOT ATTEMPTED — the
+/// probe-level state says so explicitly, the single-device host carries no
+/// admitted link, and the topology gate never admits a cross-device
+/// traversal (C2 topology gate; T1 §3).
+#[test]
+fn every_directed_p2p_pair_is_explicitly_not_attempted() {
+    let snap = t1_snapshot();
+
+    // Probe-level explicit marker: the state is recorded, distinct from
+    // `Attempted` — a consumer can see the pairs were never probed.
+    assert_eq!(snap.p2p_state(), P2pProbeState::NotAttempted);
+    assert_ne!(snap.p2p_state(), P2pProbeState::Attempted);
+
+    let pharos = PhysicalDeviceId::cuda(PCI_UUID, Some(DRIVER_UUID.to_owned()));
+    let topo = DeviceTopologySnapshot::new(snap, []);
+
+    // The single-device host carries zero directed link rows and no admitted
+    // link anywhere in the topology.
+    assert_eq!(topo.links().count(), 0);
+    assert!(!topo
+        .links()
+        .any(|l| matches!(l.state(), DeviceLinkState::Admitted { .. })));
+
+    // A self-move is a local copy, not a P2P row (T1 §3).
+    assert_eq!(topo.traversal_allowed(&pharos, &pharos), Ok(()));
+
+    // A traversal to any *different* device is rejected — an absent or
+    // NOT-ATTEMPTED fact is never assumed (C2 topology gate; T1 §3).
+    let stranger = PhysicalDeviceId::cuda("GPU-99999999-8888-7777-6666-555555555555", None);
+    assert_eq!(
+        topo.traversal_allowed(&pharos, &stranger),
+        Err(LinkGateError::UnknownEndpoint {
+            endpoint: stranger
+        })
+    );
+}
+
+/// MD1-D2: independent device-loss is NOT ATTEMPTED — the snapshot records a
+/// single healthy device and carries no device-loss or degradation row. A
+/// loss observation (removal or degraded transition) would surface as a
+/// presence/health change at an *advanced* epoch — a different sample. This
+/// sample claims none, so the healthy single row can never be mistaken for a
+/// pass on independent device-loss handling (T1 §8; CTO `2f90eafd` §5b).
+#[test]
+fn independent_device_loss_row_is_explicitly_not_attempted() {
+    let snap = t1_snapshot();
+
+    // Exactly one device, healthy at epoch 1 — the only rows in the sample.
+    assert_eq!(snap.devices().len(), 1);
+    let entry = snap.entry(DeviceOrdinal::new(0)).unwrap();
+    assert_eq!(entry.health, DeviceHealth::Healthy);
+    assert_eq!(entry.health_generation, DeviceHealthGeneration::initial());
+
+    // No degraded row exists anywhere in the representation.
+    assert!(!snap
+        .devices()
+        .values()
+        .any(|e| matches!(e.health, DeviceHealth::Degraded(_))));
+
+    // No removal/loss row exists either: a removal would shrink or empty the
+    // device map at an advanced epoch. The map is exhaustive — exactly one
+    // healthy entry — so no device-loss observation is claimed.
+    assert!(snap.devices().iter().all(|(ordinal, e)| {
+        *ordinal == DeviceOrdinal::new(0) && e.health == DeviceHealth::Healthy
+    }));
+    assert!(snap.is_current_generation(DeviceHealthGeneration::initial()));
+
+    // Independent device-loss — one of ≥2 devices failing while others
+    // continue — is not probed on a single-device host: there is no second
+    // device whose loss could have been independently observed.
+    assert_eq!(snap.devices().len(), 1);
 }
