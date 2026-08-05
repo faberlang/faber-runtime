@@ -19,6 +19,7 @@ pub mod intervallum;
 pub mod json;
 pub mod packed_numeric;
 pub mod partition;
+pub mod policy;
 pub mod regex;
 pub mod sparsa;
 pub mod tensor;
