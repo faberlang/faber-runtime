@@ -26,6 +26,7 @@ pub mod quantized_tensor_layout;
 pub mod regex;
 pub mod sparsa;
 pub mod tensor;
+pub mod tensor_view;
 pub mod textus;
 pub mod tokenizer;
 pub mod valor;
@@ -115,3 +116,7 @@ mod quantized_tensor_layout_test;
 #[cfg(test)]
 #[path = "tokenizer_test.rs"]
 mod tokenizer_test;
+
+#[cfg(test)]
+#[path = "tensor_view_test.rs"]
+mod tensor_view_test;
