@@ -7,6 +7,7 @@ pub mod arena;
 pub mod ascii;
 mod autograd;
 pub mod bound_plan;
+pub mod cpu_oracle;
 pub mod decoder_ops;
 pub mod dequant;
 pub mod device;
@@ -133,3 +134,7 @@ mod dequant_test;
 #[cfg(test)]
 #[path = "decoder_ops_test.rs"]
 mod decoder_ops_test;
+
+#[cfg(test)]
+#[path = "cpu_oracle_test.rs"]
+mod cpu_oracle_test;

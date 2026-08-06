@@ -233,12 +233,16 @@ fn dequant_q6_k(block: &[u8]) -> Vec<f32> {
     let mut y = vec![0.0f32; 256];
     for n in [0usize, 128] {
         let sc_base = n / 16; // the C `sc += 8` per 128-group
+        let ql_off = n / 2; // the C `ql += 64` per 128-group
+        let qh_off = n / 4; // the C `qh += 32` per 128-group
         for l in 0..32usize {
             let is = l / 16;
-            let q1 = i32::from((ql[l] & 0x0f) | (((qh[l] >> 0) & 3) << 4)) - 32;
-            let q2 = i32::from((ql[l + 32] & 0x0f) | (((qh[l] >> 2) & 3) << 4)) - 32;
-            let q3 = i32::from((ql[l] >> 4) | (((qh[l] >> 4) & 3) << 4)) - 32;
-            let q4 = i32::from((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)) - 32;
+            let q1 = i32::from((ql[ql_off + l] & 0x0f) | (((qh[qh_off + l] >> 0) & 3) << 4)) - 32;
+            let q2 =
+                i32::from((ql[ql_off + l + 32] & 0x0f) | (((qh[qh_off + l] >> 2) & 3) << 4)) - 32;
+            let q3 = i32::from((ql[ql_off + l] >> 4) | (((qh[qh_off + l] >> 4) & 3) << 4)) - 32;
+            let q4 =
+                i32::from((ql[ql_off + l + 32] >> 4) | (((qh[qh_off + l] >> 6) & 3) << 4)) - 32;
             let sc0 = f32::from(sc[sc_base + is + 0] as i8);
             let sc2 = f32::from(sc[sc_base + is + 2] as i8);
             let sc4 = f32::from(sc[sc_base + is + 4] as i8);
