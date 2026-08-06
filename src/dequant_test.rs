@@ -21,6 +21,15 @@
 //! 9. Row/block byte-length mismatches and declared-repack layouts are
 //!    rejected with typed errors.
 //! 10. The toy packed-u4 carrier stays un-admitted (no dequant path).
+//! 11. Every dequant `Vec<f32>` is a CPU-oracle materialization accompanied
+//!     by an [`OracleReceipt`]: the structural descriptor (source tensor
+//!     identity + encoding/byte range, destination contiguous-f32 layout +
+//!     byte extent, transform `ggml-quants.c @ a957b7747`, `purpose =
+//!     CpuOracle`), deterministic-fixture evidence (output digest + generation
+//!     timing/peak bytes — setup evidence, not decode metrics), the explicit
+//!     statement that the conversion neither changes `RepackIdentity::Native`
+//!     nor authorizes converted-weight GPU/headline execution, and the same
+//!     fail-closed gates as `dequant_tensor`.
 //!
 //! The golden comparison is **bit-exact**: every expected value is the
 //! reference's u32 IEEE-754 bit pattern, compared against `f32::to_bits()`
@@ -32,7 +41,7 @@ use crate::gguf::{
 };
 use crate::json::Json;
 use crate::quantized_tensor_layout::{
-    ByteRange, QuantizedLayoutError, QuantizedTensorLayout, RepackHash,
+    ByteRange, QuantizedLayoutError, QuantizedTensorLayout, RepackHash, RepackIdentity,
 };
 use crate::tensor_view::{TensorView, TensorViewEntry, TensorViewError};
 use crate::valor::Valor;
@@ -587,4 +596,154 @@ fn golden_identity_matches_the_pinned_row() {
         text(&obj(model, "path")),
         "/Users/ianzepp/ai/models/SmolLM2-360M-Instruct-Q4_K_M.gguf"
     );
+}
+
+// ---------------------------------------------------------------------------
+// 11. Oracle-materialization receipt accompanies the dequant Vec<f32>
+// ---------------------------------------------------------------------------
+
+#[test]
+fn oracle_receipt_accompanies_the_materialized_tensor() {
+    let Some(bytes) = pinned_model_bytes() else { return; };
+    let Some(golden) = load_goldens() else { return; };
+    let admission = admit_gguf(&bytes).expect("pinned row must admit");
+    let view = TensorView::build(&admission, &bytes).expect("view must build");
+    assert!(view.coverage_ok(), "the pinned view must tile exactly");
+
+    let fixtures = list(&golden_obj(&golden, "tensor_fixtures"));
+    assert!(!fixtures.is_empty(), "golden must contain tensor fixtures");
+    for item in fixtures {
+        let name = text(&obj(item, "name"));
+        let entry = view
+            .tensor(name)
+            .unwrap_or_else(|| panic!("{name} must be in the pinned view"));
+
+        // Structural descriptor: source identity / encoding / byte range,
+        // destination contiguous-f32 layout + byte extent, transform
+        // implementation/version, oracle purpose.
+        let receipt =
+            OracleReceipt::for_tensor(&view, entry).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(receipt.source_tensor, name, "{name} source identity");
+        assert_eq!(receipt.source_encoding, entry.ggml_type, "{name} source encoding");
+        assert_eq!(receipt.source_byte_range, entry.byte_range, "{name} source byte range");
+        assert_eq!(receipt.dest_element_count, entry.element_count, "{name} dest elements");
+        assert_eq!(
+            receipt.dest_byte_extent,
+            entry.element_count * entry.layout.logical_dtype().bytes(),
+            "{name} dest byte extent"
+        );
+        assert_eq!(receipt.transform_impl, ORACLE_TRANSFORM_IMPL, "{name} transform");
+        assert_eq!(receipt.purpose, OraclePurpose::CpuOracle, "{name} oracle purpose");
+
+        // The conversion neither changes RepackIdentity::Native ...
+        assert_eq!(
+            entry.layout.repack_identity(),
+            RepackIdentity::Native,
+            "{name} layout must stay native"
+        );
+
+        // ... nor authorizes converted-weight execution: the receipt makes
+        // the oracle boundary explicit; digest / timing / peak bytes are
+        // fixture-generation setup evidence and are absent on a live
+        // materialization.
+        assert_eq!(
+            receipt.output_digest,
+            None,
+            "{name}: live materialization carries no fixture digest"
+        );
+        assert_eq!(receipt.timing_us, None, "{name}: live materialization carries no timing");
+        assert_eq!(
+            receipt.peak_temp_bytes,
+            None,
+            "{name}: live materialization carries no peak bytes"
+        );
+
+        // Deterministic-fixture evidence (recorded at fixture generation):
+        // the receipt's output digest equals the actual materialized f32 LE
+        // byte stream, and the golden's generation-time timing + peak
+        // temporary bytes are carried.
+        let out = dequant_tensor(&view, entry).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let digest = sha256(&f32_le_bytes(&out));
+        assert_eq!(hex(&digest), text(&obj(item, "sha256")), "{name} fixture digest");
+        let evidenced = receipt.with_fixture_evidence(
+            digest,
+            int(&obj(item, "timing_us")) as u64,
+            int(&obj(item, "peak_temp_bytes")) as u64,
+        );
+        assert_eq!(evidenced.output_digest, Some(digest), "{name} evidenced digest");
+        assert_eq!(
+            evidenced.timing_us,
+            Some(int(&obj(item, "timing_us")) as u64),
+            "{name} evidenced timing"
+        );
+        assert_eq!(
+            evidenced.peak_temp_bytes,
+            Some(int(&obj(item, "peak_temp_bytes")) as u64),
+            "{name} evidenced peak bytes"
+        );
+    }
+}
+
+#[test]
+fn oracle_receipt_fails_closed_like_dequant_tensor() {
+    let bytes = vec![0u8; 4096];
+
+    // Gapped range set -> CoverageNotOk (same gate as dequant_tensor).
+    let view = TensorView::build(&gapped_admission(), &bytes)
+        .expect("a gapped view still builds (ranges are individually in-bounds)");
+    let entry = view.entry(0).expect("first entry");
+    let err = OracleReceipt::for_tensor(&view, entry).expect_err("gapped view must fail closed");
+    assert!(matches!(err, DequantError::CoverageNotOk));
+
+    // Covered view + forged past-file entry -> EntryNotCovered.
+    let view = TensorView::build(&covered_admission(), &bytes)
+        .expect("covered view must build");
+    assert!(view.coverage_ok(), "control view must tile exactly");
+    let good = view.entry(0).expect("first entry");
+    let past_file = TensorViewEntry {
+        name: "forged.past_file.weight".to_string(),
+        ggml_type: good.ggml_type,
+        dims: good.dims.clone(),
+        element_count: good.element_count,
+        byte_range: ByteRange::new(0, 5000),
+        layout: good.layout.clone(),
+    };
+    let err = OracleReceipt::for_tensor(&view, &past_file)
+        .expect_err("past-file entry must fail closed");
+    assert!(matches!(
+        err,
+        DequantError::EntryNotCovered { ref name } if name == "forged.past_file.weight"
+    ));
+
+    // Forged in-file but oversized entry -> row-length backstop.
+    let oversized = TensorViewEntry {
+        name: "forged.oversized.weight".to_string(),
+        ggml_type: good.ggml_type,
+        dims: good.dims.clone(),
+        element_count: good.element_count,
+        byte_range: ByteRange::new(0, 4096),
+        layout: good.layout.clone(),
+    };
+    let err = OracleReceipt::for_tensor(&view, &oversized)
+        .expect_err("oversized entry must fail closed");
+    assert!(matches!(
+        err,
+        DequantError::RowBytesMismatch { expected: 32, actual: 4096 }
+    ));
+
+    // Declared-repack layout -> RepackNotNative (never authorized).
+    let repacked = TensorViewEntry {
+        name: "forged.repacked.weight".to_string(),
+        ggml_type: good.ggml_type,
+        dims: good.dims.clone(),
+        element_count: good.element_count,
+        byte_range: ByteRange::new(0, 32),
+        layout: good
+            .layout
+            .clone()
+            .with_declared_repack(RepackHash::new([0xab; 32])),
+    };
+    let err = OracleReceipt::for_tensor(&view, &repacked)
+        .expect_err("declared repack must fail closed");
+    assert!(matches!(err, DequantError::RepackNotNative));
 }

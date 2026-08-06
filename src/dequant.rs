@@ -37,9 +37,25 @@
 //! a GGML block and is not expressible here (the layout type can only resolve
 //! the closed set {F32, Q5_0, Q8_0, Q4_K, Q6_K} — GI1-2 exclusion test stays
 //! green).
+//!
+//! ORACLE RECEIPT (GI2-1 CTO S1 amendment) — every dequant `Vec<f32>` is a
+//! **CPU-oracle materialization** and is accompanied by an [`OracleReceipt`]:
+//! the smallest-correct descriptor carrying source tensor identity +
+//! encoding/byte range, destination contiguous-f32 layout + byte extent, the
+//! transformation implementation/version (`ggml-quants.c @ a957b7747`),
+//! the output digest for the deterministic fixtures, `purpose = CpuOracle`,
+//! and — recorded at tensor-level fixture generation only — timing + peak
+//! temporary bytes (setup evidence, **not** a decode metric). This conversion
+//! **neither changes [`RepackIdentity::Native`]** (direct native block
+//! execution stays the contract, decision (f)) **nor authorizes
+//! converted-weight GPU/headline execution**: the f32 output exists to be
+//! bit-compared against the independent reference and to feed downstream CPU
+//! consumers of the logits oracle.
 
 use crate::gguf::GgmlType;
-use crate::quantized_tensor_layout::{QuantizedTensorLayout, RepackIdentity};
+use crate::quantized_tensor_layout::{
+    ByteRange, QuantizedTensorLayout, RepackIdentity,
+};
 use crate::tensor_view::{TensorView, TensorViewEntry};
 use std::fmt;
 
@@ -253,6 +269,13 @@ fn dequant_f32(block: &[u8]) -> Vec<f32> {
 /// [`DequantError::BlockBytesMismatch`]); a declared-repack layout is
 /// rejected ([`DequantError::RepackNotNative`]).
 ///
+/// ORACLE CONTRACT — the returned `Vec<f32>` is a **CPU-oracle
+/// materialization**: it must be accompanied by an [`OracleReceipt`]
+/// (tensor-level: [`OracleReceipt::for_tensor`]; block/row outputs are
+/// intermediate steps of that tensor-level materialization). This conversion
+/// neither changes [`RepackIdentity::Native`] nor authorizes converted-weight
+/// GPU/headline execution.
+///
 /// # Errors
 ///
 /// Returns the first typed [`DequantError`] the input contradicts.
@@ -287,6 +310,13 @@ pub fn dequant_block(
 /// `packed` must be exactly `blocks × block_bytes` bytes (fail closed with
 /// [`DequantError::RowBytesMismatch`]).
 ///
+/// ORACLE CONTRACT — the returned `Vec<f32>` is a **CPU-oracle
+/// materialization**: it must be accompanied by an [`OracleReceipt`]
+/// (tensor-level: [`OracleReceipt::for_tensor`]; block/row outputs are
+/// intermediate steps of that tensor-level materialization). This conversion
+/// neither changes [`RepackIdentity::Native`] nor authorizes converted-weight
+/// GPU/headline execution.
+///
 /// # Errors
 ///
 /// Returns the first typed [`DequantError`] the input contradicts.
@@ -318,6 +348,12 @@ pub fn dequant_row(
 /// packed bytes are read through the view's bounded accessors (their typed
 /// errors propagate as [`DequantError::View`]).
 ///
+/// ORACLE CONTRACT — the returned `Vec<f32>` is a **CPU-oracle
+/// materialization** and must be accompanied by an [`OracleReceipt`]
+/// ([`OracleReceipt::for_tensor`], which fails closed on the same gates).
+/// This conversion neither changes [`RepackIdentity::Native`] nor authorizes
+/// converted-weight GPU/headline execution.
+///
 /// # Errors
 ///
 /// Returns the first typed [`DequantError`] the input contradicts.
@@ -335,4 +371,147 @@ pub fn dequant_tensor(
     }
     let bytes = view.raw_bytes(entry).map_err(DequantError::View)?;
     dequant_row(&entry.layout, bytes)
+}
+
+// ---------------------------------------------------------------------------
+// Oracle-materialization receipt (GI2-1 CTO S1 amendment — correct before
+// next phase: GI2-1 stays closed, GI3 admission depends on this)
+// ---------------------------------------------------------------------------
+
+/// Oracle purpose of a dequant materialization.
+///
+/// The dequant `Vec<f32>` is a **CPU-oracle** materialization: it exists to be
+/// bit-compared against the independent reference (the goldens) and to feed
+/// downstream CPU consumers of the logits oracle. It **never authorizes
+/// converted-weight execution** — this conversion neither changes
+/// [`RepackIdentity::Native`] (the layout stays native; direct native block
+/// execution remains the contract, decision (f)) nor authorizes running the
+/// converted f32 weights on GPU or in the headline path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OraclePurpose {
+    /// CPU-only oracle materialization (bit-exact verification surface).
+    CpuOracle,
+}
+
+/// The transformation implementation + pinned version the dequant output is
+/// produced with: llama.cpp `ggml/src/ggml-quants.c` at the pinned checkout
+/// (commit `a957b7747`) — the same reference the golden fixtures derive from.
+pub const ORACLE_TRANSFORM_IMPL: &str = "ggml/src/ggml-quants.c @ a957b7747";
+
+/// The oracle-materialization descriptor/receipt that must accompany every
+/// dequant `Vec<f32>` (from [`dequant_block`], [`dequant_row`],
+/// [`dequant_tensor`]).
+///
+/// Smallest-correct form (GI2-1 CTO S1 amendment): the receipt is a pure
+/// descriptor of one CPU-oracle materialization of one admitted tensor — it
+/// carries no packed bytes and no decoded values. `output_digest`,
+/// `timing_us` and `peak_temp_bytes` are **deterministic-fixture setup
+/// evidence**: they are recorded at tensor-level fixture generation (see
+/// `gi2-dequant-reference.py` + the committed goldens) and are `None` on a
+/// live materialization — they are never decode metrics.
+///
+/// The receipt exists to make the oracle boundary explicit: this conversion
+/// **neither changes [`RepackIdentity::Native`]** nor **authorizes
+/// converted-weight GPU/headline execution**.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OracleReceipt {
+    /// Source tensor identity (the GGUF tensor name in the admitted file).
+    pub source_tensor: String,
+    /// Source GGML encoding (the closed pinned-row set).
+    pub source_encoding: GgmlType,
+    /// Source packed byte range within the admitted file (absolute).
+    pub source_byte_range: ByteRange,
+    /// Destination layout: contiguous f32, no padding
+    /// (`entry.layout.logical_dtype()`).
+    pub dest_element_count: u64,
+    /// Destination byte extent (`element_count × 4` for the f32 logical
+    /// dtype).
+    pub dest_byte_extent: u64,
+    /// Transformation implementation + pinned version
+    /// ([`ORACLE_TRANSFORM_IMPL`]).
+    pub transform_impl: &'static str,
+    /// Purpose: CPU-oracle materialization only.
+    pub purpose: OraclePurpose,
+    /// SHA-256 of the f32 LE byte stream of the materialized output —
+    /// recorded for the deterministic fixtures (the goldens), `None` on a
+    /// live materialization.
+    pub output_digest: Option<[u8; 32]>,
+    /// Tensor-level fixture-generation wall time (µs) — **setup evidence,
+    /// not a decode metric**; `None` on a live materialization.
+    pub timing_us: Option<u64>,
+    /// Peak temporary bytes recorded at tensor-level fixture generation —
+    /// **setup evidence, not a decode metric**; `None` on a live
+    /// materialization.
+    pub peak_temp_bytes: Option<u64>,
+}
+
+impl OracleReceipt {
+    /// Build the receipt for a tensor-level materialization of `entry`
+    /// through `view` — the descriptor that accompanies the `Vec<f32>` that
+    /// [`dequant_tensor`] would produce for the same `(view, entry)`.
+    ///
+    /// Fails closed on the same descriptor gates as [`dequant_tensor`]
+    /// without touching bytes: gapped/forged view →
+    /// [`DequantError::CoverageNotOk`]; un-covered entry →
+    /// [`DequantError::EntryNotCovered`]; declared repack →
+    /// [`DequantError::RepackNotNative`]; row byte-length mismatch →
+    /// [`DequantError::RowBytesMismatch`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the first typed [`DequantError`] the input contradicts.
+    pub fn for_tensor(
+        view: &TensorView<'_>,
+        entry: &TensorViewEntry,
+    ) -> Result<Self, DequantError> {
+        if !view.coverage_ok() {
+            return Err(DequantError::CoverageNotOk);
+        }
+        if !view.per_tensor_covered(entry) {
+            return Err(DequantError::EntryNotCovered {
+                name: entry.name.clone(),
+            });
+        }
+        if entry.layout.repack_identity() != RepackIdentity::Native {
+            return Err(DequantError::RepackNotNative);
+        }
+        let expected = entry.layout.blocks() * entry.layout.block_bytes();
+        if entry.byte_range.len() != expected {
+            return Err(DequantError::RowBytesMismatch {
+                expected,
+                actual: entry.byte_range.len(),
+            });
+        }
+        Ok(Self {
+            source_tensor: entry.name.clone(),
+            source_encoding: entry.ggml_type,
+            source_byte_range: entry.byte_range,
+            dest_element_count: entry.element_count,
+            dest_byte_extent: entry.element_count * entry.layout.logical_dtype().bytes(),
+            transform_impl: ORACLE_TRANSFORM_IMPL,
+            purpose: OraclePurpose::CpuOracle,
+            output_digest: None,
+            timing_us: None,
+            peak_temp_bytes: None,
+        })
+    }
+
+    /// Record deterministic-fixture evidence on a copy of this receipt: the
+    /// output digest (SHA-256 of the f32 LE byte stream) plus the tensor-level
+    /// fixture-generation wall time (µs) and peak temporary bytes. Setup
+    /// evidence only — never a decode metric.
+    #[must_use]
+    pub fn with_fixture_evidence(
+        &self,
+        output_digest: [u8; 32],
+        timing_us: u64,
+        peak_temp_bytes: u64,
+    ) -> Self {
+        Self {
+            output_digest: Some(output_digest),
+            timing_us: Some(timing_us),
+            peak_temp_bytes: Some(peak_temp_bytes),
+            ..self.clone()
+        }
+    }
 }
