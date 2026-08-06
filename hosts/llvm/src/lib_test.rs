@@ -1295,6 +1295,56 @@ fn valor_array_round_trip_preserves_elements() {
 }
 
 #[test]
+fn valor_array_text_elements_round_trip_preserves_textus() {
+    // L27 (d31792f5): the array element kind for textus is VALUE_KIND_PTR
+    // (`runtime_value_abi`), so `↦ valor` of a `lista<textus>` stored raw
+    // handle pointers and `valor_array` previously failed to decode them
+    // (STATUS_INVALID_ARGUMENT), latching a nonzero process exit for
+    // stdout-correct programs (est/est exit-code row). Ptr-kind elements now
+    // resolve arena text / literal descriptors / nested aggregates.
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+
+    let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_PTR) };
+    // Distinct live descriptors with stable addresses (stack locals kept
+    // alive past the pushes; a Vec would reallocate and move them).
+    let prima = FaberRtSliceV1::from_static(b"prima");
+    let secunda = FaberRtSliceV1::from_static(b"secunda");
+    let handles = [
+        ptr::from_ref(&prima).cast::<c_void>(),
+        ptr::from_ref(&secunda).cast::<c_void>(),
+    ];
+    for handle in &handles {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    array.value,
+                    VALUE_KIND_PTR,
+                    ptr::from_ref(handle).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let array_valor = unsafe { __faber_rt_v1_valor_array(context, array.value) };
+    assert!(
+        array_valor.status.is_ok(),
+        "lista<textus> ↦ valor must succeed: {:?}",
+        array_valor.status
+    );
+    assert_eq!(
+        unsafe { &*array_valor.value.cast::<Valor>() },
+        &Valor::Lista(vec![Valor::Textus("prima".to_owned()), Valor::Textus("secunda".to_owned())])
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
 fn valor_map_round_trip_preserves_entries() {
     let mut context = ptr::null_mut();
     assert_eq!(
