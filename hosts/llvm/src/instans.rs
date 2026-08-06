@@ -38,7 +38,7 @@ fn store(runtime: &mut RuntimeContext, value: Instans) -> FaberRtPtrResultV1 {
     FaberRtPtrResultV1::success(handle)
 }
 
-fn find(runtime: &RuntimeContext, handle: *mut c_void) -> Option<Instans> {
+pub(super) fn find(runtime: &RuntimeContext, handle: *mut c_void) -> Option<Instans> {
     runtime
         .instants
         .iter()

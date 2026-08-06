@@ -136,6 +136,7 @@ fn host_abi_v1_core_symbols_have_v1_prefix() {
         SYMBOL_FORMAT_I64_I64,
         SYMBOL_FORMAT_I64_I64_I64,
         SYMBOL_FORMAT_F64,
+        SYMBOL_FORMAT_F32,
         SYMBOL_TEXT_I64,
         SYMBOL_TEXT_F64,
         SYMBOL_TEXT_I1,

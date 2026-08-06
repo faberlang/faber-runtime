@@ -72,6 +72,21 @@ pub unsafe extern "C" fn __faber_rt_v1_format_f64(
     format_scalar_values(context, template, &[display_fractus(value)])
 }
 
+/// L28 (ab91f49f, W16): render a template with one f32 scalar value.
+///
+/// `display_fractus` keeps the f32 precision (`0.1f32` renders `0.1`, NOT the
+/// widened `0.10000000149011612` an f64 carrier would produce). This is the
+/// f32 display ABI the grouped multi-arg nota path needs so `fractus<f32>`
+/// scribe args join like the HIR-Rust lane.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_format_f32(
+    context: *mut FaberRtContextV1,
+    template: FaberRtSliceV1,
+    value: f32,
+) -> FaberRtPtrResultV1 {
+    format_scalar_values(context, template, &[display_fractus(value)])
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_format_text(
     context: *mut FaberRtContextV1,

@@ -70,11 +70,11 @@ use faber::host_abi::{
 use faber::{display_bivalens, display_fractus, Valor};
 #[cfg(test)]
 use format::{
-    __faber_rt_v1_format_1_ptr_to_ptr, __faber_rt_v1_format_f64, __faber_rt_v1_format_i1,
-    __faber_rt_v1_format_i64, __faber_rt_v1_format_i64_i64, __faber_rt_v1_format_i64_i64_i64,
-    __faber_rt_v1_format_text, __faber_rt_v1_format_text_i64, __faber_rt_v1_format_text_i64_i1,
-    __faber_rt_v1_format_text_text, __faber_rt_v1_text_f64, __faber_rt_v1_text_i1,
-    __faber_rt_v1_text_i64, __faber_rt_v1_text_length,
+    __faber_rt_v1_format_1_ptr_to_ptr, __faber_rt_v1_format_f32, __faber_rt_v1_format_f64,
+    __faber_rt_v1_format_i1, __faber_rt_v1_format_i64, __faber_rt_v1_format_i64_i64,
+    __faber_rt_v1_format_i64_i64_i64, __faber_rt_v1_format_text, __faber_rt_v1_format_text_i64,
+    __faber_rt_v1_format_text_i64_i1, __faber_rt_v1_format_text_text, __faber_rt_v1_text_f64,
+    __faber_rt_v1_text_i1, __faber_rt_v1_text_i64, __faber_rt_v1_text_length,
 };
 use format::{text_value, RuntimeText};
 #[cfg(test)]
@@ -520,6 +520,12 @@ pub(crate) fn opaque_value_text(runtime: &RuntimeContext, handle: *mut c_void) -
     }
     if let Some(bytes) = valor_aggregate::find_octeti(runtime, handle) {
         return Some(format!("{bytes:?}"));
+    }
+    if let Some(instans) = instans::find(runtime, handle) {
+        // L28 (ab91f49f): a raw `instans` handle in a grouped multi-arg nota
+        // renders its Rust-oracle Debug shape — the same carrier
+        // `__faber_rt_v1_instans_display` uses for the per-argument path.
+        return Some(format!("{instans:?}"));
     }
     if let Some(valor) = convert::find_valor(runtime, handle) {
         return Some(match valor {

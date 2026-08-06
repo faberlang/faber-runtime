@@ -16,6 +16,9 @@ pub const SYMBOL_FORMAT_I1: &str = "__faber_rt_v1_format_i1";
 pub const SYMBOL_FORMAT_I64_I64: &str = "__faber_rt_v1_format_i64_i64";
 pub const SYMBOL_FORMAT_I64_I64_I64: &str = "__faber_rt_v1_format_i64_i64_i64";
 pub const SYMBOL_FORMAT_F64: &str = "__faber_rt_v1_format_f64";
+// L28 (ab91f49f, W16): f32 scalar format carrier mirror — the emitter's
+// FormatString f32 display ABI (`display_fractus` keeps f32 precision).
+pub const SYMBOL_FORMAT_F32: &str = "__faber_rt_v1_format_f32";
 pub const SYMBOL_FORMAT_TEXT: &str = "__faber_rt_v1_format_text";
 pub const SYMBOL_FORMAT_TEXT_TEXT: &str = "__faber_rt_v1_format_text_text";
 pub const SYMBOL_FORMAT_TEXT_I64: &str = "__faber_rt_v1_format_text_i64";

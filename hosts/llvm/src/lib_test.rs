@@ -472,6 +472,36 @@ fn format_single_substitution_scalars_renders_correct_text() {
     unsafe { __faber_rt_v1_shutdown(context) };
 }
 
+/// L28 (ab91f49f, W16): the f32 format carrier keeps the f32 precision —
+/// `0.1f32` renders `0.1`, NOT the `0.10000000149011612` an f64-widened
+/// carrier would produce — and integral f32s keep the `.0` decimal marker
+/// (`display_fractus` semantics, matching the HIR-Rust lane).
+#[test]
+fn format_f32_keeps_f32_precision_and_decimal_marker() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    let integral = unsafe {
+        __faber_rt_v1_format_f32(context, FaberRtSliceV1::from_static("§".as_bytes()), 4.0f32)
+    };
+    let fractional = unsafe {
+        __faber_rt_v1_format_f32(context, FaberRtSliceV1::from_static("§".as_bytes()), 0.1f32)
+    };
+    assert_eq!(integral.status, STATUS_OK);
+    assert_eq!(fractional.status, STATUS_OK);
+    assert_eq!(
+        unsafe { &*integral.value.cast::<RuntimeText>() }.value,
+        "4.0"
+    );
+    assert_eq!(
+        unsafe { &*fractional.value.cast::<RuntimeText>() }.value,
+        "0.1"
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
 #[test]
 fn format_multi_arg_and_text_wrapping_renders_combined_text() {
     let mut context = ptr::null_mut();
