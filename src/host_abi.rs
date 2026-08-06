@@ -237,6 +237,11 @@ pub const SYMBOL_CLI_FIELD_F64: &str = "__faber_rt_v1_cli_field_f64";
 pub const SYMBOL_CLI_FIELD_I1: &str = "__faber_rt_v1_cli_field_i1";
 pub const SYMBOL_CLI_SELECTED_COMMAND: &str = "__faber_rt_v1_cli_selected_command";
 pub const SYMBOL_CLI_EXIT_CODE: &str = "__faber_rt_v1_cli_exit_code";
+// P10 (promotion packet failable-status-model): mirror of the shared
+// failable error carrier row (radix-host-abi owns the value). The host reads
+// the typed `ReturnError` payload from a failable `(status, payload)` result
+// (the `cape err` recovery read); see `crate::failable` for the binding.
+pub const SYMBOL_FALLIBLE_ERROR: &str = "__faber_rt_v1_fallible_error";
 
 pub const SYMBOL_GPU_COPY_IN: &str = "__faber_gpu_v1_copy_in";
 pub const SYMBOL_GPU_READBACK: &str = "__faber_gpu_v1_readback";
@@ -298,6 +303,12 @@ pub const STATUS_INVALID_ARGUMENT: FaberRtStatusV1 = FaberRtStatusV1 { code: 1 }
 pub const STATUS_IO_ERROR: FaberRtStatusV1 = FaberRtStatusV1 { code: 2 };
 pub const STATUS_PANIC: FaberRtStatusV1 = FaberRtStatusV1 { code: 3 };
 pub const STATUS_UNSUPPORTED: FaberRtStatusV1 = FaberRtStatusV1 { code: 4 };
+// P10 (promotion packet failable-status-model): the failable error-channel
+// discriminator — the status-first `(i32 status, payload…)` shape of the W10
+// profile carries STATUS_OK + the success payload on the happy path and
+// STATUS_FALLIBLE + the typed `ReturnError` payload when the failable error
+// channel fires. See `crate::failable` for the host binding.
+pub const STATUS_FALLIBLE: FaberRtStatusV1 = FaberRtStatusV1 { code: 5 };
 
 pub const DIAGNOSTIC_SYMBOLS_V1: &[(&str, &str, &str)] = &[
     ("nota", "ptr", "__faber_rt_v1_diagnostic_nota_ptr"),
