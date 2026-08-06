@@ -753,7 +753,10 @@ impl DirectedPair {
     /// A directed pair from `source` to `destination`.
     #[must_use]
     pub fn new(source: LogicalPartitionId, destination: LogicalPartitionId) -> Self {
-        Self { source, destination }
+        Self {
+            source,
+            destination,
+        }
     }
 
     /// The source partition.
@@ -1458,7 +1461,10 @@ impl PeerAdapter {
     }
 
     /// Admit one measured directed pair (per-pair flip rule — T2 §6).
-    pub fn admit_pair(&mut self, measurement: PeerPairMeasurement) -> Result<(), PairAdmissionError> {
+    pub fn admit_pair(
+        &mut self,
+        measurement: PeerPairMeasurement,
+    ) -> Result<(), PairAdmissionError> {
         self.registry.admit(measurement)
     }
 

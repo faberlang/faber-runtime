@@ -241,10 +241,7 @@ impl<'a> TensorView<'a> {
     /// wrong buffer length, a layout that fails GI1-2 re-validation, a byte
     /// range outside the file or the tensor-data region, or an arithmetic
     /// overflow. Identical bytes always yield an identical view.
-    pub fn build(
-        admission: &GgufAdmission,
-        bytes: &'a [u8],
-    ) -> Result<Self, TensorViewError> {
+    pub fn build(admission: &GgufAdmission, bytes: &'a [u8]) -> Result<Self, TensorViewError> {
         // 1. The buffer must be the exact admitted file (cheap wrong-buffer
         //    check; content is re-verifiable via `sha256_matches`).
         if bytes.len() as u64 != admission.file_size {

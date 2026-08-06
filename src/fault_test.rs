@@ -20,8 +20,8 @@
 //! makes the absent real row explicit so it can never be mistaken for a pass.
 
 use crate::bound_plan::{
-    AdmittedLogicalPlan, BoundDistributedPlan, DeclaredPlacementConstraint, LogicalPartitionId,
-    PartitionBinding, bind,
+    bind, AdmittedLogicalPlan, BoundDistributedPlan, DeclaredPlacementConstraint,
+    LogicalPartitionId, PartitionBinding,
 };
 use crate::device_identity::{DeviceHealthGeneration, DeviceOrdinal, PhysicalDeviceId};
 use crate::device_set::DeviceSet;
@@ -30,13 +30,13 @@ use crate::discovery::{
     DeviceHealth, DeviceMemory, DtypeSurface, P2pProbeState, ProbeProvenance,
 };
 use crate::execution_transaction::{
-    BarrierRef, BackendError, CollectiveBroadcastMirror, CollectiveRef, CommitError,
+    BackendError, BarrierRef, CollectiveBroadcastMirror, CollectiveRef, CommitError,
     DeviceExecutionBackend, ExecuteError, ExecutionTransaction, LaunchRef, MirroredDtype,
     MirroredStorageLayout, OperationRef, PublicationOrdinal, TransactionCommitBoundary,
     TransactionDecision, TransactionFailure, TransactionId, TransactionOperation, TransactionState,
     TransferDirectionMirror, TransferOperationMirror, TransferRef, TransportPathMirror,
 };
-use crate::fake_device::{FaultClass, FaultInjection, FaultInjectingBackend, REPLANNING_SURFACE};
+use crate::fake_device::{FaultClass, FaultInjectingBackend, FaultInjection, REPLANNING_SURFACE};
 use crate::partition::{
     AdmissionRequest, FixtureIdentityClass, HardwareIsolationClaim, PartitionBudgetLedger,
     SafePhysicalLimit, TransportClass, VirtualDevicePartition, VirtualDevicePartitionId,
@@ -54,7 +54,8 @@ const REAL_INDEPENDENT_DEVICE_LOSS_ROW: &str = "NOT ATTEMPTED";
 const UUID_A: &str = "GPU-3e017562-9ec3-da9a-962d-b8bd5f9e24be";
 const UUID_B: &str = "GPU-22222222-3333-4444-5555-666666666666";
 const PROBE_TIME: u64 = 1_752_717_600_000_000_000; // fixed sample time
-const LOGICAL_HASH: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const LOGICAL_HASH: &str =
+    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 // CS-1 declared placement (md0-mode-fixtures.md §3): 2 virtual partitions @
 // 160 MiB, forced 2-way split ≈129 MiB/device.
@@ -115,7 +116,10 @@ fn synthetic_entry(
         identity: device,
         device_model: Some("synthetic RTX 5070".to_owned()),
         capabilities: DeviceCapabilities {
-            compute_capability: ComputeCapability { major: 12, minor: 0 },
+            compute_capability: ComputeCapability {
+                major: 12,
+                minor: 0,
+            },
             sm_count: 48,
             dtype_surface: DtypeSurface {
                 f32: true,
@@ -304,7 +308,10 @@ fn fault_injection_delivers_on_first_matching_dispatch() {
     let error = transaction
         .execute(&mut backend)
         .expect_err("the t1 fault fails execute");
-    assert!(matches!(error, ExecuteError::Backend(BackendError::Timeout { .. })));
+    assert!(matches!(
+        error,
+        ExecuteError::Backend(BackendError::Timeout { .. })
+    ));
 
     let delivered = backend.delivered_faults();
     assert_eq!(delivered.len(), 1);
@@ -467,7 +474,10 @@ fn timeout_mid_copy_retires_partial_state_with_no_partial_commit() {
     let error = transaction
         .execute(&mut backend)
         .expect_err("the mid-copy timeout fails execute");
-    assert!(matches!(error, ExecuteError::Backend(BackendError::Timeout { .. })));
+    assert!(matches!(
+        error,
+        ExecuteError::Backend(BackendError::Timeout { .. })
+    ));
 
     // The mid-copy model: the in-flight copy bytes were staged and reclaimed
     // at fault delivery (a real runtime frees failed-copy staging), and never
@@ -636,10 +646,13 @@ fn degraded_mesh_fails_closed_at_declared_boundary_and_surfaces_degraded_state()
         let error = transaction
             .execute(&mut backend)
             .expect_err("the degraded partition's backend fails mid-execution");
-        assert!(matches!(
-            error,
-            ExecuteError::Backend(BackendError::DeviceLoss { .. })
-        ), "round {round}: the failure surfaces as device loss");
+        assert!(
+            matches!(
+                error,
+                ExecuteError::Backend(BackendError::DeviceLoss { .. })
+            ),
+            "round {round}: the failure surfaces as device loss"
+        );
         assert!(
             matches!(transaction.state(), TransactionState::Failed(_)),
             "round {round}: the machine is Failed after the fault"
@@ -728,7 +741,10 @@ fn degraded_mesh_records_replanning_as_md5_surface() {
     let receipt = transaction
         .abort(&mut backend, "degraded mesh — replanning is MD5's surface")
         .expect("abort completes teardown");
-    assert!(matches!(receipt.decision, TransactionDecision::Aborted { .. }));
+    assert!(matches!(
+        receipt.decision,
+        TransactionDecision::Aborted { .. }
+    ));
     assert!(matches!(transaction.state(), TransactionState::Aborted(_)));
 }
 
@@ -752,9 +768,7 @@ fn last_committed_state_remains_authoritative_after_failure() {
     .expect("first transaction constructs");
     let mut backend = FaultInjectingBackend::new();
     first.prepare(&mut backend).expect("first prepare succeeds");
-    first
-        .execute(&mut backend)
-        .expect("first execute succeeds");
+    first.execute(&mut backend).expect("first execute succeeds");
     let commit_receipt = first
         .commit(&mut backend, PublicationOrdinal::new(1))
         .expect("first commit publishes");
@@ -775,22 +789,35 @@ fn last_committed_state_remains_authoritative_after_failure() {
     )
     .expect("second transaction constructs");
     backend.inject(transfer_fault(1, FaultClass::TransferError));
-    second.prepare(&mut backend).expect("second prepare succeeds");
+    second
+        .prepare(&mut backend)
+        .expect("second prepare succeeds");
     second
         .execute(&mut backend)
         .expect_err("the injected transfer error fails the second transaction");
     let abort_receipt = second
         .abort(&mut backend, "injected fault")
         .expect("abort completes teardown");
-    assert!(matches!(abort_receipt.decision, TransactionDecision::Aborted { .. }));
+    assert!(matches!(
+        abort_receipt.decision,
+        TransactionDecision::Aborted { .. }
+    ));
 
     // The last committed state is unchanged and authoritative.
     assert_eq!(backend.published_bytes(), 0);
     assert_eq!(backend.committed_bytes(), declared_total);
     assert_eq!(backend.committed_writes().len(), 4);
     assert_eq!(
-        backend.committed_writes().keys().cloned().collect::<BTreeSet<_>>(),
-        first.declared_write_set().keys().cloned().collect::<BTreeSet<_>>(),
+        backend
+            .committed_writes()
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        first
+            .declared_write_set()
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
         "the committed write-set is exactly the first transaction's declared write-set"
     );
 }
@@ -809,8 +836,14 @@ fn no_fault_configured_behaves_like_the_happy_path_fake() {
     let receipt = transaction
         .commit(&mut backend, PublicationOrdinal::new(1))
         .expect("commit publishes on the happy path");
-    assert!(matches!(receipt.decision, TransactionDecision::Committed { .. }));
-    assert_eq!(backend.committed_bytes(), declared_write_bytes(&fixture_operations()));
+    assert!(matches!(
+        receipt.decision,
+        TransactionDecision::Committed { .. }
+    ));
+    assert_eq!(
+        backend.committed_bytes(),
+        declared_write_bytes(&fixture_operations())
+    );
 }
 
 /// The committed-state snapshot survives a backend reset between
@@ -824,9 +857,7 @@ fn committed_snapshot_persists_across_transactions() {
     let mut first = fixture_transaction();
     let mut backend = FaultInjectingBackend::new();
     first.prepare(&mut backend).expect("prepare succeeds");
-    first
-        .execute(&mut backend)
-        .expect("execute succeeds");
+    first.execute(&mut backend).expect("execute succeeds");
     first
         .commit(&mut backend, PublicationOrdinal::new(1))
         .expect("commit publishes");
@@ -861,6 +892,14 @@ fn committed_snapshot_persists_across_transactions() {
 fn fixture_prepare_reserves_within_admitted_budgets() {
     let mut transaction = fixture_transaction();
     let mut backend = FaultInjectingBackend::new();
-    transaction.prepare(&mut backend).expect("the fixture reservation fits the budgets");
-    assert_eq!(transaction.reservation().expect("reservation recorded").len(), 2);
+    transaction
+        .prepare(&mut backend)
+        .expect("the fixture reservation fits the budgets");
+    assert_eq!(
+        transaction
+            .reservation()
+            .expect("reservation recorded")
+            .len(),
+        2
+    );
 }

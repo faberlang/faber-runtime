@@ -113,11 +113,7 @@ fn find_tensor_mut(
 /// width. Returns `None` for non-integer arrays and for cells that do not fit
 /// the i64 carrier.
 fn shape_from_array(array: &RuntimeArray) -> Option<Vec<i64>> {
-    array
-        .values
-        .iter()
-        .map(integer_cell_as_i64)
-        .collect()
+    array.values.iter().map(integer_cell_as_i64).collect()
 }
 
 /// Convert an integer `RuntimeValue` cell to its `i64` carrier, or `None` for
@@ -715,11 +711,7 @@ fn to_tensor_u8(tensor: &RuntimeTensor) -> Option<Tensor<u8>> {
 fn from_tensor_u8(tensor: &Tensor<u8>) -> (Vec<i64>, Vec<RuntimeValue>) {
     (
         tensor.magnitudines(),
-        tensor
-            .planata()
-            .into_iter()
-            .map(RuntimeValue::U8)
-            .collect(),
+        tensor.planata().into_iter().map(RuntimeValue::U8).collect(),
     )
 }
 

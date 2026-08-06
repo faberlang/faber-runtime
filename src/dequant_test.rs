@@ -36,9 +36,7 @@
 //! (dequant is exact integer/half math — the tests never use `==` on floats).
 
 use crate::dequant::*;
-use crate::gguf::{
-    admit_gguf, hex, sha256, GgmlType, TensorDescriptor, PINNED_SHA256_HEX,
-};
+use crate::gguf::{admit_gguf, hex, sha256, GgmlType, TensorDescriptor, PINNED_SHA256_HEX};
 use crate::json::Json;
 use crate::quantized_tensor_layout::{
     ByteRange, QuantizedLayoutError, QuantizedTensorLayout, RepackHash, RepackIdentity,
@@ -77,7 +75,10 @@ fn load_goldens() -> Option<Json> {
             // The golden file is committed in the sibling radix repo — a skip
             // here means the sibling layout changed; report it loudly so a
             // broken path can never silently skip the reference comparison.
-            eprintln!("SKIP: dequant goldens not readable at {} ({err})", path.display());
+            eprintln!(
+                "SKIP: dequant goldens not readable at {} ({err})",
+                path.display()
+            );
             return None;
         }
     };
@@ -89,7 +90,9 @@ fn obj<'a>(v: &'a Valor, key: &str) -> &'a Valor {
     let Valor::Tabula(fields) = v else {
         panic!("expected JSON object at {key}");
     };
-    fields.get(key).unwrap_or_else(|| panic!("golden missing field {key:?}"))
+    fields
+        .get(key)
+        .unwrap_or_else(|| panic!("golden missing field {key:?}"))
 }
 
 /// Object-field access rooted at a parsed `Json` document.
@@ -98,17 +101,23 @@ fn golden_obj<'a>(golden: &'a Json, key: &str) -> &'a Valor {
 }
 
 fn text<'a>(v: &'a Valor) -> &'a str {
-    let Valor::Textus(s) = v else { panic!("expected JSON string") };
+    let Valor::Textus(s) = v else {
+        panic!("expected JSON string")
+    };
     s
 }
 
 fn int(v: &Valor) -> i64 {
-    let Valor::Numerus(n) = v else { panic!("expected JSON integer") };
+    let Valor::Numerus(n) = v else {
+        panic!("expected JSON integer")
+    };
     *n
 }
 
 fn list<'a>(v: &'a Valor) -> &'a [Valor] {
-    let Valor::Lista(items) = v else { panic!("expected JSON array") };
+    let Valor::Lista(items) = v else {
+        panic!("expected JSON array")
+    };
     items
 }
 
@@ -221,7 +230,9 @@ fn f32_blocks_are_bit_exact_passthrough() {
 
 #[test]
 fn block_fixtures_match_independent_reference_bit_exactly() {
-    let Some(golden) = load_goldens() else { return; };
+    let Some(golden) = load_goldens() else {
+        return;
+    };
     let fixtures = list(&golden_obj(&golden, "block_fixtures"));
     assert!(!fixtures.is_empty(), "golden must contain block fixtures");
     let mut real = 0usize;
@@ -265,8 +276,12 @@ fn block_fixtures_match_independent_reference_bit_exactly() {
 
 #[test]
 fn real_fixture_bytes_are_pinned_row_blocks() {
-    let Some(bytes) = pinned_model_bytes() else { return; };
-    let Some(golden) = load_goldens() else { return; };
+    let Some(bytes) = pinned_model_bytes() else {
+        return;
+    };
+    let Some(golden) = load_goldens() else {
+        return;
+    };
     let admission = admit_gguf(&bytes).expect("pinned row must admit");
     let view = TensorView::build(&admission, &bytes).expect("view must build");
     for item in list(&golden_obj(&golden, "block_fixtures")) {
@@ -295,8 +310,12 @@ fn real_fixture_bytes_are_pinned_row_blocks() {
 
 #[test]
 fn per_tensor_reconstruction_matches_reference() {
-    let Some(bytes) = pinned_model_bytes() else { return; };
-    let Some(golden) = load_goldens() else { return; };
+    let Some(bytes) = pinned_model_bytes() else {
+        return;
+    };
+    let Some(golden) = load_goldens() else {
+        return;
+    };
     let admission = admit_gguf(&bytes).expect("pinned row must admit");
     let view = TensorView::build(&admission, &bytes).expect("view must build");
     assert!(view.coverage_ok(), "the pinned view must tile exactly");
@@ -314,14 +333,22 @@ fn per_tensor_reconstruction_matches_reference() {
             .unwrap_or_else(|| panic!("{name} must be in the pinned view"));
         // Pinned-fact cross-checks: the golden type/element count agree with
         // the admitted view and the contract §2.3 mix.
-        assert_eq!(entry.ggml_type, ggml_type_from_name(expected_type), "{name} type");
+        assert_eq!(
+            entry.ggml_type,
+            ggml_type_from_name(expected_type),
+            "{name} type"
+        );
         assert_eq!(
             entry.element_count,
             int(&obj(item, "elements")) as u64,
             "{name} element count"
         );
         let out = dequant_tensor(&view, entry).unwrap_or_else(|e| panic!("{name}: {e}"));
-        assert_eq!(out.len() as u64, entry.element_count, "{name} output length");
+        assert_eq!(
+            out.len() as u64,
+            entry.element_count,
+            "{name} output length"
+        );
         let digest = sha256(&f32_le_bytes(&out));
         assert_eq!(
             hex(&digest),
@@ -398,7 +425,10 @@ fn coverage_gating_fails_closed_on_gapped_view() {
     let bytes = vec![0u8; 4096];
     let view = TensorView::build(&gapped_admission(), &bytes)
         .expect("a gapped view still builds (ranges are individually in-bounds)");
-    assert!(!view.coverage_ok(), "gapped range set must fail aggregate coverage");
+    assert!(
+        !view.coverage_ok(),
+        "gapped range set must fail aggregate coverage"
+    );
     let entry = view.entry(0).expect("first entry");
     let err = dequant_tensor(&view, entry).expect_err("dequant must refuse a gapped view");
     assert!(matches!(err, DequantError::CoverageNotOk));
@@ -411,8 +441,7 @@ fn coverage_gating_fails_closed_on_gapped_view() {
 #[test]
 fn forged_entries_fail_closed() {
     let bytes = vec![0u8; 4096];
-    let view = TensorView::build(&covered_admission(), &bytes)
-        .expect("covered view must build");
+    let view = TensorView::build(&covered_admission(), &bytes).expect("covered view must build");
     assert!(view.coverage_ok(), "control view must tile exactly");
     let good = view.entry(0).expect("first entry");
 
@@ -444,7 +473,10 @@ fn forged_entries_fail_closed() {
     let err = dequant_tensor(&view, &oversized).expect_err("oversized entry must fail closed");
     assert!(matches!(
         err,
-        DequantError::RowBytesMismatch { expected: 32, actual: 4096 }
+        DequantError::RowBytesMismatch {
+            expected: 32,
+            actual: 4096
+        }
     ));
 }
 
@@ -454,7 +486,9 @@ fn forged_entries_fail_closed() {
 
 #[test]
 fn out_of_range_block_and_byte_access_fails_closed() {
-    let Some(bytes) = pinned_model_bytes() else { return; };
+    let Some(bytes) = pinned_model_bytes() else {
+        return;
+    };
     let admission = admit_gguf(&bytes).expect("pinned row must admit");
     let view = TensorView::build(&admission, &bytes).expect("view must build");
     let entry = view.tensor("token_embd.weight").expect("token_embd.weight");
@@ -474,7 +508,9 @@ fn out_of_range_block_and_byte_access_fails_closed() {
         byte_range: ByteRange::new(view.file_size() + 10, view.file_size() + 200),
         layout: entry.layout.clone(),
     };
-    let err = view.raw_bytes(&forged).expect_err("range past the file must fail closed");
+    let err = view
+        .raw_bytes(&forged)
+        .expect_err("range past the file must fail closed");
     assert!(matches!(err, TensorViewError::AccessOutOfBounds { .. }));
 }
 
@@ -489,22 +525,34 @@ fn row_and_block_length_mismatches_fail_closed() {
     let err = dequant_block(&one, &[0u8; 33]).expect_err("short block");
     assert!(matches!(
         err,
-        DequantError::BlockBytesMismatch { expected: 34, actual: 33 }
+        DequantError::BlockBytesMismatch {
+            expected: 34,
+            actual: 33
+        }
     ));
     let err = dequant_block(&one, &[0u8; 35]).expect_err("long block");
-    assert!(matches!(err, DequantError::BlockBytesMismatch { expected: 34, .. }));
+    assert!(matches!(
+        err,
+        DequantError::BlockBytesMismatch { expected: 34, .. }
+    ));
 
     // Two Q8_0 blocks -> 68 packed bytes.
     let two = synthetic_layout_blocks(GgmlType::Q8_0, 2);
     let err = dequant_row(&two, &[0u8; 67]).expect_err("short row");
     assert!(matches!(
         err,
-        DequantError::RowBytesMismatch { expected: 68, actual: 67 }
+        DequantError::RowBytesMismatch {
+            expected: 68,
+            actual: 67
+        }
     ));
     let err = dequant_row(&two, &[0u8; 69]).expect_err("long row");
     assert!(matches!(
         err,
-        DequantError::RowBytesMismatch { expected: 68, actual: 69 }
+        DequantError::RowBytesMismatch {
+            expected: 68,
+            actual: 69
+        }
     ));
 
     // A well-formed row of two blocks succeeds and has the right shape.
@@ -517,8 +565,8 @@ fn row_and_block_length_mismatches_fail_closed() {
 
 #[test]
 fn declared_repack_layout_is_never_executed() {
-    let repacked = synthetic_layout(GgmlType::Q8_0)
-        .with_declared_repack(RepackHash::new([0xab; 32]));
+    let repacked =
+        synthetic_layout(GgmlType::Q8_0).with_declared_repack(RepackHash::new([0xab; 32]));
     let err = dequant_block(&repacked, &[0u8; 34]).expect_err("repack block refused");
     assert!(matches!(err, DequantError::RepackNotNative));
     let err = dequant_row(&repacked, &[0u8; 34]).expect_err("repack row refused");
@@ -549,7 +597,13 @@ fn toy_u4_is_never_admitted_by_dequant() {
     }
     // No admitted type carries the toy packed-u4 signature (8 values / 4
     // bytes, scale + zero_point — no GGML structure; GI1-2 exclusion).
-    for ggml_type in [GgmlType::F32, GgmlType::Q5_0, GgmlType::Q8_0, GgmlType::Q4_K, GgmlType::Q6_K] {
+    for ggml_type in [
+        GgmlType::F32,
+        GgmlType::Q5_0,
+        GgmlType::Q8_0,
+        GgmlType::Q4_K,
+        GgmlType::Q6_K,
+    ] {
         assert_ne!(
             (ggml_type.block_elements(), ggml_type.block_bytes()),
             (8, 4),
@@ -587,8 +641,13 @@ fn toy_u4_is_never_admitted_by_dequant() {
 
 #[test]
 fn golden_identity_matches_the_pinned_row() {
-    let Some(golden) = load_goldens() else { return; };
-    assert_eq!(text(&golden_obj(&golden, "schema")), "gi2-dequant-goldens-v1");
+    let Some(golden) = load_goldens() else {
+        return;
+    };
+    assert_eq!(
+        text(&golden_obj(&golden, "schema")),
+        "gi2-dequant-goldens-v1"
+    );
     let model = golden_obj(&golden, "model");
     assert_eq!(text(&obj(model, "sha256")), PINNED_SHA256_HEX);
     assert_eq!(int(&obj(model, "bytes")), 270_590_880);
@@ -604,8 +663,12 @@ fn golden_identity_matches_the_pinned_row() {
 
 #[test]
 fn oracle_receipt_accompanies_the_materialized_tensor() {
-    let Some(bytes) = pinned_model_bytes() else { return; };
-    let Some(golden) = load_goldens() else { return; };
+    let Some(bytes) = pinned_model_bytes() else {
+        return;
+    };
+    let Some(golden) = load_goldens() else {
+        return;
+    };
     let admission = admit_gguf(&bytes).expect("pinned row must admit");
     let view = TensorView::build(&admission, &bytes).expect("view must build");
     assert!(view.coverage_ok(), "the pinned view must tile exactly");
@@ -624,16 +687,32 @@ fn oracle_receipt_accompanies_the_materialized_tensor() {
         let receipt =
             OracleReceipt::for_tensor(&view, entry).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert_eq!(receipt.source_tensor, name, "{name} source identity");
-        assert_eq!(receipt.source_encoding, entry.ggml_type, "{name} source encoding");
-        assert_eq!(receipt.source_byte_range, entry.byte_range, "{name} source byte range");
-        assert_eq!(receipt.dest_element_count, entry.element_count, "{name} dest elements");
+        assert_eq!(
+            receipt.source_encoding, entry.ggml_type,
+            "{name} source encoding"
+        );
+        assert_eq!(
+            receipt.source_byte_range, entry.byte_range,
+            "{name} source byte range"
+        );
+        assert_eq!(
+            receipt.dest_element_count, entry.element_count,
+            "{name} dest elements"
+        );
         assert_eq!(
             receipt.dest_byte_extent,
             entry.element_count * entry.layout.logical_dtype().bytes(),
             "{name} dest byte extent"
         );
-        assert_eq!(receipt.transform_impl, ORACLE_TRANSFORM_IMPL, "{name} transform");
-        assert_eq!(receipt.purpose, OraclePurpose::CpuOracle, "{name} oracle purpose");
+        assert_eq!(
+            receipt.transform_impl, ORACLE_TRANSFORM_IMPL,
+            "{name} transform"
+        );
+        assert_eq!(
+            receipt.purpose,
+            OraclePurpose::CpuOracle,
+            "{name} oracle purpose"
+        );
 
         // The conversion neither changes RepackIdentity::Native ...
         assert_eq!(
@@ -647,14 +726,15 @@ fn oracle_receipt_accompanies_the_materialized_tensor() {
         // fixture-generation setup evidence and are absent on a live
         // materialization.
         assert_eq!(
-            receipt.output_digest,
-            None,
+            receipt.output_digest, None,
             "{name}: live materialization carries no fixture digest"
         );
-        assert_eq!(receipt.timing_us, None, "{name}: live materialization carries no timing");
         assert_eq!(
-            receipt.peak_temp_bytes,
-            None,
+            receipt.timing_us, None,
+            "{name}: live materialization carries no timing"
+        );
+        assert_eq!(
+            receipt.peak_temp_bytes, None,
             "{name}: live materialization carries no peak bytes"
         );
 
@@ -664,13 +744,21 @@ fn oracle_receipt_accompanies_the_materialized_tensor() {
         // temporary bytes are carried.
         let out = dequant_tensor(&view, entry).unwrap_or_else(|e| panic!("{name}: {e}"));
         let digest = sha256(&f32_le_bytes(&out));
-        assert_eq!(hex(&digest), text(&obj(item, "sha256")), "{name} fixture digest");
+        assert_eq!(
+            hex(&digest),
+            text(&obj(item, "sha256")),
+            "{name} fixture digest"
+        );
         let evidenced = receipt.with_fixture_evidence(
             digest,
             int(&obj(item, "timing_us")) as u64,
             int(&obj(item, "peak_temp_bytes")) as u64,
         );
-        assert_eq!(evidenced.output_digest, Some(digest), "{name} evidenced digest");
+        assert_eq!(
+            evidenced.output_digest,
+            Some(digest),
+            "{name} evidenced digest"
+        );
         assert_eq!(
             evidenced.timing_us,
             Some(int(&obj(item, "timing_us")) as u64),
@@ -696,8 +784,7 @@ fn oracle_receipt_fails_closed_like_dequant_tensor() {
     assert!(matches!(err, DequantError::CoverageNotOk));
 
     // Covered view + forged past-file entry -> EntryNotCovered.
-    let view = TensorView::build(&covered_admission(), &bytes)
-        .expect("covered view must build");
+    let view = TensorView::build(&covered_admission(), &bytes).expect("covered view must build");
     assert!(view.coverage_ok(), "control view must tile exactly");
     let good = view.entry(0).expect("first entry");
     let past_file = TensorViewEntry {
@@ -708,8 +795,8 @@ fn oracle_receipt_fails_closed_like_dequant_tensor() {
         byte_range: ByteRange::new(0, 5000),
         layout: good.layout.clone(),
     };
-    let err = OracleReceipt::for_tensor(&view, &past_file)
-        .expect_err("past-file entry must fail closed");
+    let err =
+        OracleReceipt::for_tensor(&view, &past_file).expect_err("past-file entry must fail closed");
     assert!(matches!(
         err,
         DequantError::EntryNotCovered { ref name } if name == "forged.past_file.weight"
@@ -724,11 +811,14 @@ fn oracle_receipt_fails_closed_like_dequant_tensor() {
         byte_range: ByteRange::new(0, 4096),
         layout: good.layout.clone(),
     };
-    let err = OracleReceipt::for_tensor(&view, &oversized)
-        .expect_err("oversized entry must fail closed");
+    let err =
+        OracleReceipt::for_tensor(&view, &oversized).expect_err("oversized entry must fail closed");
     assert!(matches!(
         err,
-        DequantError::RowBytesMismatch { expected: 32, actual: 4096 }
+        DequantError::RowBytesMismatch {
+            expected: 32,
+            actual: 4096
+        }
     ));
 
     // Declared-repack layout -> RepackNotNative (never authorized).
@@ -743,7 +833,7 @@ fn oracle_receipt_fails_closed_like_dequant_tensor() {
             .clone()
             .with_declared_repack(RepackHash::new([0xab; 32])),
     };
-    let err = OracleReceipt::for_tensor(&view, &repacked)
-        .expect_err("declared repack must fail closed");
+    let err =
+        OracleReceipt::for_tensor(&view, &repacked).expect_err("declared repack must fail closed");
     assert!(matches!(err, DequantError::RepackNotNative));
 }

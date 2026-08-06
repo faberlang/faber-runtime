@@ -42,7 +42,9 @@ use crate::device::DeviceBackend;
 use crate::device_identity::{push_str, push_u64, DeviceHealthGeneration, PhysicalDeviceId};
 use crate::device_set::{DeviceSet, MembershipError};
 use crate::discovery::{DeviceDiscoverySnapshot, DeviceDiscoverySnapshotId};
-use crate::partition::{FixtureIdentityClass, PartitionReceipt, TransportClass, VirtualDevicePartition};
+use crate::partition::{
+    FixtureIdentityClass, PartitionReceipt, TransportClass, VirtualDevicePartition,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Machine-local opaque identity of one logical partition of the admitted
@@ -388,7 +390,8 @@ pub fn bind(
 
     // 2. Topology shape: the binding keys must be exactly the declared
     //    partitions.
-    let declared_keys: BTreeSet<&LogicalPartitionId> = admitted.declared_partitions().iter().collect();
+    let declared_keys: BTreeSet<&LogicalPartitionId> =
+        admitted.declared_partitions().iter().collect();
     let bound_keys: BTreeSet<&LogicalPartitionId> = bindings.keys().collect();
     if declared_keys != bound_keys {
         return Err(BindError::TopologyMismatch {
@@ -432,7 +435,10 @@ pub fn bind(
             if !partition_instance.is_active() {
                 return Err(BindError::InvalidPartitionBinding {
                     partition: partition.clone(),
-                    detail: format!("attached partition {} is not active", partition_instance.id()),
+                    detail: format!(
+                        "attached partition {} is not active",
+                        partition_instance.id()
+                    ),
                 });
             }
         }
@@ -563,8 +569,7 @@ impl BoundDistributedPlan {
                 )
             }
             BoundPlanKind::Distributed { bindings } => {
-                let physical: BTreeSet<_> =
-                    bindings.values().map(|b| b.device().clone()).collect();
+                let physical: BTreeSet<_> = bindings.values().map(|b| b.device().clone()).collect();
                 let virtual_ids: BTreeSet<_> = bindings
                     .values()
                     .filter_map(|b| b.virtual_partition().map(|p| p.id()))
@@ -692,7 +697,10 @@ fn check_constraint(
                 ));
             }
         }
-        DeclaredPlacementConstraint::RequiredBackend { partitions, backend } => {
+        DeclaredPlacementConstraint::RequiredBackend {
+            partitions,
+            backend,
+        } => {
             for partition in partitions {
                 let binding = bindings
                     .get(partition)

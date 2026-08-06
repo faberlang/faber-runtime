@@ -97,8 +97,8 @@
 //! converted-weight GPU/headline execution.
 
 use crate::decoder_ops::{
-    dense, residual_add, rms_norm, rope_norm, swiglu, OpError,
-    ATTENTION_SCALE, FFN_SIZE, HEAD_COUNT, HEAD_DIM, HIDDEN_SIZE, KV_HEAD_COUNT, RMS_EPS,
+    dense, residual_add, rms_norm, rope_norm, swiglu, OpError, ATTENTION_SCALE, FFN_SIZE,
+    HEAD_COUNT, HEAD_DIM, HIDDEN_SIZE, KV_HEAD_COUNT, RMS_EPS,
 };
 use crate::dequant::{dequant_tensor, half_to_f32, DequantError, OracleReceipt};
 use crate::tensor_view::TensorView;
@@ -154,7 +154,10 @@ impl fmt::Display for OracleError {
             Self::Op(err) => write!(f, "op: {err}"),
             Self::EmptyTokens => write!(f, "oracle needs at least one token"),
             Self::TokenOutOfRange { token, vocab } => {
-                write!(f, "token {token} is outside the admitted vocab [0, {vocab})")
+                write!(
+                    f,
+                    "token {token} is outside the admitted vocab [0, {vocab})"
+                )
             }
             Self::NonFinite { detail } => write!(f, "finite gate: {detail}"),
         }
@@ -292,11 +295,9 @@ impl LayerWeights {
         let name = |base: &str| format!("blk.{il}.{base}");
         let mut tensor = |base: &str| -> Result<Vec<f32>, OracleError> {
             let full = name(base);
-            let entry = view
-                .tensor(&full)
-                .ok_or_else(|| OracleError::Dequant(DequantError::EntryNotCovered {
-                    name: full.clone(),
-                }))?;
+            let entry = view.tensor(&full).ok_or_else(|| {
+                OracleError::Dequant(DequantError::EntryNotCovered { name: full.clone() })
+            })?;
             let mut values = dequant_tensor(view, entry)?;
             metal_f16_round_weights(&mut values);
             receipts.push(OracleReceipt::for_tensor(view, entry)?);
@@ -537,12 +538,14 @@ impl CpuOracle {
         for t in 0..n {
             let a_t = &a[t * HIDDEN_SIZE..(t + 1) * HIDDEN_SIZE];
             q.extend(dense(&layer.attn_q, a_t, HIDDEN_SIZE, HIDDEN_SIZE)?);
-            k.extend(dense(                &layer.attn_k,
+            k.extend(dense(
+                &layer.attn_k,
                 a_t,
                 HIDDEN_SIZE,
                 KV_HEAD_COUNT * HEAD_DIM,
             )?);
-            v.extend(dense(                &layer.attn_v,
+            v.extend(dense(
+                &layer.attn_v,
                 a_t,
                 HIDDEN_SIZE,
                 KV_HEAD_COUNT * HEAD_DIM,
@@ -586,7 +589,8 @@ impl CpuOracle {
         )?;
         let mut o = Vec::with_capacity(ctx.len());
         for t in 0..n {
-            o.extend(dense(                &layer.attn_output,
+            o.extend(dense(
+                &layer.attn_output,
                 &ctx[t * HIDDEN_SIZE..(t + 1) * HIDDEN_SIZE],
                 HIDDEN_SIZE,
                 HIDDEN_SIZE,
@@ -612,7 +616,8 @@ impl CpuOracle {
         }
         let mut down = Vec::with_capacity(n * HIDDEN_SIZE);
         for t in 0..n {
-            down.extend(dense(                &layer.ffn_down,
+            down.extend(dense(
+                &layer.ffn_down,
                 &hh[t * FFN_SIZE..(t + 1) * FFN_SIZE],
                 FFN_SIZE,
                 HIDDEN_SIZE,
@@ -623,11 +628,7 @@ impl CpuOracle {
 }
 
 /// Apply [`rope_norm`] to each of `n_heads` contiguous `HEAD_DIM`-wide heads.
-fn rope_all_heads(
-    x: &[f32],
-    n_heads: usize,
-    pos: u32,
-) -> Result<Vec<f32>, OpError> {
+fn rope_all_heads(x: &[f32], n_heads: usize, pos: u32) -> Result<Vec<f32>, OpError> {
     let mut out = Vec::with_capacity(n_heads * HEAD_DIM);
     for h in 0..n_heads {
         out.extend(rope_norm(
@@ -972,7 +973,11 @@ pub fn top1_non_eog(logits: &[f32], eog: &[i64]) -> i64 {
 #[must_use]
 pub fn topk_ids(logp: &[f32], k: usize) -> Vec<i64> {
     let mut order: Vec<usize> = (0..logp.len()).collect();
-    order.sort_by(|&a, &b| logp[b].partial_cmp(&logp[a]).unwrap_or(std::cmp::Ordering::Equal));
+    order.sort_by(|&a, &b| {
+        logp[b]
+            .partial_cmp(&logp[a])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     order.truncate(k);
     order.into_iter().map(|t| t as i64).collect()
 }

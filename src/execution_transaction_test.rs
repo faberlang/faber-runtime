@@ -12,8 +12,8 @@
 //! as declared (never re-derived) — not vocabulary this module introduces.
 
 use crate::bound_plan::{
-    AdmittedLogicalPlan, BindError, BoundDistributedPlan, DeclaredPlacementConstraint,
-    LogicalPartitionId, PartitionBinding, bind,
+    bind, AdmittedLogicalPlan, BindError, BoundDistributedPlan, DeclaredPlacementConstraint,
+    LogicalPartitionId, PartitionBinding,
 };
 use crate::device_identity::{DeviceHealthGeneration, DeviceOrdinal, PhysicalDeviceId};
 use crate::device_set::DeviceSet;
@@ -23,13 +23,12 @@ use crate::discovery::{
 };
 use crate::execution_transaction::{
     AbortError, BackendError, BarrierRef, BoundaryRef, BudgetClass, CollectiveBroadcastMirror,
-    CollectiveRef, CommitError, ConstructError, DeviceExecutionBackend, EVENT_OBJECT_BYTES,
-    ExecuteError, ExecutionTransaction, FakeExecutionBackend, LaunchRef, MirroredDtype,
-    MirroredStorageLayout, OperationEvent, OperationRef, PrepareError, PublicationOrdinal,
-    ReservationRecord, StagedWrite, TransactionCommitBoundary, TransactionDecision,
-    TransactionFailure, TransactionId, TransactionOperation, TransactionState,
-    TRANSACTION_SCRATCH_BYTES_PER_PARTITION, TransferDirectionMirror, TransferOperationMirror,
-    TransferRef, TransportPathMirror,
+    CollectiveRef, CommitError, ConstructError, DeviceExecutionBackend, ExecuteError,
+    ExecutionTransaction, FakeExecutionBackend, LaunchRef, MirroredDtype, MirroredStorageLayout,
+    OperationEvent, OperationRef, PrepareError, PublicationOrdinal, ReservationRecord, StagedWrite,
+    TransactionCommitBoundary, TransactionDecision, TransactionFailure, TransactionId,
+    TransactionOperation, TransactionState, TransferDirectionMirror, TransferOperationMirror,
+    TransferRef, TransportPathMirror, EVENT_OBJECT_BYTES, TRANSACTION_SCRATCH_BYTES_PER_PARTITION,
 };
 use crate::partition::{
     AdmissionRequest, FixtureIdentityClass, HardwareIsolationClaim, PartitionBudgetLedger,
@@ -46,8 +45,9 @@ use std::time::Duration;
 const UUID_A: &str = "GPU-3e017562-9ec3-da9a-962d-b8bd5f9e24be";
 const UUID_B: &str = "GPU-22222222-3333-4444-5555-666666666666";
 const PROBE_TIME: u64 = 1_752_717_600_000_000_000; // fixed sample time
-// An admitted (validated) logical hash in the sha256: spelling (FC17/FC11).
-const LOGICAL_HASH: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+                                                   // An admitted (validated) logical hash in the sha256: spelling (FC17/FC11).
+const LOGICAL_HASH: &str =
+    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 // CS-1 declared placement (md0-mode-fixtures.md §3): 2 virtual partitions @
 // 160 MiB, forced 2-way split ≈129 MiB/device.
@@ -111,7 +111,10 @@ fn synthetic_entry(
         identity: device,
         device_model: Some("synthetic RTX 5070".to_owned()),
         capabilities: DeviceCapabilities {
-            compute_capability: ComputeCapability { major: 12, minor: 0 },
+            compute_capability: ComputeCapability {
+                major: 12,
+                minor: 0,
+            },
             sm_count: 48,
             dtype_surface: DtypeSurface {
                 f32: true,
@@ -141,7 +144,10 @@ fn snapshot_with(
     let devices: BTreeMap<_, _> = entries
         .into_iter()
         .map(|(ordinal, device, generation)| {
-            (DeviceOrdinal::new(ordinal), synthetic_entry(ordinal, device, generation))
+            (
+                DeviceOrdinal::new(ordinal),
+                synthetic_entry(ordinal, device, generation),
+            )
         })
         .collect();
     DeviceDiscoverySnapshot::new(PROBE_TIME, devices, P2pProbeState::NotAttempted)
@@ -320,16 +326,8 @@ fn different_operations_produce_different_canonical_bytes() {
     }
 
     // Same identity, different output contract — still different bytes.
-    let small = TransactionOperation::launch(
-        partition_id(0),
-        LaunchRef::new("launch-x"),
-        1,
-    );
-    let large = TransactionOperation::launch(
-        partition_id(0),
-        LaunchRef::new("launch-x"),
-        2,
-    );
+    let small = TransactionOperation::launch(partition_id(0), LaunchRef::new("launch-x"), 1);
+    let large = TransactionOperation::launch(partition_id(0), LaunchRef::new("launch-x"), 2);
     assert_ne!(small.canonical_bytes(), large.canonical_bytes());
 
     // A transfer differing only in the producer generation differs.
@@ -365,10 +363,7 @@ fn different_operations_produce_different_canonical_bytes() {
     );
 
     // A boundary differing in its launch set differs.
-    let boundary_a = TransactionCommitBoundary::new(
-        [BarrierRef::new("b")],
-        [LaunchRef::new("l")],
-    );
+    let boundary_a = TransactionCommitBoundary::new([BarrierRef::new("b")], [LaunchRef::new("l")]);
     let boundary_b = TransactionCommitBoundary::new(
         [BarrierRef::new("b")],
         [LaunchRef::new("l"), LaunchRef::new("l2")],
@@ -461,7 +456,10 @@ fn prepare_reserves_within_admitted_budget() {
     // The declared staged write-set is recorded (the prepare receipt).
     let declared = transaction.declared_write_set();
     assert_eq!(declared.len(), 4); // launch-a, transfer, broadcast, launch-b
-    assert_eq!(declared_write_bytes(&fixture_operations()), declared.values().map(|w| w.byte_count()).sum::<u64>());
+    assert_eq!(
+        declared_write_bytes(&fixture_operations()),
+        declared.values().map(|w| w.byte_count()).sum::<u64>()
+    );
 }
 
 /// S3: a class-6 over-commit fails at prepare with a focused diagnostic.
@@ -490,18 +488,18 @@ fn prepare_fails_when_class6_reservation_exceeds_admitted_budget() {
         } if *partition == partition_id(0) && declared_bytes == (1 << 20) + BROADCAST_BYTES
     ));
     assert_eq!(transaction.state(), &TransactionState::New);
-    assert!(backend.reservations().is_empty(), "nothing is reserved on failure");
+    assert!(
+        backend.reservations().is_empty(),
+        "nothing is reserved on failure"
+    );
 }
 
 /// S3: a class-3 over-commit fails at prepare with a focused diagnostic.
 #[test]
 fn prepare_fails_when_class3_reservation_exceeds_admitted_budget() {
     let mut operations = fixture_operations();
-    operations[4] = TransactionOperation::launch(
-        partition_id(1),
-        LaunchRef::new("launch-proj-b"),
-        1 << 20,
-    );
+    operations[4] =
+        TransactionOperation::launch(partition_id(1), LaunchRef::new("launch-proj-b"), 1 << 20);
     let mut transaction = ExecutionTransaction::new(
         TransactionId::new("txn-class3"),
         fixture_plan(),
@@ -557,11 +555,7 @@ fn tampered_plan_over_committing_bound_resources_fails_at_prepare() {
 #[test]
 fn prepare_rejects_unknown_partition() {
     let mut operations = fixture_operations();
-    operations[4] = TransactionOperation::launch(
-        partition_id(99),
-        LaunchRef::new("launch-zzz"),
-        0,
-    );
+    operations[4] = TransactionOperation::launch(partition_id(99), LaunchRef::new("launch-zzz"), 0);
     let mut transaction = ExecutionTransaction::new(
         TransactionId::new("txn-unknown"),
         fixture_plan(),
@@ -692,7 +686,9 @@ fn prepare_rejects_duplicate_operations() {
 fn prepare_from_wrong_state_fails() {
     let mut transaction = fixture_transaction();
     let mut backend = FakeExecutionBackend::new();
-    transaction.prepare(&mut backend).expect("first prepare succeeds");
+    transaction
+        .prepare(&mut backend)
+        .expect("first prepare succeeds");
     let error = transaction
         .prepare(&mut backend)
         .expect_err("prepare is New → Prepared only");
@@ -737,7 +733,10 @@ fn execute_runs_operations_in_plan_order() {
     // All events completed synchronously on the happy path.
     assert_eq!(backend.pending_events().len(), 0);
     assert_eq!(backend.completed_events().len(), 8);
-    assert_eq!(backend.staged_bytes(), declared_write_bytes(&fixture_operations()));
+    assert_eq!(
+        backend.staged_bytes(),
+        declared_write_bytes(&fixture_operations())
+    );
 }
 
 /// S3 no-silent-growth: an operation outside the prepare snapshot (or a
@@ -747,16 +746,10 @@ fn execute_operation_outside_snapshot_fails() {
     let mut transaction = fixture_transaction();
     let mut backend = FakeExecutionBackend::new();
     transaction.prepare(&mut backend).expect("prepare succeeds");
-    transaction
-        .execute(&mut backend)
-        .expect("execute succeeds");
+    transaction.execute(&mut backend).expect("execute succeeds");
     assert_eq!(transaction.state(), &TransactionState::Executing);
 
-    let foreign = TransactionOperation::launch(
-        partition_id(0),
-        LaunchRef::new("launch-zzz"),
-        0,
-    );
+    let foreign = TransactionOperation::launch(partition_id(0), LaunchRef::new("launch-zzz"), 0);
     let error = transaction
         .execute_operation(&mut backend, &foreign)
         .expect_err("an operation outside the snapshot fails");
@@ -800,9 +793,7 @@ fn execute_never_grows_the_accepted_plan() {
     let mut transaction = fixture_transaction();
     let mut backend = FakeExecutionBackend::new();
     transaction.prepare(&mut backend).expect("prepare succeeds");
-    transaction
-        .execute(&mut backend)
-        .expect("execute succeeds");
+    transaction.execute(&mut backend).expect("execute succeeds");
     let actual = backend.executed_operations().len();
     assert_eq!(
         actual,
@@ -818,9 +809,7 @@ fn commit_publishes_atomically_after_boundary_with_ordinal() {
     let mut transaction = fixture_transaction();
     let mut backend = FakeExecutionBackend::new();
     transaction.prepare(&mut backend).expect("prepare succeeds");
-    transaction
-        .execute(&mut backend)
-        .expect("execute succeeds");
+    transaction.execute(&mut backend).expect("execute succeeds");
     let receipt = transaction
         .commit(&mut backend, PublicationOrdinal::new(7))
         .expect("commit publishes after the boundary is reached");
@@ -851,7 +840,10 @@ fn commit_publishes_atomically_after_boundary_with_ordinal() {
         backend.published_writes().len(),
         transaction.declared_write_set().len()
     );
-    assert!(backend.reservations().is_empty(), "commit releases the reservations");
+    assert!(
+        backend.reservations().is_empty(),
+        "commit releases the reservations"
+    );
 }
 
 /// S3: commit publishes only after every required device reaches the declared
@@ -958,9 +950,7 @@ fn commit_twice_fails() {
     let mut transaction = fixture_transaction();
     let mut backend = FakeExecutionBackend::new();
     transaction.prepare(&mut backend).expect("prepare succeeds");
-    transaction
-        .execute(&mut backend)
-        .expect("execute succeeds");
+    transaction.execute(&mut backend).expect("execute succeeds");
     transaction
         .commit(&mut backend, PublicationOrdinal::new(1))
         .expect("first commit publishes");
@@ -1074,10 +1064,7 @@ fn every_failure_class_releases_resources_with_no_partial_publication() {
     for (index, failure) in classes.into_iter().enumerate() {
         let mut transaction = fixture_transaction();
         let mut backend = FaultInjectionBackend::new();
-        backend.fail_operation(
-            OperationRef::Transfer(TransferRef::new("t1")),
-            failure,
-        );
+        backend.fail_operation(OperationRef::Transfer(TransferRef::new("t1")), failure);
         transaction.prepare(&mut backend).expect("prepare succeeds");
         let execute_error = transaction
             .execute(&mut backend)
@@ -1117,9 +1104,7 @@ fn publish_failure_publishes_nothing() {
     let mut backend = FaultInjectionBackend::new();
     backend.fail_publish(BackendError::operation(partition_id(0), "publish failed"));
     transaction.prepare(&mut backend).expect("prepare succeeds");
-    transaction
-        .execute(&mut backend)
-        .expect("execute succeeds");
+    transaction.execute(&mut backend).expect("execute succeeds");
     let error = transaction
         .commit(&mut backend, PublicationOrdinal::new(1))
         .expect_err("the publish fault fails commit");
@@ -1153,9 +1138,7 @@ fn abort_after_commit_fails() {
     let mut transaction = fixture_transaction();
     let mut backend = FakeExecutionBackend::new();
     transaction.prepare(&mut backend).expect("prepare succeeds");
-    transaction
-        .execute(&mut backend)
-        .expect("execute succeeds");
+    transaction.execute(&mut backend).expect("execute succeeds");
     transaction
         .commit(&mut backend, PublicationOrdinal::new(1))
         .expect("commit publishes");
@@ -1182,7 +1165,9 @@ fn retry_is_disabled_after_failure_and_abort() {
     assert!(matches!(transaction.state(), TransactionState::Failed(_)));
 
     // Re-executing the failed transaction is rejected — no retry path.
-    let retry = transaction.execute(&mut backend).expect_err("retry is disabled");
+    let retry = transaction
+        .execute(&mut backend)
+        .expect_err("retry is disabled");
     assert!(matches!(retry, ExecuteError::InvalidState { .. }));
 
     transaction
@@ -1213,9 +1198,7 @@ fn receipt_records_plan_hashes_and_device_identities() {
     .expect("transaction constructs");
     let mut backend = FakeExecutionBackend::new();
     transaction.prepare(&mut backend).expect("prepare succeeds");
-    transaction
-        .execute(&mut backend)
-        .expect("execute succeeds");
+    transaction.execute(&mut backend).expect("execute succeeds");
     let receipt = transaction
         .commit(&mut backend, PublicationOrdinal::new(2))
         .expect("commit publishes");
@@ -1248,9 +1231,7 @@ fn receipt_records_reservation_executed_bytes_and_sync_events() {
     let mut transaction = fixture_transaction();
     let mut backend = FakeExecutionBackend::new();
     transaction.prepare(&mut backend).expect("prepare succeeds");
-    transaction
-        .execute(&mut backend)
-        .expect("execute succeeds");
+    transaction.execute(&mut backend).expect("execute succeeds");
     let receipt = transaction
         .commit(&mut backend, PublicationOrdinal::new(3))
         .expect("commit publishes");
@@ -1289,18 +1270,18 @@ fn receipt_records_reservation_executed_bytes_and_sync_events() {
     assert_eq!(declared_total, declared_write_bytes(&fixture_operations()));
 
     // Synchronization events include the boundary completions.
-    assert!(receipt.synchronization_events.contains(
-        &OperationEvent::BarrierCompleted {
+    assert!(receipt
+        .synchronization_events
+        .contains(&OperationEvent::BarrierCompleted {
             partition: partition_id(0),
             barrier_ref: BarrierRef::new("barrier-main"),
-        }
-    ));
-    assert!(receipt.synchronization_events.contains(
-        &OperationEvent::LaunchCompleted {
+        }));
+    assert!(receipt
+        .synchronization_events
+        .contains(&OperationEvent::LaunchCompleted {
             partition: partition_id(1),
             launch_ref: LaunchRef::new("launch-proj-b"),
-        }
-    ));
+        }));
 }
 
 /// The S4 selected-transport section (CTO sanity-check amendment on MD3-T1):
@@ -1346,9 +1327,7 @@ fn receipt_carries_the_selected_transport_records() {
     transaction.with_transport_receipt(adapter.transport_receipt());
     let mut backend = FakeExecutionBackend::new();
     transaction.prepare(&mut backend).expect("prepare succeeds");
-    transaction
-        .execute(&mut backend)
-        .expect("execute succeeds");
+    transaction.execute(&mut backend).expect("execute succeeds");
     let receipt = transaction
         .commit(&mut backend, PublicationOrdinal::new(9))
         .expect("commit publishes");
@@ -1433,9 +1412,7 @@ fn receipt_taxonomy_is_honest() {
     .expect("transaction constructs");
     let mut backend = FakeExecutionBackend::new();
     transaction.prepare(&mut backend).expect("prepare succeeds");
-    transaction
-        .execute(&mut backend)
-        .expect("execute succeeds");
+    transaction.execute(&mut backend).expect("execute succeeds");
     let receipt = transaction
         .commit(&mut backend, PublicationOrdinal::new(4))
         .expect("commit publishes");

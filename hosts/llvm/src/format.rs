@@ -328,7 +328,10 @@ pub(super) fn store_text(context: *mut FaberRtContextV1, value: String) -> Faber
 /// # Safety
 ///
 /// `context` must be non-null and a live runtime context.
-pub(super) unsafe fn store_text_owned(context: *mut FaberRtContextV1, value: String) -> *mut c_void {
+pub(super) unsafe fn store_text_owned(
+    context: *mut FaberRtContextV1,
+    value: String,
+) -> *mut c_void {
     let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
     let slice = FaberRtSliceV1 {
         data: value.as_ptr(),

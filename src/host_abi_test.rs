@@ -258,10 +258,7 @@ fn host_abi_v1_llvm_slice_type_definition() {
 
 #[test]
 fn host_abi_v1_llvm_exit_type_definition() {
-    assert_eq!(
-        LLVM_EXIT_TYPE_DEFINITION,
-        "%FaberRtExitV1 = type i64"
-    );
+    assert_eq!(LLVM_EXIT_TYPE_DEFINITION, "%FaberRtExitV1 = type i64");
 }
 
 #[test]

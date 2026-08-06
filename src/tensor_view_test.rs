@@ -58,8 +58,7 @@ const FFN_DOWN_Q4_K_LAYERS: [u64; 16] =
 
 /// `attn_v` Q8_0 layers (evidence `contract-gguf-metadata.txt`, verified live
 /// 2026-08-05); Q5_0 on the other 16.
-const ATTN_V_Q8_0_LAYERS: [u64; 16] =
-    [0, 1, 2, 5, 6, 7, 8, 9, 10, 11, 14, 17, 22, 25, 28, 30];
+const ATTN_V_Q8_0_LAYERS: [u64; 16] = [0, 1, 2, 5, 6, 7, 8, 9, 10, 11, 14, 17, 22, 25, 28, 30];
 
 /// Expected family size per pinned base name (§2.3: 1 + 32×9 + 1 = 290).
 fn expected_family_size(base: &str) -> usize {
@@ -99,11 +98,7 @@ fn pinned_row_view_enumerates_290_in_gguf_order() {
 
     // Enumeration order == GGUF tensor-table order (the admission order).
     let view_names: Vec<&str> = view.entries().iter().map(|e| e.name.as_str()).collect();
-    let admission_names: Vec<&str> = admission
-        .tensors
-        .iter()
-        .map(|t| t.name.as_str())
-        .collect();
+    let admission_names: Vec<&str> = admission.tensors.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(view_names, admission_names);
 
     // First/last entries per the evidence listing (`contract-gguf-metadata.txt`).
@@ -111,7 +106,10 @@ fn pinned_row_view_enumerates_290_in_gguf_order() {
     assert_eq!(view_names[289], "output_norm.weight");
 
     // Bound-checked enumeration.
-    assert_eq!(view.entry(0).map(|e| e.name.as_str()), Some("token_embd.weight"));
+    assert_eq!(
+        view.entry(0).map(|e| e.name.as_str()),
+        Some("token_embd.weight")
+    );
     assert!(view.entry(289).is_some());
     assert!(view.entry(290).is_none());
     assert!(view.entry(usize::MAX).is_none());
@@ -194,9 +192,7 @@ fn pinned_row_shapes_and_types_match_contract_s23() {
     let view = build_view(&bytes);
 
     // Single tensors.
-    let token_embd = view
-        .tensor("token_embd.weight")
-        .expect("token_embd.weight");
+    let token_embd = view.tensor("token_embd.weight").expect("token_embd.weight");
     assert_eq!(token_embd.ggml_type, GgmlType::Q8_0);
     assert_eq!(token_embd.dims, [960, 49_152]);
     assert_eq!(token_embd.element_count, 47_185_920);
@@ -304,7 +300,10 @@ fn pinned_row_mixed_quant_placements_resolve() {
     assert_eq!(q5_0_layers.len(), 16);
 
     // The two splits are distinct placement sets.
-    assert_ne!(q8_0_layers, q4_k_layers, "attn_v and ffn_down splits differ");
+    assert_ne!(
+        q8_0_layers, q4_k_layers,
+        "attn_v and ffn_down splits differ"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -323,10 +322,7 @@ fn pinned_row_byte_ranges_bound_checked_and_hash_accounted() {
     assert_eq!(view.data_len(), 268_803_840);
     assert_eq!(view.data_offset() + view.data_len(), view.file_size());
     assert_eq!(view.file_size(), 270_590_880);
-    assert_eq!(
-        view.data_region(),
-        ByteRange::new(1_787_040, 270_590_880)
-    );
+    assert_eq!(view.data_region(), ByteRange::new(1_787_040, 270_590_880));
 
     // Whole-file SHA-256 recorded at GI1-1.
     assert_eq!(view.sha256_hex(), PINNED_SHA256_HEX);
@@ -354,7 +350,10 @@ fn pinned_row_byte_ranges_bound_checked_and_hash_accounted() {
     // Bounded raw access.
     let raw = view.raw_bytes(token_embd).expect("token_embd raw bytes");
     assert_eq!(raw.len() as u64, token_embd.byte_range.len());
-    assert_eq!(raw, &bytes[token_embd.byte_range.start as usize..token_embd.byte_range.end as usize]);
+    assert_eq!(
+        raw,
+        &bytes[token_embd.byte_range.start as usize..token_embd.byte_range.end as usize]
+    );
     let block0 = view.raw_block(token_embd, 0).expect("block 0");
     assert_eq!(block0.len(), 34);
     assert_eq!(block0, &raw[..34]);
@@ -362,10 +361,7 @@ fn pinned_row_byte_ranges_bound_checked_and_hash_accounted() {
         .raw_block(token_embd, token_embd.layout.blocks() - 1)
         .expect("last block");
     assert_eq!(last_block.len(), 34);
-    assert_eq!(
-        last_block,
-        &raw[(raw.len() - 34)..]
-    );
+    assert_eq!(last_block, &raw[(raw.len() - 34)..]);
 
     // Out-of-range block index fails closed.
     let err = view
@@ -392,10 +388,7 @@ fn pinned_row_out_of_range_access_fails_closed() {
         ggml_type: token_embd.ggml_type,
         dims: token_embd.dims.clone(),
         element_count: token_embd.element_count,
-        byte_range: ByteRange::new(
-            view.file_size() + 100,
-            view.file_size() + 200,
-        ),
+        byte_range: ByteRange::new(view.file_size() + 100, view.file_size() + 200),
         layout: token_embd.layout.clone(),
     };
     let err = view
@@ -409,10 +402,7 @@ fn pinned_row_out_of_range_access_fails_closed() {
         ggml_type: token_embd.ggml_type,
         dims: token_embd.dims.clone(),
         element_count: token_embd.element_count,
-        byte_range: ByteRange::new(
-            view.file_size() - 10,
-            view.file_size() + 10,
-        ),
+        byte_range: ByteRange::new(view.file_size() - 10, view.file_size() + 10),
         layout: token_embd.layout.clone(),
     };
     let err = view
@@ -427,10 +417,7 @@ fn pinned_row_out_of_range_access_fails_closed() {
         ggml_type: token_embd.ggml_type,
         dims: token_embd.dims.clone(),
         element_count: token_embd.element_count,
-        byte_range: ByteRange::new(
-            view.data_offset(),
-            view.data_offset() + 10,
-        ),
+        byte_range: ByteRange::new(view.data_offset(), view.data_offset() + 10),
         layout: token_embd.layout.clone(),
     };
     let err = view
@@ -450,10 +437,13 @@ fn pinned_row_build_rejects_wrong_buffer_size() {
     };
     let admission = admit_gguf(&bytes).expect("pinned row must admit");
     let truncated = &bytes[..bytes.len() - 1];
-    let err = TensorView::build(&admission, truncated)
-        .expect_err("a truncated buffer must be rejected");
+    let err =
+        TensorView::build(&admission, truncated).expect_err("a truncated buffer must be rejected");
     assert!(matches!(
         err,
-        TensorViewError::WrongFileSize { expected: 270_590_880, .. }
+        TensorViewError::WrongFileSize {
+            expected: 270_590_880,
+            ..
+        }
     ));
 }

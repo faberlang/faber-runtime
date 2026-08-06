@@ -170,7 +170,10 @@ impl std::fmt::Display for TokenizerError {
                 write!(f, "merges count {actual} != expected {expected}")
             }
             TokenizerError::ScoresPresent => {
-                write!(f, "tokenizer.ggml.scores is present; the pinned row has no scores")
+                write!(
+                    f,
+                    "tokenizer.ggml.scores is present; the pinned row has no scores"
+                )
             }
             TokenizerError::MalformedMergeString { index, merge } => {
                 write!(f, "malformed merge string at index {index}: {merge:?}")
@@ -185,10 +188,16 @@ impl std::fmt::Display for TokenizerError {
                 write!(f, "token id {id} out of [0, {vocab_size})")
             }
             TokenizerError::AddBosTokenNotSupported { value } => {
-                write!(f, "add_bos_token = {value}; the pinned row is add_bos_token = false")
+                write!(
+                    f,
+                    "add_bos_token = {value}; the pinned row is add_bos_token = false"
+                )
             }
             TokenizerError::AddSpacePrefixNotSupported { value } => {
-                write!(f, "add_space_prefix = {value}; the pinned row is add_space_prefix = false")
+                write!(
+                    f,
+                    "add_space_prefix = {value}; the pinned row is add_space_prefix = false"
+                )
             }
             TokenizerError::InputTooLarge { bytes, ceiling } => {
                 write!(f, "encode input {bytes} bytes exceeds ceiling {ceiling}")
@@ -203,7 +212,10 @@ impl std::fmt::Display for TokenizerError {
                 write!(f, "admission missing tokenizer metadata key {key}")
             }
             TokenizerError::WrongMetadataValueType { key } => {
-                write!(f, "admission tokenizer metadata key {key} has the wrong value type")
+                write!(
+                    f,
+                    "admission tokenizer metadata key {key} has the wrong value type"
+                )
             }
         }
     }
@@ -348,7 +360,9 @@ impl Gpt2BpeTokenizer {
                     token: text.clone(),
                 });
             }
-            token_to_id.entry(bytes.to_vec().into_boxed_slice()).or_insert(id as u32);
+            token_to_id
+                .entry(bytes.to_vec().into_boxed_slice())
+                .or_insert(id as u32);
             // llama.cpp's per-byte fallback looks up the single raw byte as a
             // string; only ASCII token texts can be a single (valid UTF-8) byte.
             if bytes.len() == 1 && bytes[0] < 0x80 {
@@ -382,7 +396,10 @@ impl Gpt2BpeTokenizer {
                 });
             }
             bpe_ranks
-                .entry((left.to_vec().into_boxed_slice(), right.to_vec().into_boxed_slice()))
+                .entry((
+                    left.to_vec().into_boxed_slice(),
+                    right.to_vec().into_boxed_slice(),
+                ))
                 .or_insert(index as u32);
         }
 
@@ -401,7 +418,12 @@ impl Gpt2BpeTokenizer {
         // 4. Special cache (llama.cpp `cache_special_tokens`): control +
         //    user-defined + unknown, sorted by text byte length descending.
         let mut specials: Vec<Special> = Vec::new();
-        for (id, (text, ttype)) in facts.tokens.iter().zip(facts.token_types.iter()).enumerate() {
+        for (id, (text, ttype)) in facts
+            .tokens
+            .iter()
+            .zip(facts.token_types.iter())
+            .enumerate()
+        {
             let kind = match ttype {
                 &TOKEN_TYPE_CONTROL => SpecialKind::Control,
                 &TOKEN_TYPE_UNKNOWN => SpecialKind::Unknown,
@@ -657,7 +679,10 @@ impl Gpt2BpeTokenizer {
         }
 
         let mut output: Vec<u32> = Vec::new();
-        let mut fragments: Vec<Fragment> = vec![Fragment::Text { start: 0, len: text.len() }];
+        let mut fragments: Vec<Fragment> = vec![Fragment::Text {
+            start: 0,
+            len: text.len(),
+        }];
 
         // 1. Special-token partition (llama.cpp `tokenizer_st_partition`).
         for special in &self.specials {
@@ -689,14 +714,16 @@ impl Gpt2BpeTokenizer {
                     output.push(id);
                 }
                 Fragment::Text { start, len } => {
-                    let fragment_text = text.get(start..start + len).ok_or(
-                        TokenizerError::ArithmeticOverflow { what: "fragment slice" },
-                    )?;
+                    let fragment_text =
+                        text.get(start..start + len)
+                            .ok_or(TokenizerError::ArithmeticOverflow {
+                                what: "fragment slice",
+                            })?;
                     let spans = pre_tokenize_smollm(fragment_text);
                     for (b_start, b_len) in spans {
-                        let word = fragment_text.get(b_start..b_start + b_len).ok_or(
-                            TokenizerError::ArithmeticOverflow { what: "word slice" },
-                        )?;
+                        let word = fragment_text
+                            .get(b_start..b_start + b_len)
+                            .ok_or(TokenizerError::ArithmeticOverflow { what: "word slice" })?;
                         let display = byte_encode(word);
                         self.bpe_encode_word(&display, &mut output)?;
                     }
@@ -762,11 +789,7 @@ impl Gpt2BpeTokenizer {
     }
 
     /// BPE-encode one byte-encoded (display) fragment, appending ids.
-    fn bpe_encode_word(
-        &self,
-        display: &str,
-        output: &mut Vec<u32>,
-    ) -> Result<(), TokenizerError> {
+    fn bpe_encode_word(&self, display: &str, output: &mut Vec<u32>) -> Result<(), TokenizerError> {
         let n_chars = display.chars().count();
         if n_chars == 0 {
             return Ok(());
@@ -780,7 +803,11 @@ impl Gpt2BpeTokenizer {
                 let len = c.len_utf8();
                 symbols.push(Symbol {
                     prev: index as isize - 1,
-                    next: if index + 1 == n_chars { -1 } else { index as isize + 1 },
+                    next: if index + 1 == n_chars {
+                        -1
+                    } else {
+                        index as isize + 1
+                    },
                     start: byte_cursor,
                     n: len,
                 });
@@ -790,10 +817,10 @@ impl Gpt2BpeTokenizer {
 
         let mut queue: BinaryHeap<QueueEntry> = BinaryHeap::new();
         let add_bigram = |queue: &mut BinaryHeap<QueueEntry>,
-                              symbols: &[Symbol],
-                              ranks: &HashMap<(Box<[u8]>, Box<[u8]>), u32>,
-                              left: isize,
-                              right: isize| {
+                          symbols: &[Symbol],
+                          ranks: &HashMap<(Box<[u8]>, Box<[u8]>), u32>,
+                          left: isize,
+                          right: isize| {
             if left < 0 || right < 0 {
                 return;
             }
@@ -801,18 +828,27 @@ impl Gpt2BpeTokenizer {
             let r = right as usize;
             let ltext = &display[symbols[l].start..symbols[l].start + symbols[l].n];
             let rtext = &display[symbols[r].start..symbols[r].start + symbols[r].n];
-            if let Some(&rank) =
-                ranks.get(&(ltext.as_bytes().into(), rtext.as_bytes().into()))
-            {
+            if let Some(&rank) = ranks.get(&(ltext.as_bytes().into(), rtext.as_bytes().into())) {
                 let mut text = String::with_capacity(ltext.len() + rtext.len());
                 text.push_str(ltext);
                 text.push_str(rtext);
-                queue.push(QueueEntry { rank, left: l, right: r, text });
+                queue.push(QueueEntry {
+                    rank,
+                    left: l,
+                    right: r,
+                    text,
+                });
             }
         };
 
         for i in 1..n_chars {
-            add_bigram(&mut queue, &symbols, &self.bpe_ranks, i as isize - 1, i as isize);
+            add_bigram(
+                &mut queue,
+                &symbols,
+                &self.bpe_ranks,
+                i as isize - 1,
+                i as isize,
+            );
         }
 
         while let Some(entry) = queue.pop() {
@@ -842,8 +878,20 @@ impl Gpt2BpeTokenizer {
             }
 
             let prev_of_left = symbols[entry.left].prev;
-            add_bigram(&mut queue, &symbols, &self.bpe_ranks, prev_of_left, entry.left as isize);
-            add_bigram(&mut queue, &symbols, &self.bpe_ranks, entry.left as isize, next_of_right);
+            add_bigram(
+                &mut queue,
+                &symbols,
+                &self.bpe_ranks,
+                prev_of_left,
+                entry.left as isize,
+            );
+            add_bigram(
+                &mut queue,
+                &symbols,
+                &self.bpe_ranks,
+                entry.left as isize,
+                next_of_right,
+            );
         }
 
         // Collect alive symbols in chain order (llama.cpp `symbols_final` walk).
@@ -1091,9 +1139,7 @@ fn split_gpt2_span(chars: &[char], ini: usize, end: usize, out: &mut Vec<(usize,
                 let next2 = get_cpt(pos + 2);
                 if matches!(
                     (next, next2),
-                    (Some('r'), Some('e'))
-                        | (Some('v'), Some('e'))
-                        | (Some('l'), Some('l'))
+                    (Some('r'), Some('e')) | (Some('v'), Some('e')) | (Some('l'), Some('l'))
                 ) {
                     pos += 3;
                     add_token(pos, &mut prev_end);

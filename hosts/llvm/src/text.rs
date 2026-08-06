@@ -334,10 +334,7 @@ pub unsafe extern "C" fn __faber_rt_v1_text_ne(
 /// `ascii ≡ ascii` value equality (`i1`) over null-terminated ASCII byte
 /// payloads (same rationale as [`__faber_rt_v1_text_eq`]).
 #[no_mangle]
-pub unsafe extern "C" fn __faber_rt_v1_ascii_eq(
-    lhs: *const c_char,
-    rhs: *const c_char,
-) -> u8 {
+pub unsafe extern "C" fn __faber_rt_v1_ascii_eq(lhs: *const c_char, rhs: *const c_char) -> u8 {
     u8::from(match (ascii_bytes(lhs), ascii_bytes(rhs)) {
         (Some(lhs), Some(rhs)) => lhs == rhs,
         _ => false,
@@ -346,10 +343,7 @@ pub unsafe extern "C" fn __faber_rt_v1_ascii_eq(
 
 /// `ascii ≠ ascii` value inequality (`i1`).
 #[no_mangle]
-pub unsafe extern "C" fn __faber_rt_v1_ascii_ne(
-    lhs: *const c_char,
-    rhs: *const c_char,
-) -> u8 {
+pub unsafe extern "C" fn __faber_rt_v1_ascii_ne(lhs: *const c_char, rhs: *const c_char) -> u8 {
     u8::from(match (ascii_bytes(lhs), ascii_bytes(rhs)) {
         (Some(lhs), Some(rhs)) => lhs != rhs,
         _ => false,

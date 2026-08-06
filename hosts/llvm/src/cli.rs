@@ -15,10 +15,10 @@ use super::array::{runtime_mut, store_array, RuntimeValue};
 use super::format::store_text_owned;
 use super::option::store_option;
 use super::valor_aggregate::store_octeti;
-use super::{StableBox, RuntimeContext};
+use super::{RuntimeContext, StableBox};
 use faber::host_abi::{
-    FaberRtContextV1, FaberRtPtrResultV1, STATUS_INVALID_ARGUMENT,
-    STATUS_PANIC, VALUE_KIND_I1, VALUE_KIND_I64, VALUE_KIND_PTR, VALUE_KIND_TEXT,
+    FaberRtContextV1, FaberRtPtrResultV1, STATUS_INVALID_ARGUMENT, STATUS_PANIC, VALUE_KIND_I1,
+    VALUE_KIND_I64, VALUE_KIND_PTR, VALUE_KIND_TEXT,
 };
 use std::ffi::c_void;
 use std::io::Write;
@@ -64,7 +64,10 @@ enum DescriptorExit {
     Fixed(i64),
     Binding(String),
     #[allow(dead_code)]
-    Field { object: String, field: String },
+    Field {
+        object: String,
+        field: String,
+    },
     Unsupported,
 }
 
@@ -206,9 +209,7 @@ pub unsafe extern "C" fn __faber_rt_v1_cli_parse(
 ///
 /// `context` must be live and `__faber_rt_v1_cli_parse` must have run.
 #[no_mangle]
-pub unsafe extern "C" fn __faber_rt_v1_cli_table(
-    context: *mut FaberRtContextV1,
-) -> *mut c_void {
+pub unsafe extern "C" fn __faber_rt_v1_cli_table(context: *mut FaberRtContextV1) -> *mut c_void {
     let Some(runtime) = runtime(context) else {
         return std::ptr::null_mut();
     };
@@ -224,9 +225,7 @@ pub unsafe extern "C" fn __faber_rt_v1_cli_table(
 ///
 /// `context` must be live and `__faber_rt_v1_cli_parse` must have run.
 #[no_mangle]
-pub unsafe extern "C" fn __faber_rt_v1_cli_selected_command(
-    context: *mut FaberRtContextV1,
-) -> i64 {
+pub unsafe extern "C" fn __faber_rt_v1_cli_selected_command(context: *mut FaberRtContextV1) -> i64 {
     let Some(runtime) = runtime(context) else {
         return -1;
     };
@@ -277,7 +276,12 @@ pub unsafe extern "C" fn __faber_rt_v1_cli_field_ptr(
     let Some(entry) = find_entry(runtime, table, index) else {
         return std::ptr::null_mut();
     };
-    if !entry.carrier && !matches!(entry.kind, T_TEXTUS | T_OCTETI | T_LISTA_TEXTUS | T_LISTA_NUMERUS) {
+    if !entry.carrier
+        && !matches!(
+            entry.kind,
+            T_TEXTUS | T_OCTETI | T_LISTA_TEXTUS | T_LISTA_NUMERUS
+        )
+    {
         return std::ptr::null_mut();
     }
     match entry.value {
@@ -374,7 +378,10 @@ fn find_entry<'a>(
 }
 
 fn table_entry_by_binding(table: &RuntimeCliTable, binding: &str) -> Option<i64> {
-    let binding_index = table.binding_names.iter().position(|name| name == binding)?;
+    let binding_index = table
+        .binding_names
+        .iter()
+        .position(|name| name == binding)?;
     match table.entries.get(binding_index).map(|entry| entry.value) {
         Some(CliPayload::Integer(value)) => Some(value),
         Some(CliPayload::Bool(value)) => Some(i64::from(value)),
@@ -437,13 +444,27 @@ fn parse_subcommand(
         }
         if arg.starts_with("--") {
             let global_refs = descriptor.global_options.iter().collect::<Vec<_>>();
-            parse_long_option(context, &global_refs, &mut global_entries, arg, &mut index, arguments)?;
+            parse_long_option(
+                context,
+                &global_refs,
+                &mut global_entries,
+                arg,
+                &mut index,
+                arguments,
+            )?;
             index += 1;
             continue;
         }
         if arg.starts_with('-') && arg.len() > 1 {
             let global_refs = descriptor.global_options.iter().collect::<Vec<_>>();
-            parse_short_option(context, &global_refs, &mut global_entries, arg, &mut index, arguments)?;
+            parse_short_option(
+                context,
+                &global_refs,
+                &mut global_entries,
+                arg,
+                &mut index,
+                arguments,
+            )?;
             index += 1;
             continue;
         }
@@ -506,7 +527,9 @@ fn select_command<'a>(
     for (index, command) in descriptor.commands.iter().enumerate() {
         if command_parts.len() >= command.path.len()
             && command.path.iter().enumerate().all(|(part_index, part)| {
-                command_parts.get(part_index).is_some_and(|value| value == part)
+                command_parts
+                    .get(part_index)
+                    .is_some_and(|value| value == part)
             })
         {
             let candidate = (index, command.path.len(), command);
@@ -520,7 +543,9 @@ fn select_command<'a>(
             let alias_parts = alias_path(alias);
             if command_parts.len() >= alias_parts.len()
                 && alias_parts.iter().enumerate().all(|(part_index, part)| {
-                    command_parts.get(part_index).is_some_and(|value| value == part)
+                    command_parts
+                        .get(part_index)
+                        .is_some_and(|value| value == part)
                 })
             {
                 let candidate = (index, alias_parts.len(), command);
@@ -555,7 +580,14 @@ fn parse_surface(
     for option in options {
         option_entries.push(initial_option_entry(context, option));
     }
-    parse_surface_with_entries(context, descriptor, options, operands, arguments, &mut option_entries)
+    parse_surface_with_entries(
+        context,
+        descriptor,
+        options,
+        operands,
+        arguments,
+        &mut option_entries,
+    )
 }
 
 fn parse_surface_with_entries(
@@ -606,13 +638,20 @@ fn parse_surface_with_entries(
         entries.push(operand_entries[index]);
         binding_names.push(operand.binding.clone());
     }
-    Ok(ParsedSurface { entries, binding_names })
+    Ok(ParsedSurface {
+        entries,
+        binding_names,
+    })
 }
 
 fn initial_option_entry(context: *mut FaberRtContextV1, option: &DescriptorOption) -> CliEntry {
     if option.flag {
         let enabled = matches!(&option.default, Some(DescriptorDefault::Bool(true)));
-        return CliEntry { kind: option.ty, carrier: false, value: CliPayload::Bool(enabled) };
+        return CliEntry {
+            kind: option.ty,
+            carrier: false,
+            value: CliPayload::Bool(enabled),
+        };
     }
     match &option.default {
         Some(default) => default_value_entry(context, option.ty, default),
@@ -637,17 +676,27 @@ fn option_none_carrier(context: *mut FaberRtContextV1, ty: u8) -> *mut c_void {
     }
 }
 
-fn default_value_entry(context: *mut FaberRtContextV1, ty: u8, default: &DescriptorDefault) -> CliEntry {
+fn default_value_entry(
+    context: *mut FaberRtContextV1,
+    ty: u8,
+    default: &DescriptorDefault,
+) -> CliEntry {
     match (ty, default) {
-        (T_NUMERUS, DescriptorDefault::Integer(value)) => {
-            CliEntry { kind: ty, carrier: false, value: CliPayload::Integer(*value) }
-        }
-        (T_FRACTUS, DescriptorDefault::Float(value)) => {
-            CliEntry { kind: ty, carrier: false, value: CliPayload::Float(*value) }
-        }
-        (T_BIVALENS, DescriptorDefault::Bool(value)) => {
-            CliEntry { kind: ty, carrier: false, value: CliPayload::Bool(*value) }
-        }
+        (T_NUMERUS, DescriptorDefault::Integer(value)) => CliEntry {
+            kind: ty,
+            carrier: false,
+            value: CliPayload::Integer(*value),
+        },
+        (T_FRACTUS, DescriptorDefault::Float(value)) => CliEntry {
+            kind: ty,
+            carrier: false,
+            value: CliPayload::Float(*value),
+        },
+        (T_BIVALENS, DescriptorDefault::Bool(value)) => CliEntry {
+            kind: ty,
+            carrier: false,
+            value: CliPayload::Bool(*value),
+        },
         (T_OCTETI, DescriptorDefault::Text(value)) => CliEntry {
             kind: ty,
             carrier: false,
@@ -658,9 +707,21 @@ fn default_value_entry(context: *mut FaberRtContextV1, ty: u8, default: &Descrip
             carrier: false,
             value: CliPayload::Handle(text_handle(context, value)),
         },
-        (T_NUMERUS, _) => CliEntry { kind: ty, carrier: false, value: CliPayload::Integer(0) },
-        (T_FRACTUS, _) => CliEntry { kind: ty, carrier: false, value: CliPayload::Float(0.0) },
-        (T_BIVALENS, _) => CliEntry { kind: ty, carrier: false, value: CliPayload::Bool(false) },
+        (T_NUMERUS, _) => CliEntry {
+            kind: ty,
+            carrier: false,
+            value: CliPayload::Integer(0),
+        },
+        (T_FRACTUS, _) => CliEntry {
+            kind: ty,
+            carrier: false,
+            value: CliPayload::Float(0.0),
+        },
+        (T_BIVALENS, _) => CliEntry {
+            kind: ty,
+            carrier: false,
+            value: CliPayload::Bool(false),
+        },
         (_, DescriptorDefault::Nil) => CliEntry {
             kind: ty,
             carrier: false,
@@ -669,7 +730,11 @@ fn default_value_entry(context: *mut FaberRtContextV1, ty: u8, default: &Descrip
                 _ => text_handle(context, ""),
             }),
         },
-        (_, _) => CliEntry { kind: ty, carrier: false, value: CliPayload::Integer(0) },
+        (_, _) => CliEntry {
+            kind: ty,
+            carrier: false,
+            value: CliPayload::Integer(0),
+        },
     }
 }
 
@@ -686,8 +751,21 @@ fn parse_long_option(
         None => (arg, None),
     };
     for (option_index, option) in options.iter().enumerate() {
-        if option.long.as_deref().is_some_and(|long| name == format!("--{long}")) {
-            apply_option(context, option, option_index, option_entries, &name, inline, index, arguments)?;
+        if option
+            .long
+            .as_deref()
+            .is_some_and(|long| name == format!("--{long}"))
+        {
+            apply_option(
+                context,
+                option,
+                option_index,
+                option_entries,
+                &name,
+                inline,
+                index,
+                arguments,
+            )?;
             return Ok(());
         }
     }
@@ -703,8 +781,21 @@ fn parse_short_option(
     arguments: &[String],
 ) -> Result<(), String> {
     for (option_index, option) in options.iter().enumerate() {
-        if option.short.as_deref().is_some_and(|short| arg == format!("-{short}")) {
-            apply_option(context, option, option_index, option_entries, arg, None, index, arguments)?;
+        if option
+            .short
+            .as_deref()
+            .is_some_and(|short| arg == format!("-{short}"))
+        {
+            apply_option(
+                context,
+                option,
+                option_index,
+                option_entries,
+                arg,
+                None,
+                index,
+                arguments,
+            )?;
             return Ok(());
         }
     }
@@ -722,8 +813,11 @@ fn apply_option(
     arguments: &[String],
 ) -> Result<(), String> {
     if option.flag {
-        option_entries[option_index] =
-            CliEntry { kind: option.ty, carrier: false, value: CliPayload::Bool(true) };
+        option_entries[option_index] = CliEntry {
+            kind: option.ty,
+            carrier: false,
+            value: CliPayload::Bool(true),
+        };
         return Ok(());
     }
     let raw = match inline {
@@ -763,9 +857,17 @@ fn parse_option_value(
         _ => CliPayload::Handle(text_handle(context, raw)),
     };
     if optional {
-        Ok(CliEntry { kind: option.ty, carrier: true, value: CliPayload::Handle(option_some_carrier(context, option.ty, value)?) })
+        Ok(CliEntry {
+            kind: option.ty,
+            carrier: true,
+            value: CliPayload::Handle(option_some_carrier(context, option.ty, value)?),
+        })
     } else {
-        Ok(CliEntry { kind: option.ty, carrier: false, value })
+        Ok(CliEntry {
+            kind: option.ty,
+            carrier: false,
+            value,
+        })
     }
 }
 
@@ -831,7 +933,11 @@ fn parse_operand_payload(
 }
 
 fn entry_from_payload(_context: *mut FaberRtContextV1, ty: u8, value: CliPayload) -> CliEntry {
-    CliEntry { kind: ty, carrier: false, value }
+    CliEntry {
+        kind: ty,
+        carrier: false,
+        value,
+    }
 }
 
 fn list_value_entry(
@@ -866,7 +972,11 @@ fn list_value_entry(
     };
     let result = store_array(runtime, kind, runtime_values);
     if result.status.is_ok() {
-        Ok(CliEntry { kind: ty, carrier: false, value: CliPayload::Handle(result.value) })
+        Ok(CliEntry {
+            kind: ty,
+            carrier: false,
+            value: CliPayload::Handle(result.value),
+        })
     } else {
         Err(String::new())
     }
@@ -881,7 +991,9 @@ fn default_value_payload(
         (T_NUMERUS, DescriptorDefault::Integer(value)) => CliPayload::Integer(*value),
         (T_FRACTUS, DescriptorDefault::Float(value)) => CliPayload::Float(*value),
         (T_BIVALENS, DescriptorDefault::Bool(value)) => CliPayload::Bool(*value),
-        (T_OCTETI, DescriptorDefault::Text(value)) => CliPayload::Handle(octeti_handle(context, value.as_bytes())),
+        (T_OCTETI, DescriptorDefault::Text(value)) => {
+            CliPayload::Handle(octeti_handle(context, value.as_bytes()))
+        }
         (_, DescriptorDefault::Text(value)) => CliPayload::Handle(text_handle(context, value)),
         _ => match ty {
             T_NUMERUS => CliPayload::Integer(0),
@@ -954,7 +1066,11 @@ fn print_surface_help(
     options: &[&DescriptorOption],
     operands: &[&DescriptorOperand],
 ) {
-    println!("Usage: {}{}", descriptor.name, usage_suffix(options, operands));
+    println!(
+        "Usage: {}{}",
+        descriptor.name,
+        usage_suffix(options, operands)
+    );
     if let Some(description) = &descriptor.description {
         println!();
         println!("{description}");
@@ -1106,8 +1222,16 @@ fn decode_descriptor(bytes: &[u8]) -> Result<CliDescriptor, String> {
     let has_version = reader.u8()? != 0;
     let has_description = reader.u8()? != 0;
     let name = reader.string()?;
-    let version = if has_version { Some(reader.string()?) } else { None };
-    let description = if has_description { Some(reader.string()?) } else { None };
+    let version = if has_version {
+        Some(reader.string()?)
+    } else {
+        None
+    };
+    let description = if has_description {
+        Some(reader.string()?)
+    } else {
+        None
+    };
     let exit = decode_exit(&mut reader)?;
     let global_options = decode_options(&mut reader)?;
     let global_operands = decode_operands(&mut reader)?;
@@ -1214,7 +1338,10 @@ impl<'a> DescrReader<'a> {
     }
 
     fn take(&mut self, len: usize) -> Result<&'a [u8], String> {
-        let end = self.offset.checked_add(len).ok_or_else(|| "descriptor overflow".to_owned())?;
+        let end = self
+            .offset
+            .checked_add(len)
+            .ok_or_else(|| "descriptor overflow".to_owned())?;
         if end > self.bytes.len() {
             return Err("truncated descriptor".to_owned());
         }
@@ -1263,7 +1390,9 @@ impl<'a> DescrReader<'a> {
             DEF_TEXT => DescriptorDefault::Text(self.string()?),
             DEF_EXPR => DescriptorDefault::Expr(self.string()?),
             DEF_INTEGER => DescriptorDefault::Integer(self.i64()?),
-            DEF_FLOAT => DescriptorDefault::Float(f64::from_le_bytes(self.take(8)?.try_into().unwrap())),
+            DEF_FLOAT => {
+                DescriptorDefault::Float(f64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+            }
             DEF_BOOL => DescriptorDefault::Bool(self.u8()? != 0),
             DEF_NIL => DescriptorDefault::Nil,
             other => return Err(format!("unknown default tag {other}")),
@@ -1286,7 +1415,8 @@ fn cli_parse_exit(message: String) -> ! {
 }
 
 fn ffi_ptr_result(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrResultV1 {
-    panic::catch_unwind(AssertUnwindSafe(operation)).unwrap_or(FaberRtPtrResultV1::failure(STATUS_PANIC))
+    panic::catch_unwind(AssertUnwindSafe(operation))
+        .unwrap_or(FaberRtPtrResultV1::failure(STATUS_PANIC))
 }
 
 fn runtime(context: *mut FaberRtContextV1) -> Option<&'static RuntimeContext> {

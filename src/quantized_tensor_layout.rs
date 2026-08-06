@@ -325,11 +325,19 @@ pub enum QuantizedLayoutError {
     /// The byte range is not the exact `blocks * block_bytes` length.
     ByteLenMismatch { byte_len: u64, expected: u64 },
     /// The byte range extends past the end of the file.
-    ByteRangeOutOfBounds { start: u64, end: u64, file_size: u64 },
+    ByteRangeOutOfBounds {
+        start: u64,
+        end: u64,
+        file_size: u64,
+    },
     /// The byte range start is not 32-aligned.
     MisalignedRangeStart { start: u64, alignment: u64 },
     /// The scale/min encoding width contradicts the GGML block byte width.
-    EncodingMismatch { format_id: GgmlType, encoding_bytes: u64, expected_bytes: u64 },
+    EncodingMismatch {
+        format_id: GgmlType,
+        encoding_bytes: u64,
+        expected_bytes: u64,
+    },
 }
 
 impl fmt::Display for QuantizedLayoutError {
@@ -386,10 +394,7 @@ impl QuantizedTensorLayout {
     ///
     /// Returns the first typed `QuantizedLayoutError` the descriptor
     /// contradicts.
-    pub fn resolve(
-        desc: &TensorDescriptor,
-        file_size: u64,
-    ) -> Result<Self, QuantizedLayoutError> {
+    pub fn resolve(desc: &TensorDescriptor, file_size: u64) -> Result<Self, QuantizedLayoutError> {
         let format_id = desc.ggml_type;
         let block_elements = format_id.block_elements();
         let block_bytes = format_id.block_bytes();

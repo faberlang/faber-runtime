@@ -240,7 +240,10 @@ fn f32_to_f16_rn_is_round_to_nearest_even() {
     assert_eq!(f32_to_f16_rn(tie_high), 0x3C02);
     // Strictly below the low tie → down; strictly above → up.
     assert_eq!(f32_to_f16_rn(1.0f32 + 2.0f32.powi(-12)), 0x3C00);
-    assert_eq!(f32_to_f16_rn(1.0f32 + 2.0f32.powi(-10) + 2.0f32.powi(-12)), 0x3C01);
+    assert_eq!(
+        f32_to_f16_rn(1.0f32 + 2.0f32.powi(-10) + 2.0f32.powi(-12)),
+        0x3C01
+    );
     // Subnormal tie: 2⁻²⁵ is halfway between 0 and the smallest subnormal
     // 2⁻²⁴ → rounds to 0 (even).
     assert_eq!(f32_to_f16_rn(2.0f32.powi(-25)), 0x0000);
@@ -277,7 +280,10 @@ fn oracle_refuses_empty_tokens_and_out_of_range_ids() {
     let err = oracle
         .forward_one(&[0, VOCAB_SIZE as i64])
         .expect_err("out of range");
-    assert!(matches!(err, OracleError::TokenOutOfRange { token: 49_152, .. }));
+    assert!(matches!(
+        err,
+        OracleError::TokenOutOfRange { token: 49_152, .. }
+    ));
     let err = oracle.forward_one(&[-1]).expect_err("negative id");
     assert!(matches!(err, OracleError::TokenOutOfRange { .. }));
 }
@@ -289,9 +295,16 @@ fn oracle_build_materializes_all_tensors_with_receipts() {
     };
     assert_eq!(oracle.model_sha256_hex(), PINNED_SHA256_HEX);
     // 1 (token_embd) + 32×9 (per-layer) + 1 (output_norm) = 290 receipts.
-    assert_eq!(oracle.receipts().len(), 290, "one receipt per materialized tensor");
-    let sources: std::collections::BTreeSet<&str> =
-        oracle.receipts().iter().map(|r| r.source_tensor.as_str()).collect();
+    assert_eq!(
+        oracle.receipts().len(),
+        290,
+        "one receipt per materialized tensor"
+    );
+    let sources: std::collections::BTreeSet<&str> = oracle
+        .receipts()
+        .iter()
+        .map(|r| r.source_tensor.as_str())
+        .collect();
     assert_eq!(sources.len(), 290, "receipts must name distinct tensors");
     assert!(sources.contains("token_embd.weight"));
     assert!(sources.contains("blk.0.attn_norm.weight"));
@@ -326,7 +339,10 @@ fn forward_one_is_deterministic_and_incremental_run_is_byte_identical() {
     let run0 = ForwardRun::new(oracle, &PROMPT_TOKENS).expect("run");
     assert_eq!(run0.len(), PROMPT_TOKENS.len());
     let p0 = run0.position_logits().expect("position 0");
-    assert_eq!(p0, a, "position 0: ForwardRun must equal forward_one bit-for-bit");
+    assert_eq!(
+        p0, a,
+        "position 0: ForwardRun must equal forward_one bit-for-bit"
+    );
 
     let small = [PROMPT_TOKENS[0], PROMPT_TOKENS[1]];
     let full_small = oracle.forward_one(&small).expect("small full forward");
@@ -348,10 +364,7 @@ fn log_softmax_normalizes_and_finite_gate_rejects_bad_input() {
     let ln_s = s.ln();
     let expected = [(-2.0f32) - ln_s, (-1.0f32) - ln_s, -ln_s];
     for (i, (g, e)) in lp.iter().zip(expected).enumerate() {
-        assert!(
-            (g - e).abs() < 1e-5,
-            "logp[{i}]: got {g}, expected {e}"
-        );
+        assert!((g - e).abs() < 1e-5, "logp[{i}]: got {g}, expected {e}");
     }
     // Normalization: Σ exp(logp) == 1.
     let mut sum = 0.0f32;
@@ -404,7 +417,8 @@ fn teacher_forced_window_meets_numeric_contract_v1_0_0() {
 
     for i in 0..WINDOW_POSITIONS {
         if i > 0 {
-            run.push_token(TRACE_TOKENS[i - 1]).expect("teacher-forced push");
+            run.push_token(TRACE_TOKENS[i - 1])
+                .expect("teacher-forced push");
         }
         let logits = run.position_logits().expect("position logits");
         let base = i * VOCAB_SIZE * 4;
@@ -512,7 +526,9 @@ fn teacher_forced_window_meets_numeric_contract_v1_0_0() {
     // position carries the honest named-failure record. Truth over safety:
     // the failure is recorded, never weakened or hidden.
     assert!(
-        verdicts.iter().all(|v| v.failing_thresholds == [FailingThreshold::Band]),
+        verdicts
+            .iter()
+            .all(|v| v.failing_thresholds == [FailingThreshold::Band]),
         "the band must fail at every position (the only failing threshold):\n{report}"
     );
     // (d) finite gate everywhere.
@@ -531,18 +547,15 @@ fn teacher_forced_window_meets_numeric_contract_v1_0_0() {
         "the first failing position is the prompt end:\n{report}"
     );
     assert_eq!(
-        record.comparator_trace_token,
-        TRACE_TOKENS[0],
+        record.comparator_trace_token, TRACE_TOKENS[0],
         "record must carry the comparator trace token:\n{report}"
     );
     assert_eq!(
-        record.oracle_top1,
-        TRACE_TOKENS[0],
+        record.oracle_top1, TRACE_TOKENS[0],
         "record must carry the EOG-excluded oracle top-1 (top-1 is exact at position 0):\n{report}"
     );
     assert_eq!(
-        record.oracle_top1,
-        verdicts[0].oracle_top1,
+        record.oracle_top1, verdicts[0].oracle_top1,
         "record oracle_top1 must match the per-position verdict:\n{report}"
     );
     assert_eq!(
@@ -551,8 +564,7 @@ fn teacher_forced_window_meets_numeric_contract_v1_0_0() {
         "record must name the failing threshold(s):\n{report}"
     );
     assert_eq!(
-        record.max_band_deviation,
-        verdicts[0].max_band_deviation,
+        record.max_band_deviation, verdicts[0].max_band_deviation,
         "record must carry the max band deviation at the first failing position:\n{report}"
     );
     assert!(
@@ -633,7 +645,10 @@ fn divergence_record_first_uses_contract_fields() {
         vec![FailingThreshold::Top1],
         "named failing thresholds"
     );
-    assert_eq!(record.max_band_deviation, 0.0, "max band deviation at pos 3");
+    assert_eq!(
+        record.max_band_deviation, 0.0,
+        "max band deviation at pos 3"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -661,11 +676,20 @@ fn golden_provenance(view: &TensorView<'_>) -> BTreeMap<String, Valor> {
     let mut pinned = BTreeMap::new();
     pinned.insert("window".to_string(), Valor::from(0i64));
     pinned.insert("prompt_pos".to_string(), Valor::from(8i64));
-    pinned.insert("prompt_tokens".to_string(), Valor::from(PROMPT_TOKENS.to_vec()));
-    pinned.insert("n_tokens".to_string(), Valor::from(PROMPT_TOKENS.len() as i64));
+    pinned.insert(
+        "prompt_tokens".to_string(),
+        Valor::from(PROMPT_TOKENS.to_vec()),
+    );
+    pinned.insert(
+        "n_tokens".to_string(),
+        Valor::from(PROMPT_TOKENS.len() as i64),
+    );
     provenance.insert("pinned_position".to_string(), pinned.into());
     let mut contract = BTreeMap::new();
-    contract.insert("schema".to_string(), Valor::from("gi0-numeric-contract.md v1.0.0"));
+    contract.insert(
+        "schema".to_string(),
+        Valor::from("gi0-numeric-contract.md v1.0.0"),
+    );
     contract.insert("band_delta".to_string(), Valor::from(BAND_DELTA as f64));
     provenance.insert("numeric_contract".to_string(), contract.into());
     provenance
@@ -682,9 +706,18 @@ fn golden_to_json(fx: &LogitsGolden, view: &TensorView<'_>) -> String {
     root.insert("raw_argmax".to_string(), Valor::from(fx.raw_argmax_id));
     let raw = BTreeMap::from([
         ("name".to_string(), Valor::from("raw_logits")),
-        ("elements".to_string(), Valor::from(fx.raw_logits.len() as i64)),
-        ("sha256".to_string(), Valor::from(f32_sha256_hex(&fx.raw_logits))),
-        ("f32_le_hex".to_string(), Valor::from(f32_le_hex(&fx.raw_logits))),
+        (
+            "elements".to_string(),
+            Valor::from(fx.raw_logits.len() as i64),
+        ),
+        (
+            "sha256".to_string(),
+            Valor::from(f32_sha256_hex(&fx.raw_logits)),
+        ),
+        (
+            "f32_le_hex".to_string(),
+            Valor::from(f32_le_hex(&fx.raw_logits)),
+        ),
     ]);
     root.insert("raw_logits".to_string(), raw.into());
     let lp = BTreeMap::from([
@@ -746,7 +779,10 @@ fn build_manifest(view: &TensorView<'_>, fx: &LogitsGolden) -> String {
     let mut entry = BTreeMap::new();
     entry.insert("op".to_string(), Valor::from("logits"));
     entry.insert("file".to_string(), Valor::from("logits-pos0.json"));
-    entry.insert("sha256".to_string(), Valor::from(hex(&sha256(wire.as_bytes()))));
+    entry.insert(
+        "sha256".to_string(),
+        Valor::from(hex(&sha256(wire.as_bytes()))),
+    );
     entry.insert(
         "raw_logits_elements".to_string(),
         Valor::from(fx.raw_logits.len() as i64),
@@ -826,7 +862,10 @@ fn logits_golden_is_byte_stable_deterministic_and_hash_accounted() {
     let raw: Vec<f32> = hex_f32s(raw_hex);
     let golden_lp: Vec<f32> = hex_f32s(logp_hex);
     let recomputed = log_softmax(&raw).expect("log_softmax recompute");
-    assert_eq!(recomputed, golden_lp, "golden logp must be log-softmax(raw)");
+    assert_eq!(
+        recomputed, golden_lp,
+        "golden logp must be log-softmax(raw)"
+    );
 }
 
 /// The committed manifest is always present and names the logits golden
@@ -836,7 +875,10 @@ fn committed_logits_golden_manifest_lists_the_logits_fixture() {
     let dir = goldens_dir();
     let manifest = std::fs::read_to_string(dir.join("manifest.json"))
         .unwrap_or_else(|e| panic!("committed manifest must exist at {} ({e})", dir.display()));
-    let root = Json::parse(&manifest).expect("manifest parses").as_valor().clone();
+    let root = Json::parse(&manifest)
+        .expect("manifest parses")
+        .as_valor()
+        .clone();
     assert_eq!(text(field(&root, "schema")), MANIFEST_SCHEMA);
     assert_eq!(text(field(&root, "generator")), GENERATOR_VERSION);
     let entries = list(field(&root, "fixtures"));

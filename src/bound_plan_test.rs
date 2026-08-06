@@ -5,8 +5,8 @@
 //! taxonomy (`hardware_isolation_claimed=false`).
 
 use crate::bound_plan::{
-    AdmitError, AdmittedLogicalPlan, BindError, BoundDistributedPlan, BoundPlanKind,
-    DeclaredPlacementConstraint, LogicalPartitionId, PartitionBinding, bind,
+    bind, AdmitError, AdmittedLogicalPlan, BindError, BoundDistributedPlan, BoundPlanKind,
+    DeclaredPlacementConstraint, LogicalPartitionId, PartitionBinding,
 };
 use crate::device::DeviceBackend;
 use crate::device_identity::{DeviceHealthGeneration, DeviceOrdinal, PhysicalDeviceId};
@@ -26,8 +26,9 @@ const UUID_A: &str = "GPU-3e017562-9ec3-da9a-962d-b8bd5f9e24be";
 const UUID_B: &str = "GPU-22222222-3333-4444-5555-666666666666";
 const UUID_C: &str = "GPU-88888888-9999-aaaa-bbbb-cccccccccccc";
 const PROBE_TIME: u64 = 1_752_717_600_000_000_000; // fixed sample time
-// An admitted (validated) logical hash in the sha256: spelling (FC17/FC11).
-const LOGICAL_HASH: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+                                                   // An admitted (validated) logical hash in the sha256: spelling (FC17/FC11).
+const LOGICAL_HASH: &str =
+    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 // CS-1 declared placement (md0-mode-fixtures.md §3): 2 virtual partitions @
 // 160 MiB, forced 2-way split ≈129 MiB/device.
@@ -66,7 +67,11 @@ fn ledger(weight_bytes: u64) -> PartitionBudgetLedger {
 /// An admitted virtual partition over `device` under the CS-1 shape.
 fn vp(seed: u64, device: PhysicalDeviceId) -> VirtualDevicePartition {
     VirtualDevicePartition::admit(
-        AdmissionRequest::new(VirtualDevicePartitionId::new(seed), device, ledger(CS1_SPLIT_BYTES)),
+        AdmissionRequest::new(
+            VirtualDevicePartitionId::new(seed),
+            device,
+            ledger(CS1_SPLIT_BYTES),
+        ),
         SafePhysicalLimit::new(CS1_LIMIT_BYTES),
     )
     .unwrap()
@@ -82,7 +87,10 @@ fn synthetic_entry(
         identity: device,
         device_model: Some("synthetic RTX 5070".to_owned()),
         capabilities: DeviceCapabilities {
-            compute_capability: ComputeCapability { major: 12, minor: 0 },
+            compute_capability: ComputeCapability {
+                major: 12,
+                minor: 0,
+            },
             sm_count: 48,
             dtype_surface: DtypeSurface {
                 f32: true,
@@ -119,7 +127,10 @@ fn snapshot_at(
     let devices: BTreeMap<_, _> = entries
         .into_iter()
         .map(|(ordinal, device, generation)| {
-            (DeviceOrdinal::new(ordinal), synthetic_entry(ordinal, device, generation))
+            (
+                DeviceOrdinal::new(ordinal),
+                synthetic_entry(ordinal, device, generation),
+            )
         })
         .collect();
     DeviceDiscoverySnapshot::new(probe_utc_nanos, devices, P2pProbeState::NotAttempted)
@@ -155,7 +166,9 @@ fn two_partition_bindings(
     bindings
 }
 
-fn binding((device, partition): (PhysicalDeviceId, Option<VirtualDevicePartition>)) -> PartitionBinding {
+fn binding(
+    (device, partition): (PhysicalDeviceId, Option<VirtualDevicePartition>),
+) -> PartitionBinding {
     match partition {
         Some(p) => PartitionBinding::with_virtual_partition(device, p),
         None => PartitionBinding::new(device),
@@ -278,7 +291,10 @@ fn synthetic_two_partition_bind_is_deterministic() {
     )
     .unwrap();
     assert_eq!(plan, again);
-    assert_eq!(plan.bound_distributed_plan_hash(), again.bound_distributed_plan_hash());
+    assert_eq!(
+        plan.bound_distributed_plan_hash(),
+        again.bound_distributed_plan_hash()
+    );
 
     // Bound hash spelling: sha256: + 64 lowercase hex (FC17/FC11).
     let hash = plan.bound_distributed_plan_hash();
@@ -297,7 +313,12 @@ fn synthetic_two_partition_bind_is_deterministic() {
     // Distributed kind with both bindings; not the MD-A15 degenerate.
     assert!(matches!(plan.kind(), BoundPlanKind::Distributed { .. }));
     assert!(!plan.is_degenerate());
-    assert_eq!(plan.bindings().expect("distributed plan has bindings").len(), 2);
+    assert_eq!(
+        plan.bindings()
+            .expect("distributed plan has bindings")
+            .len(),
+        2
+    );
 
     // Bound device set + content-addressed snapshot id recorded.
     assert_eq!(plan.device_set(), &DeviceSet::from_members([device_a()]));
@@ -311,9 +332,15 @@ fn synthetic_two_partition_bind_is_deterministic() {
     assert_eq!(receipt.virtual_partition_count(), 2);
     assert_eq!(
         receipt.virtual_partition_ids(),
-        &BTreeSet::from([VirtualDevicePartitionId::new(1), VirtualDevicePartitionId::new(2)])
+        &BTreeSet::from([
+            VirtualDevicePartitionId::new(1),
+            VirtualDevicePartitionId::new(2)
+        ])
     );
-    assert_eq!(receipt.fixture_identity_class(), FixtureIdentityClass::Synthetic);
+    assert_eq!(
+        receipt.fixture_identity_class(),
+        FixtureIdentityClass::Synthetic
+    );
     assert_eq!(receipt.transport_class(), TransportClass::HostStaged);
 }
 
@@ -352,7 +379,10 @@ fn two_partitions_on_two_devices_with_distinct_constraint() {
     );
     assert_eq!(
         receipt.virtual_partition_ids(),
-        &BTreeSet::from([VirtualDevicePartitionId::new(1), VirtualDevicePartitionId::new(2)])
+        &BTreeSet::from([
+            VirtualDevicePartitionId::new(1),
+            VirtualDevicePartitionId::new(2)
+        ])
     );
 }
 
@@ -553,8 +583,13 @@ fn bind_rejects_declared_constraint_violation() {
     .unwrap();
     let mut bindings = BTreeMap::new();
     bindings.insert(partition_id(0), PartitionBinding::new(device_a()));
-    let err = bind_plan(&admitted, bindings, DeviceSet::from_members([device_a()]), &snapshot)
-        .unwrap_err();
+    let err = bind_plan(
+        &admitted,
+        bindings,
+        DeviceSet::from_members([device_a()]),
+        &snapshot,
+    )
+    .unwrap_err();
     assert!(matches!(err, BindError::ConstraintViolation { .. }));
 }
 
@@ -638,12 +673,8 @@ fn single_partition_binds_to_implicit_local_without_distributed_wrapper() {
 #[test]
 fn bind_rejects_inconsistent_or_inactive_virtual_partition() {
     let snapshot = two_device_snapshot();
-    let admitted = AdmittedLogicalPlan::admit(
-        LOGICAL_HASH,
-        [partition_id(0), partition_id(1)],
-        [],
-    )
-    .unwrap();
+    let admitted =
+        AdmittedLogicalPlan::admit(LOGICAL_HASH, [partition_id(0), partition_id(1)], []).unwrap();
 
     // The attached partition binds device_b while the binding names device_a.
     let mut mismatched = BTreeMap::new();
@@ -692,12 +723,8 @@ fn bind_rejects_inconsistent_or_inactive_virtual_partition() {
 #[test]
 fn bound_hash_is_sensitive_to_binding_facts() {
     let snapshot = two_device_snapshot();
-    let admitted = AdmittedLogicalPlan::admit(
-        LOGICAL_HASH,
-        [partition_id(0), partition_id(1)],
-        [],
-    )
-    .unwrap();
+    let admitted =
+        AdmittedLogicalPlan::admit(LOGICAL_HASH, [partition_id(0), partition_id(1)], []).unwrap();
 
     let baseline = bind_plan(
         &admitted,

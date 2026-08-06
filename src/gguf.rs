@@ -240,7 +240,11 @@ pub enum AdmissionError {
     /// Metadata key exceeds the 128-byte ceiling.
     KeyTooLong { ceiling: u64, actual: u64 },
     /// Metadata value string (scalar or array element) exceeds 4096 bytes.
-    StringTooLong { key: String, ceiling: u64, actual: u64 },
+    StringTooLong {
+        key: String,
+        ceiling: u64,
+        actual: u64,
+    },
     /// Metadata key not in the admitted 37-key set.
     UnknownMetadataKey { key: String },
     /// The same admitted key appears more than once.
@@ -248,9 +252,17 @@ pub enum AdmissionError {
     /// `general.architecture` != `"llama"`.
     ArchitectureMismatch { actual: String },
     /// A metadata value contradicts the contract (wrong type or wrong value).
-    MetadataValueMismatch { key: String, expected: String, actual: String },
+    MetadataValueMismatch {
+        key: String,
+        expected: String,
+        actual: String,
+    },
     /// A tokenizer array count is not the exact contracted value.
-    TokenizerArrayCountMismatch { array: String, expected: u64, actual: u64 },
+    TokenizerArrayCountMismatch {
+        array: String,
+        expected: u64,
+        actual: u64,
+    },
     /// A BOOL metadata value is neither 0 nor 1.
     MalformedBool { value: u8 },
     /// Tensor name exceeds the 128-byte ceiling.
@@ -266,25 +278,48 @@ pub enum AdmissionError {
     /// Tensor data offset is not 32-aligned (no `general.alignment` override).
     MisalignedTensorOffset { name: String, offset: u64 },
     /// Tensor element count is not a multiple of the type's block size.
-    TensorElementsNotBlockAligned { name: String, elements: u64, block_elements: u64 },
+    TensorElementsNotBlockAligned {
+        name: String,
+        elements: u64,
+        block_elements: u64,
+    },
     /// Checked offset/length/size arithmetic overflowed u64.
     ArithmeticOverflow { context: String },
     /// A tensor byte range starts before the previous range ends.
-    OverlappingTensorRanges { name: String, offset: u64, previous_end: u64 },
+    OverlappingTensorRanges {
+        name: String,
+        offset: u64,
+        previous_end: u64,
+    },
     /// A tensor byte range starts after the aligned end of the previous range.
-    NonSequentialTensorOffsets { name: String, offset: u64, expected: u64 },
+    NonSequentialTensorOffsets {
+        name: String,
+        offset: u64,
+        expected: u64,
+    },
     /// The tensor-data region extends past the end of the file.
     TruncatedTensorData { data_end: u64, file_size: u64 },
     /// Per-type tensor count contradicts §2.3.
-    PerTypeTensorCountMismatch { ggml_type: GgmlType, expected: u64, actual: u64 },
+    PerTypeTensorCountMismatch {
+        ggml_type: GgmlType,
+        expected: u64,
+        actual: u64,
+    },
     /// Per-type element total contradicts §2.3.
-    PerTypeElementCountMismatch { ggml_type: GgmlType, expected: u64, actual: u64 },
+    PerTypeElementCountMismatch {
+        ggml_type: GgmlType,
+        expected: u64,
+        actual: u64,
+    },
     /// Grand total tensor elements != 361,821,120.
     TotalElementsMismatch { expected: u64, actual: u64 },
     /// Exact pinned file size not matched.
     FileSizeMismatch { expected: u64, actual: u64 },
     /// Whole-file SHA-256 != `2fa3f013…bac9c2`.
-    Sha256Mismatch { expected_hex: String, actual_hex: String },
+    Sha256Mismatch {
+        expected_hex: String,
+        actual_hex: String,
+    },
     /// A parsed string is not valid UTF-8.
     InvalidUtf8 { context: String },
     /// Underlying filesystem error in `admit_file`.
@@ -295,10 +330,16 @@ impl fmt::Display for AdmissionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AdmissionError::InvalidMagic { magic } => {
-                write!(f, "invalid GGUF magic: expected \"GGUF\", got {magic:#010x}")
+                write!(
+                    f,
+                    "invalid GGUF magic: expected \"GGUF\", got {magic:#010x}"
+                )
             }
             AdmissionError::UnsupportedVersion { version } => {
-                write!(f, "unsupported GGUF version {version} (pinned row is version 3)")
+                write!(
+                    f,
+                    "unsupported GGUF version {version} (pinned row is version 3)"
+                )
             }
             AdmissionError::TensorCountMismatch { expected, actual } => {
                 write!(f, "tensor_count {actual} != expected {expected}")
@@ -307,13 +348,23 @@ impl fmt::Display for AdmissionError {
                 write!(f, "metadata_kv_count {actual} != expected {expected}")
             }
             AdmissionError::TruncatedFile { needed, available } => {
-                write!(f, "truncated file: needed {needed} bytes, only {available} available")
+                write!(
+                    f,
+                    "truncated file: needed {needed} bytes, only {available} available"
+                )
             }
             AdmissionError::KeyTooLong { ceiling, actual } => {
                 write!(f, "metadata key length {actual} exceeds ceiling {ceiling}")
             }
-            AdmissionError::StringTooLong { key, ceiling, actual } => {
-                write!(f, "string for {key:?} is {actual} bytes, exceeds ceiling {ceiling}")
+            AdmissionError::StringTooLong {
+                key,
+                ceiling,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "string for {key:?} is {actual} bytes, exceeds ceiling {ceiling}"
+                )
             }
             AdmissionError::UnknownMetadataKey { key } => {
                 write!(f, "unknown metadata key {key:?} (pinned 37-key set only)")
@@ -331,8 +382,15 @@ impl fmt::Display for AdmissionError {
             } => {
                 write!(f, "metadata value for {key:?} contradicts the contract: expected {expected}, got {actual}")
             }
-            AdmissionError::TokenizerArrayCountMismatch { array, expected, actual } => {
-                write!(f, "tokenizer array {array:?} has {actual} elements, expected exactly {expected}")
+            AdmissionError::TokenizerArrayCountMismatch {
+                array,
+                expected,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "tokenizer array {array:?} has {actual} elements, expected exactly {expected}"
+                )
             }
             AdmissionError::MalformedBool { value } => {
                 write!(f, "malformed BOOL metadata value {value} (must be 0 or 1)")
@@ -344,37 +402,83 @@ impl fmt::Display for AdmissionError {
                 write!(f, "duplicate tensor name {name:?} in the tensor-info table")
             }
             AdmissionError::TensorDimCountMismatch { name, n_dims } => {
-                write!(f, "tensor {name:?} declares n_dims {n_dims}, pinned row allows 1..=2")
+                write!(
+                    f,
+                    "tensor {name:?} declares n_dims {n_dims}, pinned row allows 1..=2"
+                )
             }
             AdmissionError::TensorDimTooLarge { name, dim } => {
-                write!(f, "tensor {name:?} has dimension {dim}, exceeds ceiling {MAX_DIM}")
+                write!(
+                    f,
+                    "tensor {name:?} has dimension {dim}, exceeds ceiling {MAX_DIM}"
+                )
             }
             AdmissionError::UnknownDtype { name, dtype_id } => {
                 write!(f, "tensor {name:?} has unknown dtype id {dtype_id}")
             }
             AdmissionError::MisalignedTensorOffset { name, offset } => {
-                write!(f, "tensor {name:?} data offset {offset} is not {GGUF_ALIGNMENT}-aligned")
+                write!(
+                    f,
+                    "tensor {name:?} data offset {offset} is not {GGUF_ALIGNMENT}-aligned"
+                )
             }
-            AdmissionError::TensorElementsNotBlockAligned { name, elements, block_elements } => {
+            AdmissionError::TensorElementsNotBlockAligned {
+                name,
+                elements,
+                block_elements,
+            } => {
                 write!(f, "tensor {name:?} has {elements} elements, not a multiple of block size {block_elements}")
             }
             AdmissionError::ArithmeticOverflow { context } => {
                 write!(f, "arithmetic overflow while computing {context}")
             }
-            AdmissionError::OverlappingTensorRanges { name, offset, previous_end } => {
+            AdmissionError::OverlappingTensorRanges {
+                name,
+                offset,
+                previous_end,
+            } => {
                 write!(f, "tensor {name:?} range starts at {offset}, overlapping previous range ending at {previous_end}")
             }
-            AdmissionError::NonSequentialTensorOffsets { name, offset, expected } => {
-                write!(f, "tensor {name:?} data offset {offset} is out of order (expected {expected})")
+            AdmissionError::NonSequentialTensorOffsets {
+                name,
+                offset,
+                expected,
+            } => {
+                write!(
+                    f,
+                    "tensor {name:?} data offset {offset} is out of order (expected {expected})"
+                )
             }
-            AdmissionError::TruncatedTensorData { data_end, file_size } => {
-                write!(f, "tensor-data region ends at {data_end}, past file size {file_size}")
+            AdmissionError::TruncatedTensorData {
+                data_end,
+                file_size,
+            } => {
+                write!(
+                    f,
+                    "tensor-data region ends at {data_end}, past file size {file_size}"
+                )
             }
-            AdmissionError::PerTypeTensorCountMismatch { ggml_type, expected, actual } => {
-                write!(f, "{} tensor count {actual} != expected {expected}", ggml_type.name())
+            AdmissionError::PerTypeTensorCountMismatch {
+                ggml_type,
+                expected,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "{} tensor count {actual} != expected {expected}",
+                    ggml_type.name()
+                )
             }
-            AdmissionError::PerTypeElementCountMismatch { ggml_type, expected, actual } => {
-                write!(f, "{} element total {actual} != expected {expected}", ggml_type.name())
+            AdmissionError::PerTypeElementCountMismatch {
+                ggml_type,
+                expected,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "{} element total {actual} != expected {expected}",
+                    ggml_type.name()
+                )
             }
             AdmissionError::TotalElementsMismatch { expected, actual } => {
                 write!(f, "total tensor elements {actual} != expected {expected}")
@@ -382,8 +486,14 @@ impl fmt::Display for AdmissionError {
             AdmissionError::FileSizeMismatch { expected, actual } => {
                 write!(f, "file size {actual} != pinned {expected}")
             }
-            AdmissionError::Sha256Mismatch { expected_hex, actual_hex } => {
-                write!(f, "SHA-256 mismatch: expected {expected_hex}, got {actual_hex}")
+            AdmissionError::Sha256Mismatch {
+                expected_hex,
+                actual_hex,
+            } => {
+                write!(
+                    f,
+                    "SHA-256 mismatch: expected {expected_hex}, got {actual_hex}"
+                )
             }
             AdmissionError::InvalidUtf8 { context } => {
                 write!(f, "invalid UTF-8 while reading {context}")
@@ -545,18 +655,20 @@ pub fn admit_gguf(bytes: &[u8]) -> Result<GgufAdmission, AdmissionError> {
                     dim,
                 });
             }
-            elements = elements.checked_mul(dim).ok_or_else(|| {
-                AdmissionError::ArithmeticOverflow {
-                    context: format!("dimensions of {name}"),
-                }
-            })?;
+            elements =
+                elements
+                    .checked_mul(dim)
+                    .ok_or_else(|| AdmissionError::ArithmeticOverflow {
+                        context: format!("dimensions of {name}"),
+                    })?;
             dims.push(dim);
         }
         let dtype_id = cur.u32_le()?;
-        let ggml_type = GgmlType::from_id(dtype_id).ok_or_else(|| AdmissionError::UnknownDtype {
-            name: name.clone(),
-            dtype_id,
-        })?;
+        let ggml_type =
+            GgmlType::from_id(dtype_id).ok_or_else(|| AdmissionError::UnknownDtype {
+                name: name.clone(),
+                dtype_id,
+            })?;
         let offset_in_data = cur.u64_le()?;
 
         // Byte-range validation: alignment first, then checked arithmetic,
@@ -577,11 +689,12 @@ pub fn admit_gguf(bytes: &[u8]) -> Result<GgufAdmission, AdmissionError> {
             });
         }
         let blocks = elements / block_elems;
-        let byte_len = blocks.checked_mul(block_bytes).ok_or_else(|| {
-            AdmissionError::ArithmeticOverflow {
-                context: format!("byte length of {name}"),
-            }
-        })?;
+        let byte_len =
+            blocks
+                .checked_mul(block_bytes)
+                .ok_or_else(|| AdmissionError::ArithmeticOverflow {
+                    context: format!("byte length of {name}"),
+                })?;
         let end = offset_in_data.checked_add(byte_len).ok_or_else(|| {
             AdmissionError::ArithmeticOverflow {
                 context: format!("byte-range end of {name}"),
@@ -609,12 +722,11 @@ pub fn admit_gguf(bytes: &[u8]) -> Result<GgufAdmission, AdmissionError> {
             }
         })?;
         per_type_count[ggml_type.index()] += 1;
-        per_type_elements[ggml_type.index()] =
-            per_type_elements[ggml_type.index()]
-                .checked_add(elements)
-                .ok_or_else(|| AdmissionError::ArithmeticOverflow {
-                    context: format!("element total of {name}"),
-                })?;
+        per_type_elements[ggml_type.index()] = per_type_elements[ggml_type.index()]
+            .checked_add(elements)
+            .ok_or_else(|| AdmissionError::ArithmeticOverflow {
+                context: format!("element total of {name}"),
+            })?;
         tensors.push(TensorDescriptor {
             name,
             ggml_type,
@@ -857,7 +969,9 @@ impl<'a> Cursor<'a> {
 
     fn u64_le(&mut self) -> Result<u64, AdmissionError> {
         let b = self.take(8)?;
-        Ok(u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
+        Ok(u64::from_le_bytes([
+            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+        ]))
     }
 
     fn f32_le(&mut self) -> Result<f32, AdmissionError> {
@@ -875,8 +989,9 @@ fn read_key(cur: &mut Cursor<'_>) -> Result<String, AdmissionError> {
         });
     }
     let bytes = cur.take(len as usize)?;
-    String::from_utf8(bytes.to_vec())
-        .map_err(|_| AdmissionError::InvalidUtf8 { context: "metadata key".into() })
+    String::from_utf8(bytes.to_vec()).map_err(|_| AdmissionError::InvalidUtf8 {
+        context: "metadata key".into(),
+    })
 }
 
 fn read_string(cur: &mut Cursor<'_>, key: &str) -> Result<String, AdmissionError> {
@@ -903,8 +1018,9 @@ fn read_tensor_name(cur: &mut Cursor<'_>) -> Result<String, AdmissionError> {
         });
     }
     let bytes = cur.take(len as usize)?;
-    String::from_utf8(bytes.to_vec())
-        .map_err(|_| AdmissionError::InvalidUtf8 { context: "tensor name".into() })
+    String::from_utf8(bytes.to_vec()).map_err(|_| AdmissionError::InvalidUtf8 {
+        context: "tensor name".into(),
+    })
 }
 
 fn parse_kv_value(
@@ -932,11 +1048,13 @@ fn parse_kv_value(
         },
         ExpectedValue::StringArrayValue(items) => {
             let count = items.len() as u64;
-            Ok(MetadataValue::StringArray(parse_string_array(cur, key, count)?))
+            Ok(MetadataValue::StringArray(parse_string_array(
+                cur, key, count,
+            )?))
         }
-        ExpectedValue::StringArrayLen(count) => {
-            Ok(MetadataValue::StringArray(parse_string_array(cur, key, *count)?))
-        }
+        ExpectedValue::StringArrayLen(count) => Ok(MetadataValue::StringArray(parse_string_array(
+            cur, key, *count,
+        )?)),
         ExpectedValue::Int32ArrayLen(count) => {
             let elem_tag = cur.u32_le()?;
             if elem_tag != 5 {
@@ -996,12 +1114,11 @@ fn validate_kv_value(
     expected: &ExpectedValue,
     value: &MetadataValue,
 ) -> Result<(), AdmissionError> {
-    let mismatch =
-        |expected: String, actual: String| AdmissionError::MetadataValueMismatch {
-            key: key.to_string(),
-            expected,
-            actual,
-        };
+    let mismatch = |expected: String, actual: String| AdmissionError::MetadataValueMismatch {
+        key: key.to_string(),
+        expected,
+        actual,
+    };
     match (expected, value) {
         (ExpectedValue::StringValue(exp), MetadataValue::String(act)) => {
             if *exp != act {
@@ -1051,10 +1168,7 @@ fn validate_kv_value(
         (ExpectedValue::StringArrayValue(exp), MetadataValue::StringArray(act)) => {
             let act_refs: Vec<&str> = act.iter().map(String::as_str).collect();
             if *exp != act_refs.as_slice() {
-                Err(mismatch(
-                    format!("array {exp:?}"),
-                    format!("array {act:?}"),
-                ))
+                Err(mismatch(format!("array {exp:?}"), format!("array {act:?}")))
             } else {
                 Ok(())
             }
@@ -1076,15 +1190,69 @@ pub(crate) fn align_up(v: u64, align: u64) -> u64 {
 // ---------------------------------------------------------------------------
 
 const SHA256_K: [u32; 64] = [
-    0x428a_2f98, 0x7137_4491, 0xb5c0_fbcf, 0xe9b5_dba5, 0x3956_c25b, 0x59f1_11f1, 0x923f_82a4,
-    0xab1c_5ed5, 0xd807_aa98, 0x1283_5b01, 0x2431_85be, 0x550c_7dc3, 0x72be_5d74, 0x80de_b1fe,
-    0x9bdc_06a7, 0xc19b_f174, 0xe49b_69c1, 0xefbe_4786, 0x0fc1_9dc6, 0x240c_a1cc, 0x2de9_2c6f,
-    0x4a74_84aa, 0x5cb0_a9dc, 0x76f9_88da, 0x983e_5152, 0xa831_c66d, 0xb003_27c8, 0xbf59_7fc7,
-    0xc6e0_0bf3, 0xd5a7_9147, 0x06ca_6351, 0x1429_2967, 0x27b7_0a85, 0x2e1b_2138, 0x4d2c_6dfc,
-    0x5338_0d13, 0x650a_7354, 0x766a_0abb, 0x81c2_c92e, 0x9272_2c85, 0xa2bf_e8a1, 0xa81a_664b,
-    0xc24b_8b70, 0xc76c_51a3, 0xd192_e819, 0xd699_0624, 0xf40e_3585, 0x106a_a070, 0x19a4_c116,
-    0x1e37_6c08, 0x2748_774c, 0x34b0_bcb5, 0x391c_0cb3, 0x4ed8_aa4a, 0x5b9c_ca4f, 0x682e_6ff3,
-    0x748f_82ee, 0x78a5_636f, 0x84c8_7814, 0x8cc7_0208, 0x90be_fffa, 0xa450_6ceb, 0xbef9_a3f7,
+    0x428a_2f98,
+    0x7137_4491,
+    0xb5c0_fbcf,
+    0xe9b5_dba5,
+    0x3956_c25b,
+    0x59f1_11f1,
+    0x923f_82a4,
+    0xab1c_5ed5,
+    0xd807_aa98,
+    0x1283_5b01,
+    0x2431_85be,
+    0x550c_7dc3,
+    0x72be_5d74,
+    0x80de_b1fe,
+    0x9bdc_06a7,
+    0xc19b_f174,
+    0xe49b_69c1,
+    0xefbe_4786,
+    0x0fc1_9dc6,
+    0x240c_a1cc,
+    0x2de9_2c6f,
+    0x4a74_84aa,
+    0x5cb0_a9dc,
+    0x76f9_88da,
+    0x983e_5152,
+    0xa831_c66d,
+    0xb003_27c8,
+    0xbf59_7fc7,
+    0xc6e0_0bf3,
+    0xd5a7_9147,
+    0x06ca_6351,
+    0x1429_2967,
+    0x27b7_0a85,
+    0x2e1b_2138,
+    0x4d2c_6dfc,
+    0x5338_0d13,
+    0x650a_7354,
+    0x766a_0abb,
+    0x81c2_c92e,
+    0x9272_2c85,
+    0xa2bf_e8a1,
+    0xa81a_664b,
+    0xc24b_8b70,
+    0xc76c_51a3,
+    0xd192_e819,
+    0xd699_0624,
+    0xf40e_3585,
+    0x106a_a070,
+    0x19a4_c116,
+    0x1e37_6c08,
+    0x2748_774c,
+    0x34b0_bcb5,
+    0x391c_0cb3,
+    0x4ed8_aa4a,
+    0x5b9c_ca4f,
+    0x682e_6ff3,
+    0x748f_82ee,
+    0x78a5_636f,
+    0x84c8_7814,
+    0x8cc7_0208,
+    0x90be_fffa,
+    0xa450_6ceb,
+    0xbef9_a3f7,
     0xc671_78f2,
 ];
 

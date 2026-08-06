@@ -264,7 +264,9 @@ fn wrong_architecture_fails_closed() {
     let err = admit_gguf(&w.buf).unwrap_err();
     assert_eq!(
         err,
-        AdmissionError::ArchitectureMismatch { actual: "mistral".to_string() }
+        AdmissionError::ArchitectureMismatch {
+            actual: "mistral".to_string()
+        }
     );
 }
 
@@ -276,7 +278,10 @@ fn wrong_kv_count_fails_closed() {
         let err = admit_gguf(&w.buf).unwrap_err();
         assert_eq!(
             err,
-            AdmissionError::MetadataKvCountMismatch { expected: 37, actual: kv_count }
+            AdmissionError::MetadataKvCountMismatch {
+                expected: 37,
+                actual: kv_count
+            }
         );
     }
 }
@@ -289,7 +294,12 @@ fn unknown_kv_key_fails_closed() {
     w.u32(8);
     w.str("x");
     let err = admit_gguf(&w.buf).unwrap_err();
-    assert_eq!(err, AdmissionError::UnknownMetadataKey { key: "general.evil".to_string() });
+    assert_eq!(
+        err,
+        AdmissionError::UnknownMetadataKey {
+            key: "general.evil".to_string()
+        }
+    );
 }
 
 #[test]
@@ -303,7 +313,12 @@ fn duplicate_metadata_key_fails_closed() {
     w.u32(8);
     w.str("model");
     let err = admit_gguf(&w.buf).unwrap_err();
-    assert_eq!(err, AdmissionError::DuplicateMetadataKey { key: "general.type".to_string() });
+    assert_eq!(
+        err,
+        AdmissionError::DuplicateMetadataKey {
+            key: "general.type".to_string()
+        }
+    );
 }
 
 #[test]
@@ -385,7 +400,10 @@ fn oversized_tensor_count_fails_closed_before_allocation() {
     let err = admit_gguf(&w.buf).unwrap_err();
     assert_eq!(
         err,
-        AdmissionError::TensorCountMismatch { expected: 290, actual: 1u64 << 40 }
+        AdmissionError::TensorCountMismatch {
+            expected: 290,
+            actual: 1u64 << 40
+        }
     );
 }
 
@@ -396,7 +414,10 @@ fn oversized_kv_count_fails_closed_before_allocation() {
     let err = admit_gguf(&w.buf).unwrap_err();
     assert_eq!(
         err,
-        AdmissionError::MetadataKvCountMismatch { expected: 37, actual: 1u64 << 40 }
+        AdmissionError::MetadataKvCountMismatch {
+            expected: 37,
+            actual: 1u64 << 40
+        }
     );
 }
 
@@ -406,7 +427,13 @@ fn oversized_key_fails_closed_before_allocation() {
     write_header(&mut w, EXPECTED_KV_COUNT, EXPECTED_TENSOR_COUNT);
     w.u64(u64::MAX); // key length prefix
     let err = admit_gguf(&w.buf).unwrap_err();
-    assert_eq!(err, AdmissionError::KeyTooLong { ceiling: 128, actual: u64::MAX });
+    assert_eq!(
+        err,
+        AdmissionError::KeyTooLong {
+            ceiling: 128,
+            actual: u64::MAX
+        }
+    );
 }
 
 #[test]
@@ -542,7 +569,12 @@ fn duplicate_tensor_name_fails_closed() {
     tiny_q5_0_block(&mut w, "a.weight", 0);
     tiny_q5_0_block(&mut w, "a.weight", 32);
     let err = admit_gguf(&w.buf).unwrap_err();
-    assert_eq!(err, AdmissionError::DuplicateTensorName { name: "a.weight".to_string() });
+    assert_eq!(
+        err,
+        AdmissionError::DuplicateTensorName {
+            name: "a.weight".to_string()
+        }
+    );
 }
 
 #[test]
@@ -553,7 +585,10 @@ fn misaligned_tensor_offset_fails_closed() {
     let err = admit_gguf(&w.buf).unwrap_err();
     assert_eq!(
         err,
-        AdmissionError::MisalignedTensorOffset { name: "t1".to_string(), offset: 16 }
+        AdmissionError::MisalignedTensorOffset {
+            name: "t1".to_string(),
+            offset: 16
+        }
     );
 }
 
@@ -689,7 +724,13 @@ fn oversized_tensor_dims_fail_closed() {
     w.u32(6);
     w.u64(0);
     let err = admit_gguf(&w.buf).unwrap_err();
-    assert_eq!(err, AdmissionError::TensorDimCountMismatch { name: "t0".to_string(), n_dims: 3 });
+    assert_eq!(
+        err,
+        AdmissionError::TensorDimCountMismatch {
+            name: "t0".to_string(),
+            n_dims: 3
+        }
+    );
 
     // dim over the 65536 ceiling
     let mut w = valid_prelude(EXPECTED_TENSOR_COUNT);
@@ -699,7 +740,13 @@ fn oversized_tensor_dims_fail_closed() {
     w.u32(6);
     w.u64(0);
     let err = admit_gguf(&w.buf).unwrap_err();
-    assert_eq!(err, AdmissionError::TensorDimTooLarge { name: "t0".to_string(), dim: 70_000 });
+    assert_eq!(
+        err,
+        AdmissionError::TensorDimTooLarge {
+            name: "t0".to_string(),
+            dim: 70_000
+        }
+    );
 }
 
 #[test]
@@ -707,7 +754,13 @@ fn tensor_name_ceiling_fails_closed() {
     let mut w = valid_prelude(EXPECTED_TENSOR_COUNT);
     w.u64(u64::MAX); // name length prefix
     let err = admit_gguf(&w.buf).unwrap_err();
-    assert_eq!(err, AdmissionError::TensorNameTooLong { ceiling: 128, actual: u64::MAX });
+    assert_eq!(
+        err,
+        AdmissionError::TensorNameTooLong {
+            ceiling: 128,
+            actual: u64::MAX
+        }
+    );
 }
 
 #[test]
@@ -736,7 +789,10 @@ fn wrong_file_size_fails_closed_before_read() {
     let err = admit_file(file.path()).unwrap_err();
     assert_eq!(
         err,
-        AdmissionError::FileSizeMismatch { expected: PINNED_FILE_SIZE, actual: 100 }
+        AdmissionError::FileSizeMismatch {
+            expected: PINNED_FILE_SIZE,
+            actual: 100
+        }
     );
 }
 
@@ -828,9 +884,7 @@ fn pinned_row_admits_with_full_descriptor_set() {
     for t in &admission.tensors {
         assert_eq!(t.absolute_offset, admission.data_offset + t.offset_in_data);
         assert!(t.absolute_offset >= admission.data_offset);
-        assert!(
-            t.absolute_offset + t.byte_len <= admission.data_offset + admission.data_len
-        );
+        assert!(t.absolute_offset + t.byte_len <= admission.data_offset + admission.data_len);
     }
 }
 

@@ -106,9 +106,7 @@ pub unsafe extern "C" fn __faber_rt_v1_read_line_0_to_ptr(
     match io::stdin().lock().read_line(&mut line) {
         Ok(0) => FaberRtPtrResultV1::success(std::ptr::null_mut()),
         Ok(_) => {
-            let trimmed = line
-                .trim_end_matches(['\n', '\r'])
-                .to_owned();
+            let trimmed = line.trim_end_matches(['\n', '\r']).to_owned();
             store_text(context, trimmed)
         }
         Err(_) => FaberRtPtrResultV1::failure(STATUS_IO_ERROR),

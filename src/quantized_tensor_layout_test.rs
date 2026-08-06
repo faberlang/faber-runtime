@@ -15,9 +15,7 @@
 //! 8. No `U8`-as-quantization carrier in the layout surface.
 //! 9. Machine-local pinned-row round-trip (skipped when the file is absent).
 
-use crate::gguf::{
-    align_up, EXPECTED_ELEMENTS_PER_TYPE, GgmlType, TensorDescriptor,
-};
+use crate::gguf::{align_up, GgmlType, TensorDescriptor, EXPECTED_ELEMENTS_PER_TYPE};
 use crate::packed_numeric::{PackedU4Block, PackedU4Layout};
 use crate::quantized_tensor_layout::*;
 
@@ -84,11 +82,9 @@ fn block_sizes_match_contract_s3_table() {
             "{} block byte width",
             ggml_type.name()
         );
-        let layout = QuantizedTensorLayout::resolve(
-            &desc("t", ggml_type, &[s3_elems * 2], 0),
-            u64::MAX,
-        )
-        .expect("admitted type resolves");
+        let layout =
+            QuantizedTensorLayout::resolve(&desc("t", ggml_type, &[s3_elems * 2], 0), u64::MAX)
+                .expect("admitted type resolves");
         assert_eq!(layout.block_elements(), s3_elems);
         assert_eq!(layout.block_bytes(), s3_bytes);
     }
@@ -156,8 +152,11 @@ fn scale_min_encoding_matches_contract_s3() {
 #[test]
 fn full_cto_field_set_present() {
     // Q4_K ffn_down [2560, 960] (a §2.3 mixed-quant placement).
-    let q4k = QuantizedTensorLayout::resolve(&desc("blk.0.ffn_down.weight", GgmlType::Q4_K, &[2560, 960], 0), u64::MAX)
-        .expect("Q4_K resolves");
+    let q4k = QuantizedTensorLayout::resolve(
+        &desc("blk.0.ffn_down.weight", GgmlType::Q4_K, &[2560, 960], 0),
+        u64::MAX,
+    )
+    .expect("Q4_K resolves");
     assert_eq!(q4k.format_id(), GgmlType::Q4_K);
     assert_eq!(q4k.logical_dtype(), LogicalElementDtype::F32);
     assert_eq!(q4k.logical_dtype().name(), "f32");
@@ -167,9 +166,18 @@ fn full_cto_field_set_present() {
     assert_eq!(q4k.block_elements(), 256);
     assert_eq!(q4k.block_bytes(), 144);
     assert_eq!(q4k.blocks(), 9_600);
-    assert_eq!(q4k.scale_min_encoding(), ScaleMinEncoding::from_ggml_type(GgmlType::Q4_K));
+    assert_eq!(
+        q4k.scale_min_encoding(),
+        ScaleMinEncoding::from_ggml_type(GgmlType::Q4_K)
+    );
     assert_eq!(q4k.alignment(), LAYOUT_ALIGNMENT);
-    assert_eq!(q4k.byte_range(), ByteRange { start: 0, end: 9_600 * 144 });
+    assert_eq!(
+        q4k.byte_range(),
+        ByteRange {
+            start: 0,
+            end: 9_600 * 144
+        }
+    );
     assert_eq!(q4k.repack_identity(), RepackIdentity::Native);
 
     // Q8_0 token_embd.weight [960, 49152] (opens the pinned tensor table).
@@ -184,8 +192,17 @@ fn full_cto_field_set_present() {
     assert_eq!(q8_0.block_elements(), 32);
     assert_eq!(q8_0.block_bytes(), 34);
     assert_eq!(q8_0.blocks(), 1_474_560);
-    assert_eq!(q8_0.scale_min_encoding(), ScaleMinEncoding::from_ggml_type(GgmlType::Q8_0));
-    assert_eq!(q8_0.byte_range(), ByteRange { start: 32, end: 32 + 50_135_040 });
+    assert_eq!(
+        q8_0.scale_min_encoding(),
+        ScaleMinEncoding::from_ggml_type(GgmlType::Q8_0)
+    );
+    assert_eq!(
+        q8_0.byte_range(),
+        ByteRange {
+            start: 32,
+            end: 32 + 50_135_040
+        }
+    );
 
     // F32 norm [960].
     let f32 = QuantizedTensorLayout::resolve(
@@ -199,8 +216,17 @@ fn full_cto_field_set_present() {
     assert_eq!(f32.block_elements(), 1);
     assert_eq!(f32.block_bytes(), 4);
     assert_eq!(f32.blocks(), 960);
-    assert_eq!(f32.scale_min_encoding(), ScaleMinEncoding::from_ggml_type(GgmlType::F32));
-    assert_eq!(f32.byte_range(), ByteRange { start: 64, end: 64 + 3_840 });
+    assert_eq!(
+        f32.scale_min_encoding(),
+        ScaleMinEncoding::from_ggml_type(GgmlType::F32)
+    );
+    assert_eq!(
+        f32.byte_range(),
+        ByteRange {
+            start: 64,
+            end: 64 + 3_840
+        }
+    );
 
     // Q5_0 attn_q.weight [960, 960].
     let q5_0 = QuantizedTensorLayout::resolve(
@@ -213,7 +239,10 @@ fn full_cto_field_set_present() {
     assert_eq!(q5_0.block_elements(), 32);
     assert_eq!(q5_0.block_bytes(), 22);
     assert_eq!(q5_0.blocks(), 28_800);
-    assert_eq!(q5_0.scale_min_encoding(), ScaleMinEncoding::from_ggml_type(GgmlType::Q5_0));
+    assert_eq!(
+        q5_0.scale_min_encoding(),
+        ScaleMinEncoding::from_ggml_type(GgmlType::Q5_0)
+    );
 
     // Q6_K ffn_down [2560, 960] (the other half of the §2.3 split).
     let q6_k = QuantizedTensorLayout::resolve(
@@ -226,7 +255,10 @@ fn full_cto_field_set_present() {
     assert_eq!(q6_k.block_elements(), 256);
     assert_eq!(q6_k.block_bytes(), 210);
     assert_eq!(q6_k.blocks(), 9_600);
-    assert_eq!(q6_k.scale_min_encoding(), ScaleMinEncoding::from_ggml_type(GgmlType::Q6_K));
+    assert_eq!(
+        q6_k.scale_min_encoding(),
+        ScaleMinEncoding::from_ggml_type(GgmlType::Q6_K)
+    );
 
     // Every admitted format id maps to its GGUF id (the closed set).
     assert_eq!(GgmlType::from_id(GgmlType::F32.id()), Some(GgmlType::F32));
@@ -284,7 +316,12 @@ fn per_type_round_trip_against_pinned_aggregates() {
             .find(|(t, _)| *t == ggml_type)
             .map(|(_, b)| *b)
             .expect("§2.3 row");
-        assert_eq!(layout.blocks(), expected_blocks, "{} blocks", ggml_type.name());
+        assert_eq!(
+            layout.blocks(),
+            expected_blocks,
+            "{} blocks",
+            ggml_type.name()
+        );
     }
 }
 
@@ -294,34 +331,113 @@ fn per_tensor_round_trip_pinned_pattern() {
     // one-offs), laid out sequentially at 32-aligned offsets.
     let mut tensors = Vec::new();
     let mut next = 0u64;
-    push_desc(&mut tensors, "token_embd.weight", GgmlType::Q8_0, &[960, 49_152], &mut next);
-    push_desc(&mut tensors, "blk.0.attn_norm.weight", GgmlType::F32, &[960], &mut next);
-    push_desc(&mut tensors, "blk.0.attn_q.weight", GgmlType::Q5_0, &[960, 960], &mut next);
-    push_desc(&mut tensors, "blk.0.attn_k.weight", GgmlType::Q5_0, &[960, 320], &mut next);
-    push_desc(&mut tensors, "blk.0.attn_v.weight", GgmlType::Q8_0, &[960, 320], &mut next);
-    push_desc(&mut tensors, "blk.1.attn_v.weight", GgmlType::Q5_0, &[960, 320], &mut next);
-    push_desc(&mut tensors, "blk.0.attn_output.weight", GgmlType::Q5_0, &[960, 960], &mut next);
-    push_desc(&mut tensors, "blk.0.ffn_norm.weight", GgmlType::F32, &[960], &mut next);
-    push_desc(&mut tensors, "blk.0.ffn_gate.weight", GgmlType::Q5_0, &[960, 2560], &mut next);
-    push_desc(&mut tensors, "blk.0.ffn_up.weight", GgmlType::Q5_0, &[960, 2560], &mut next);
-    push_desc(&mut tensors, "blk.0.ffn_down.weight", GgmlType::Q4_K, &[2560, 960], &mut next);
-    push_desc(&mut tensors, "blk.1.ffn_down.weight", GgmlType::Q6_K, &[2560, 960], &mut next);
-    push_desc(&mut tensors, "output_norm.weight", GgmlType::F32, &[960], &mut next);
+    push_desc(
+        &mut tensors,
+        "token_embd.weight",
+        GgmlType::Q8_0,
+        &[960, 49_152],
+        &mut next,
+    );
+    push_desc(
+        &mut tensors,
+        "blk.0.attn_norm.weight",
+        GgmlType::F32,
+        &[960],
+        &mut next,
+    );
+    push_desc(
+        &mut tensors,
+        "blk.0.attn_q.weight",
+        GgmlType::Q5_0,
+        &[960, 960],
+        &mut next,
+    );
+    push_desc(
+        &mut tensors,
+        "blk.0.attn_k.weight",
+        GgmlType::Q5_0,
+        &[960, 320],
+        &mut next,
+    );
+    push_desc(
+        &mut tensors,
+        "blk.0.attn_v.weight",
+        GgmlType::Q8_0,
+        &[960, 320],
+        &mut next,
+    );
+    push_desc(
+        &mut tensors,
+        "blk.1.attn_v.weight",
+        GgmlType::Q5_0,
+        &[960, 320],
+        &mut next,
+    );
+    push_desc(
+        &mut tensors,
+        "blk.0.attn_output.weight",
+        GgmlType::Q5_0,
+        &[960, 960],
+        &mut next,
+    );
+    push_desc(
+        &mut tensors,
+        "blk.0.ffn_norm.weight",
+        GgmlType::F32,
+        &[960],
+        &mut next,
+    );
+    push_desc(
+        &mut tensors,
+        "blk.0.ffn_gate.weight",
+        GgmlType::Q5_0,
+        &[960, 2560],
+        &mut next,
+    );
+    push_desc(
+        &mut tensors,
+        "blk.0.ffn_up.weight",
+        GgmlType::Q5_0,
+        &[960, 2560],
+        &mut next,
+    );
+    push_desc(
+        &mut tensors,
+        "blk.0.ffn_down.weight",
+        GgmlType::Q4_K,
+        &[2560, 960],
+        &mut next,
+    );
+    push_desc(
+        &mut tensors,
+        "blk.1.ffn_down.weight",
+        GgmlType::Q6_K,
+        &[2560, 960],
+        &mut next,
+    );
+    push_desc(
+        &mut tensors,
+        "output_norm.weight",
+        GgmlType::F32,
+        &[960],
+        &mut next,
+    );
 
     let file_size = next; // data region exactly fills the file
     let mut prev_end = 0u64;
     for t in &tensors {
-        let layout =
-            QuantizedTensorLayout::resolve(t, file_size).unwrap_or_else(|err| {
-                panic!("{} must resolve: {err}", t.name)
-            });
+        let layout = QuantizedTensorLayout::resolve(t, file_size)
+            .unwrap_or_else(|err| panic!("{} must resolve: {err}", t.name));
         assert_eq!(layout.format_id(), t.ggml_type);
         assert_eq!(layout.dims(), t.dims.as_slice());
         assert_eq!(layout.element_count(), t.element_count);
         // Round-trip: elements-per-block × blocks == element count.
         assert_eq!(layout.block_elements() * layout.blocks(), t.element_count);
         // Round-trip: bytes-per-block × blocks == byte-range length.
-        assert_eq!(layout.block_bytes() * layout.blocks(), layout.byte_range().len());
+        assert_eq!(
+            layout.block_bytes() * layout.blocks(),
+            layout.byte_range().len()
+        );
         assert_eq!(layout.byte_range().len(), t.byte_len);
         assert_eq!(layout.byte_range().start, t.absolute_offset);
         // Ranges are sequential, non-overlapping, and in-file.
@@ -435,14 +551,20 @@ fn repack_identity_is_explicit_and_hash_accounted() {
     // A declared repack carries a measurable identity (hash) and is explicit.
     let digest = [0xAB_u8; 32];
     let declared = base.with_declared_repack(RepackHash::new(digest));
-    assert_eq!(declared.repack_identity(), RepackIdentity::Declared(RepackHash::new(digest)));
+    assert_eq!(
+        declared.repack_identity(),
+        RepackIdentity::Declared(RepackHash::new(digest))
+    );
     assert_ne!(declared.repack_identity(), RepackIdentity::Native);
     // Direct native block execution remains the contract: repack ≠ native.
     assert_ne!(declared, base);
     match declared.repack_identity() {
         RepackIdentity::Declared(hash) => {
             assert_eq!(hash.0, digest);
-            assert_eq!(hash.hex(), "abababababababababababababababababababababababababababababababab");
+            assert_eq!(
+                hash.hex(),
+                "abababababababababababababababababababababababababababababababab"
+            );
         }
         RepackIdentity::Native => panic!("repack declaration must be retained"),
     }
@@ -474,7 +596,12 @@ fn toy_packed_u4_is_distinct_and_never_admitted() {
     // (b) No QuantizedTensorLayout resolves a packed-u4 block: an 8-element
     // tensor is block-incompatible with every quantized GGML type and, as
     // F32, packs into 32 bytes — never the toy's 4 bytes.
-    for ggml_type in [GgmlType::Q4_K, GgmlType::Q5_0, GgmlType::Q8_0, GgmlType::Q6_K] {
+    for ggml_type in [
+        GgmlType::Q4_K,
+        GgmlType::Q5_0,
+        GgmlType::Q8_0,
+        GgmlType::Q6_K,
+    ] {
         let err = QuantizedTensorLayout::resolve(&desc("u4ish", ggml_type, &[8], 0), u64::MAX)
             .expect_err("an 8-element tensor is never block-aligned for quantized GGML types");
         assert!(matches!(
@@ -485,11 +612,9 @@ fn toy_packed_u4_is_distinct_and_never_admitted() {
             } if block_elements != 8
         ));
     }
-    let f32_layout = QuantizedTensorLayout::resolve(
-        &desc("u4ish", GgmlType::F32, &[8], 0),
-        u64::MAX,
-    )
-    .expect("F32 divides 8");
+    let f32_layout =
+        QuantizedTensorLayout::resolve(&desc("u4ish", GgmlType::F32, &[8], 0), u64::MAX)
+            .expect("F32 divides 8");
     assert_eq!(f32_layout.element_count(), 8);
     assert_eq!(f32_layout.byte_range().len(), 32);
     assert_ne!(f32_layout.byte_range().len(), toy.packed_bytes as u64);
@@ -512,7 +637,10 @@ fn toy_packed_u4_is_distinct_and_never_admitted() {
     }
     // The toy's widened_type is F32, but the toy is a distinct carrier type
     // (its block carries scale + zero_point; a GGML block never does).
-    assert_eq!(toy.widened_type, crate::packed_numeric::PackedWidenedType::F32);
+    assert_eq!(
+        toy.widened_type,
+        crate::packed_numeric::PackedWidenedType::F32
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -537,7 +665,10 @@ fn no_u8_as_quantization_carrier() {
         u64::MAX,
     )
     .expect("resolves");
-    assert_eq!(layout.byte_range().len(), layout.blocks() * layout.block_bytes());
+    assert_eq!(
+        layout.byte_range().len(),
+        layout.blocks() * layout.block_bytes()
+    );
 
     // Distinctness from the toy carrier type: QuantizedTensorLayout is a
     // different type from PackedU4Layout/PackedU4Block, so packed bytes are
@@ -603,7 +734,13 @@ fn pinned_row_every_tensor_round_trips() {
     assert_eq!(first.format_id(), GgmlType::Q8_0);
     assert_eq!(first.dims(), &[960, 49_152]);
     assert_eq!(first.blocks(), 1_474_560);
-    assert_eq!(first.byte_range(), ByteRange { start: admission.data_offset, end: admission.data_offset + 50_135_040 });
+    assert_eq!(
+        first.byte_range(),
+        ByteRange {
+            start: admission.data_offset,
+            end: admission.data_offset + 50_135_040
+        }
+    );
 
     let last = &layouts[289];
     assert_eq!(last.format_id(), GgmlType::F32);

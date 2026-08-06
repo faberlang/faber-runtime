@@ -53,9 +53,7 @@
 //! consumers of the logits oracle.
 
 use crate::gguf::GgmlType;
-use crate::quantized_tensor_layout::{
-    ByteRange, QuantizedTensorLayout, RepackIdentity,
-};
+use crate::quantized_tensor_layout::{ByteRange, QuantizedTensorLayout, RepackIdentity};
 use crate::tensor_view::{TensorView, TensorViewEntry};
 use std::fmt;
 
@@ -152,9 +150,7 @@ pub(crate) fn half_to_f32(bits: u16) -> f32 {
 /// `block_q8_0`: `d` (half) + `qs[32]` int8 → `y[j] = qs[j] * d`.
 fn dequant_q8_0(block: &[u8]) -> Vec<f32> {
     let d = half_to_f32(u16::from_le_bytes([block[0], block[1]]));
-    (0..32)
-        .map(|j| f32::from(block[2 + j] as i8) * d)
-        .collect()
+    (0..32).map(|j| f32::from(block[2 + j] as i8) * d).collect()
 }
 
 /// `block_q5_0`: `d` (half) + `qh[4]` bitmask + `qs[16]` nibbles.

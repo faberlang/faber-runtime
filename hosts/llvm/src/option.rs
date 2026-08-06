@@ -2,13 +2,12 @@
 
 use super::array::{read_value, valid_kind, write_value, RuntimeValue};
 use super::format::{find_text, text_value};
-use super::{opaque_value_text, RuntimeContext, unsupported_opaque_diagnostic, write_diagnostic};
+use super::{opaque_value_text, unsupported_opaque_diagnostic, write_diagnostic, RuntimeContext};
 use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtStatusV1, FaberRtValueKindV1,
     STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_F16, VALUE_KIND_F32,
     VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8,
-    VALUE_KIND_PTR, VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64,
-    VALUE_KIND_U8,
+    VALUE_KIND_PTR, VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,
 };
 use faber::{display_bivalens, display_fractus};
 use std::ffi::c_void;

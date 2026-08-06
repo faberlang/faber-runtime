@@ -33,10 +33,7 @@ fn runtime(context: *mut FaberRtContextV1) -> Option<&'static mut RuntimeContext
 /// `lista<numerus<u8>>` handle is stored unchanged into the `octeti` slot.
 /// The octeti ABI therefore resolves the handle through EITHER the octeti
 /// list or a `VALUE_KIND_U8` array list.
-fn octeti_bytes<'a>(
-    runtime: &'a RuntimeContext,
-    handle: *mut c_void,
-) -> Option<Vec<u8>> {
+fn octeti_bytes<'a>(runtime: &'a RuntimeContext, handle: *mut c_void) -> Option<Vec<u8>> {
     if let Some(bytes) = find_octeti(runtime, handle) {
         return Some(bytes.clone());
     }
@@ -55,11 +52,7 @@ fn octeti_bytes<'a>(
 }
 
 /// Append one byte to an `octeti` handle (octeti arena or U8 array arena).
-fn octeti_push(
-    runtime: &mut RuntimeContext,
-    handle: *mut c_void,
-    byte: u8,
-) -> bool {
+fn octeti_push(runtime: &mut RuntimeContext, handle: *mut c_void, byte: u8) -> bool {
     if let Some(bytes) = runtime
         .octeti
         .iter_mut()

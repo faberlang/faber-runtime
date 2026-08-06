@@ -649,7 +649,11 @@ pub struct StagedWrite {
 impl StagedWrite {
     /// Build a staged write for one partition's output buffer.
     #[must_use]
-    pub const fn new(partition: LogicalPartitionId, output_ref: OutputRef, byte_count: u64) -> Self {
+    pub const fn new(
+        partition: LogicalPartitionId,
+        output_ref: OutputRef,
+        byte_count: u64,
+    ) -> Self {
         Self {
             partition,
             output_ref,
@@ -756,10 +760,9 @@ impl TransactionOperation {
     pub fn partitions(&self) -> BTreeSet<LogicalPartitionId> {
         match self {
             Self::Launch { partition, .. } => BTreeSet::from([partition.clone()]),
-            Self::Transfer(transfer) => BTreeSet::from([
-                transfer.source().clone(),
-                transfer.destination().clone(),
-            ]),
+            Self::Transfer(transfer) => {
+                BTreeSet::from([transfer.source().clone(), transfer.destination().clone()])
+            }
             Self::CollectiveBroadcast(broadcast) => broadcast.participants().clone(),
             Self::Barrier { partitions, .. } => partitions.clone(),
         }
@@ -1108,7 +1111,9 @@ fn derive_reservation(
 /// The declared write-set of the accepted plan — the set of writes the
 /// transaction will publish, derived deterministically at prepare (one
 /// `OutputRef` per producing operation).
-fn derive_declared_write_set(operations: &[TransactionOperation]) -> BTreeMap<OutputRef, StagedWrite> {
+fn derive_declared_write_set(
+    operations: &[TransactionOperation],
+) -> BTreeMap<OutputRef, StagedWrite> {
     let mut writes = BTreeMap::new();
     for operation in operations {
         for write in operation.staged_writes() {
@@ -1886,9 +1891,7 @@ impl ExecutionTransaction {
     /// The per-partition reservation recorded at prepare (the prepare
     /// receipt's reservation summary); `None` before prepare.
     #[must_use]
-    pub fn reservation(
-        &self,
-    ) -> Option<&BTreeMap<LogicalPartitionId, ReservationRecord>> {
+    pub fn reservation(&self) -> Option<&BTreeMap<LogicalPartitionId, ReservationRecord>> {
         self.reservation.as_ref()
     }
 
@@ -1979,8 +1982,7 @@ impl ExecutionTransaction {
             .bound_plan
             .bindings()
             .expect("construction rejected the degenerate plan");
-        let declared_partitions: BTreeSet<LogicalPartitionId> =
-            bindings.keys().cloned().collect();
+        let declared_partitions: BTreeSet<LogicalPartitionId> = bindings.keys().cloned().collect();
 
         // 1. Topology authority.
         for (index, operation) in self.operations.iter().enumerate() {
@@ -1999,22 +2001,17 @@ impl ExecutionTransaction {
         for (index, operation) in self.operations.iter().enumerate() {
             let key = operation.operation_ref();
             if operation_keys.insert(key.clone(), index).is_some() {
-                return Err(PrepareError::DuplicateOperation {
-                    operation_ref: key,
-                });
+                return Err(PrepareError::DuplicateOperation { operation_ref: key });
             }
         }
 
         // 3. Boundary declaration.
         for barrier in &self.commit_boundary.barriers {
-            let declared = self
-                .operations
-                .iter()
-                .any(|operation| {
-                    matches!(operation,
+            let declared = self.operations.iter().any(|operation| {
+                matches!(operation,
                         TransactionOperation::Barrier { barrier_ref, .. }
                             if barrier_ref == barrier)
-                });
+            });
             if !declared {
                 return Err(PrepareError::UndeclaredBoundaryBarrier {
                     barrier: barrier.clone(),
@@ -2149,15 +2146,11 @@ impl ExecutionTransaction {
         let index = match self.operation_keys.get(&key) {
             Some(index) => *index,
             None => {
-                return Err(ExecuteError::OperationOutsideSnapshot {
-                    operation_ref: key,
-                });
+                return Err(ExecuteError::OperationOutsideSnapshot { operation_ref: key });
             }
         };
         if &self.operations[index] != operation {
-            return Err(ExecuteError::OperationOutsideSnapshot {
-                operation_ref: key,
-            });
+            return Err(ExecuteError::OperationOutsideSnapshot { operation_ref: key });
         }
 
         if let Err(error) = backend.run_operation(operation) {
@@ -2396,10 +2389,7 @@ impl ExecutionTransaction {
                 .bound_plan
                 .logical_distributed_plan_hash()
                 .to_owned(),
-            bound_distributed_plan_hash: self
-                .bound_plan
-                .bound_distributed_plan_hash()
-                .to_owned(),
+            bound_distributed_plan_hash: self.bound_plan.bound_distributed_plan_hash().to_owned(),
             plan_receipt: self.bound_plan.receipt(),
             reservation_summary: self.reservation.clone().unwrap_or_default(),
             declared_write_set: self.declared_write_set.clone(),

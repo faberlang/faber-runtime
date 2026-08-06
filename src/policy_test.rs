@@ -44,7 +44,11 @@ fn full_dtypes() -> DtypeSurface {
     }
 }
 
-fn entry(ordinal: u32, identity: PhysicalDeviceId, caps: Option<DeviceCapabilities>) -> DeviceDiscoveryEntry {
+fn entry(
+    ordinal: u32,
+    identity: PhysicalDeviceId,
+    caps: Option<DeviceCapabilities>,
+) -> DeviceDiscoveryEntry {
     DeviceDiscoveryEntry {
         ordinal: DeviceOrdinal::new(ordinal),
         identity,
@@ -149,14 +153,18 @@ fn c2_11_review_test_each_gate_rejects_and_objectives_rank_only_survivors() {
     let mut reduced = full_dtypes();
     reduced.bf16 = false;
     let snap = snapshot(vec![
-        entry(0, a.clone(), Some(DeviceCapabilities {
-            compute_capability: ComputeCapability {
-                major: 12,
-                minor: 0,
-            },
-            sm_count: 48,
-            dtype_surface: reduced,
-        })),
+        entry(
+            0,
+            a.clone(),
+            Some(DeviceCapabilities {
+                compute_capability: ComputeCapability {
+                    major: 12,
+                    minor: 0,
+                },
+                sm_count: 48,
+                dtype_surface: reduced,
+            }),
+        ),
         entry(1, b.clone(), None),
         entry(2, c.clone(), None),
     ]);
@@ -237,7 +245,13 @@ fn c2_11_review_test_each_gate_rejects_and_objectives_rank_only_survivors() {
         &selection,
         &constraints,
         &objectives,
-        &[passes_all, fails_compat, fails_memory, fails_topology, fails_health],
+        &[
+            passes_all,
+            fails_compat,
+            fails_memory,
+            fails_topology,
+            fails_health,
+        ],
     );
 
     // Every gate class appears as a rejection; no plan is ranked unless it
@@ -246,7 +260,11 @@ fn c2_11_review_test_each_gate_rejects_and_objectives_rank_only_survivors() {
     assert_eq!(outcome.ranked[0].plan, "passes-all");
     assert_eq!(outcome.ranked[0].rank, 1);
     assert_eq!(
-        outcome.ranked[0].scores.iter().map(|s| s.objective).collect::<Vec<_>>(),
+        outcome.ranked[0]
+            .scores
+            .iter()
+            .map(|s| s.objective)
+            .collect::<Vec<_>>(),
         vec![Objective::Latency, Objective::Throughput]
     );
 
@@ -274,21 +292,41 @@ fn c2_11_review_test_each_gate_rejects_and_objectives_rank_only_survivors() {
     }
 
     // Exact failing facts.
-    let compat = &outcome.rejected.iter().find(|r| r.plan == "fails-compat").unwrap().violations[0];
+    let compat = &outcome
+        .rejected
+        .iter()
+        .find(|r| r.plan == "fails-compat")
+        .unwrap()
+        .violations[0];
     assert_eq!(compat.device.as_ref(), Some(&a));
     assert!(compat.failing_fact.contains("bf16"));
 
-    let memory = &outcome.rejected.iter().find(|r| r.plan == "fails-memory").unwrap().violations[0];
+    let memory = &outcome
+        .rejected
+        .iter()
+        .find(|r| r.plan == "fails-memory")
+        .unwrap()
+        .violations[0];
     assert_eq!(memory.device.as_ref(), Some(&a));
     assert!(memory.failing_fact.contains("budget_exceeded"));
     assert!(memory.failing_fact.contains("200"));
     assert!(memory.failing_fact.contains("100"));
 
-    let topology = &outcome.rejected.iter().find(|r| r.plan == "fails-topology").unwrap().violations[0];
+    let topology = &outcome
+        .rejected
+        .iter()
+        .find(|r| r.plan == "fails-topology")
+        .unwrap()
+        .violations[0];
     assert_eq!(topology.gate, GateClass::Topology);
     assert!(topology.failing_fact.contains("NOT ATTEMPTED"));
 
-    let health = &outcome.rejected.iter().find(|r| r.plan == "fails-health").unwrap().violations[0];
+    let health = &outcome
+        .rejected
+        .iter()
+        .find(|r| r.plan == "fails-health")
+        .unwrap()
+        .violations[0];
     assert_eq!(health.device.as_ref(), Some(&c));
 
     // Every gate class appears as a rejection, in gate-evaluation order; no
@@ -386,14 +424,15 @@ fn cs1_split_passes_whole_on_one_fails_budget_exceeded() {
     assert_eq!(violation.device.as_ref(), Some(&a));
     assert!(violation.failing_fact.contains("budget_exceeded"));
     assert!(violation.failing_fact.contains(&SMOLLM2_BYTES.to_string()));
-    assert!(violation.failing_fact.contains(&PARTITION_LIMIT_BYTES.to_string()));
+    assert!(violation
+        .failing_fact
+        .contains(&PARTITION_LIMIT_BYTES.to_string()));
 
     // The split plan passes every gate and is the only ranked plan.
     assert_eq!(outcome.ranked.len(), 1);
     assert_eq!(outcome.ranked[0].plan, "2-way-split");
     assert_eq!(outcome.ranked[0].rank, 1);
-    let ranked_devices: BTreeSet<&PhysicalDeviceId> =
-        outcome.ranked[0].devices.iter().collect();
+    let ranked_devices: BTreeSet<&PhysicalDeviceId> = outcome.ranked[0].devices.iter().collect();
     assert_eq!(ranked_devices, BTreeSet::from([&a, &b]));
 }
 
@@ -506,7 +545,13 @@ fn compatibility_gate_rejects_unsupported_capabilities() {
         &selection,
         &constraints,
         &objectives,
-        &[needs_f64, needs_bf16, needs_cc13, needs_128_sms, no_requirements],
+        &[
+            needs_f64,
+            needs_bf16,
+            needs_cc13,
+            needs_128_sms,
+            no_requirements,
+        ],
     );
 
     // The three capability-failing plans are rejected with the compatibility
@@ -518,16 +563,31 @@ fn compatibility_gate_rejects_unsupported_capabilities() {
     assert!(ranked_names.contains("needs-f64"));
     assert!(ranked_names.contains("no-requirements"));
 
-    let bf16 = &outcome.rejected.iter().find(|r| r.plan == "needs-bf16").unwrap().violations[0];
+    let bf16 = &outcome
+        .rejected
+        .iter()
+        .find(|r| r.plan == "needs-bf16")
+        .unwrap()
+        .violations[0];
     assert_eq!(bf16.gate, GateClass::Compatibility);
     assert_eq!(bf16.device.as_ref(), Some(&a));
     assert!(bf16.failing_fact.contains("bf16"));
 
-    let cc = &outcome.rejected.iter().find(|r| r.plan == "needs-cc13").unwrap().violations[0];
+    let cc = &outcome
+        .rejected
+        .iter()
+        .find(|r| r.plan == "needs-cc13")
+        .unwrap()
+        .violations[0];
     assert_eq!(cc.gate, GateClass::Compatibility);
     assert!(cc.failing_fact.contains("13.0"));
 
-    let sms = &outcome.rejected.iter().find(|r| r.plan == "needs-128-sms").unwrap().violations[0];
+    let sms = &outcome
+        .rejected
+        .iter()
+        .find(|r| r.plan == "needs-128-sms")
+        .unwrap()
+        .violations[0];
     assert_eq!(sms.gate, GateClass::Compatibility);
     assert!(sms.failing_fact.contains("128"));
 }
@@ -625,7 +685,13 @@ fn topology_gate_rejects_non_admitted_links() {
         &selection,
         &constraints,
         &objectives,
-        &[crosses_admitted, crosses_not_attempted, crosses_absent, crosses_rejected, self_copy],
+        &[
+            crosses_admitted,
+            crosses_not_attempted,
+            crosses_absent,
+            crosses_rejected,
+            self_copy,
+        ],
     );
 
     let rejected_names: BTreeSet<&str> = outcome.rejected.iter().map(|r| r.plan.as_str()).collect();
@@ -638,13 +704,31 @@ fn topology_gate_rejects_non_admitted_links() {
     for rejection in &outcome.rejected {
         let violation = &rejection.violations[0];
         assert_eq!(violation.gate, GateClass::Topology);
-        assert!(violation.device.is_none(), "topology violations name the pair, not a device");
+        assert!(
+            violation.device.is_none(),
+            "topology violations name the pair, not a device"
+        );
     }
-    let na = &outcome.rejected.iter().find(|r| r.plan == "crosses-not-attempted").unwrap().violations[0];
+    let na = &outcome
+        .rejected
+        .iter()
+        .find(|r| r.plan == "crosses-not-attempted")
+        .unwrap()
+        .violations[0];
     assert!(na.failing_fact.contains("NOT ATTEMPTED"));
-    let absent = &outcome.rejected.iter().find(|r| r.plan == "crosses-absent").unwrap().violations[0];
+    let absent = &outcome
+        .rejected
+        .iter()
+        .find(|r| r.plan == "crosses-absent")
+        .unwrap()
+        .violations[0];
     assert!(absent.failing_fact.contains("no directed link"));
-    let rejected = &outcome.rejected.iter().find(|r| r.plan == "crosses-rejected").unwrap().violations[0];
+    let rejected = &outcome
+        .rejected
+        .iter()
+        .find(|r| r.plan == "crosses-rejected")
+        .unwrap()
+        .violations[0];
     assert!(rejected.failing_fact.contains("peer access check failed"));
 
     // The admitted traversal and the local self-copy pass every gate.
@@ -670,7 +754,11 @@ fn health_epoch_gate_rejects_stale_snapshots_and_unknown_selections() {
     );
 
     // The snapshot was sampled at epoch 1; the current generation advanced.
-    let stale = constraints_at(&snap, budgets.clone(), DeviceHealthGeneration::initial().advance());
+    let stale = constraints_at(
+        &snap,
+        budgets.clone(),
+        DeviceHealthGeneration::initial().advance(),
+    );
     let outcome = evaluate_all(
         &snap,
         &selection,
@@ -757,7 +845,13 @@ fn identical_frozen_inputs_produce_identical_plan_and_receipt() {
             (b.clone(), SafePhysicalLimit::new(1_000_000)),
         ]),
     );
-    let rebuilt = evaluate_all(&snap_rebuilt, &selection, &constraints_rebuilt, &objectives, &plans);
+    let rebuilt = evaluate_all(
+        &snap_rebuilt,
+        &selection,
+        &constraints_rebuilt,
+        &objectives,
+        &plans,
+    );
     assert_eq!(first.receipt, rebuilt.receipt);
 }
 
@@ -799,7 +893,10 @@ fn ties_resolve_by_declared_order_then_physical_device_id_never_ordinal() {
     );
 
     // Snapshot variant 1: low @ ordinal 0, high @ ordinal 1.
-    let snap_1 = snapshot(vec![entry(0, low.clone(), None), entry(1, high.clone(), None)]);
+    let snap_1 = snapshot(vec![
+        entry(0, low.clone(), None),
+        entry(1, high.clone(), None),
+    ]);
     let constraints_1 = constraints(&snap_1, budgets.clone());
     let selection = DeviceSetSelection::explicit([low.clone(), high.clone()]);
     let outcome_1 = evaluate_all(
@@ -812,7 +909,10 @@ fn ties_resolve_by_declared_order_then_physical_device_id_never_ordinal() {
 
     // Snapshot variant 2: locators renamed — low @ ordinal 1, high @
     // ordinal 0. The ranking must be identical: identity, never ordinal.
-    let snap_2 = snapshot(vec![entry(1, low.clone(), None), entry(0, high.clone(), None)]);
+    let snap_2 = snapshot(vec![
+        entry(1, low.clone(), None),
+        entry(0, high.clone(), None),
+    ]);
     let constraints_2 = constraints(&snap_2, budgets.clone());
     let outcome_2 = evaluate_all(
         &snap_2,
@@ -834,8 +934,14 @@ fn ties_resolve_by_declared_order_then_physical_device_id_never_ordinal() {
     // change, because the locator facts are part of the sample.
     assert_eq!(outcome_1.ranked, outcome_2.ranked);
     assert_eq!(outcome_1.rejected, outcome_2.rejected);
-    assert_ne!(outcome_1.receipt.snapshot_id_hex, outcome_2.receipt.snapshot_id_hex);
-    assert_ne!(outcome_1.receipt.determinism_fingerprint, outcome_2.receipt.determinism_fingerprint);
+    assert_ne!(
+        outcome_1.receipt.snapshot_id_hex,
+        outcome_2.receipt.snapshot_id_hex
+    );
+    assert_ne!(
+        outcome_1.receipt.determinism_fingerprint,
+        outcome_2.receipt.determinism_fingerprint
+    );
 }
 
 /// Declared objective order drives the ranking: switching the primary
@@ -879,14 +985,24 @@ fn declared_objective_order_drives_ranking() {
     let plans = [fast_plan, efficient_plan];
 
     // Latency first: the fast plan wins.
-    let latency_first =
-        evaluate_all(&snap, &selection, &constraints, &[Objective::Latency, Objective::Power], &plans);
+    let latency_first = evaluate_all(
+        &snap,
+        &selection,
+        &constraints,
+        &[Objective::Latency, Objective::Power],
+        &plans,
+    );
     assert_eq!(latency_first.ranked[0].plan, "fast");
     assert_eq!(latency_first.ranked[1].plan, "efficient");
 
     // Power first: the efficient plan wins.
-    let power_first =
-        evaluate_all(&snap, &selection, &constraints, &[Objective::Power, Objective::Latency], &plans);
+    let power_first = evaluate_all(
+        &snap,
+        &selection,
+        &constraints,
+        &[Objective::Power, Objective::Latency],
+        &plans,
+    );
     assert_eq!(power_first.ranked[0].plan, "efficient");
     assert_eq!(power_first.ranked[1].plan, "fast");
 }
@@ -974,7 +1090,11 @@ fn objectives_never_reject_a_plan_without_facts() {
     assert_eq!(outcome.ranked[0].plan, "bare");
     assert_eq!(outcome.ranked[0].scores.len(), 7);
     assert_eq!(
-        outcome.ranked[0].scores.iter().map(|s| s.objective).collect::<Vec<_>>(),
+        outcome.ranked[0]
+            .scores
+            .iter()
+            .map(|s| s.objective)
+            .collect::<Vec<_>>(),
         all_seven.to_vec()
     );
 }
@@ -1020,17 +1140,31 @@ fn receipt_names_snapshot_constraints_rejected_and_selected() {
         },
     );
 
-    let outcome = evaluate_all(&snap, &selection, &constraints, &objectives, &[whole, split]);
+    let outcome = evaluate_all(
+        &snap,
+        &selection,
+        &constraints,
+        &objectives,
+        &[whole, split],
+    );
     let receipt = &outcome.receipt;
 
     // Frozen snapshot id.
     assert_eq!(receipt.snapshot_id_hex, snap.id().hex());
 
     // Declared constraints + objectives.
-    assert_eq!(receipt.current_generation, DeviceHealthGeneration::initial());
+    assert_eq!(
+        receipt.current_generation,
+        DeviceHealthGeneration::initial()
+    );
     assert_eq!(receipt.per_device_budget.len(), 2);
-    assert!(receipt.per_device_budget.contains(&(a.clone(), SafePhysicalLimit::new(PARTITION_LIMIT_BYTES))));
-    assert_eq!(receipt.total_budget, Some(SafePhysicalLimit::new(MESH_TOTAL_BYTES)));
+    assert!(receipt
+        .per_device_budget
+        .contains(&(a.clone(), SafePhysicalLimit::new(PARTITION_LIMIT_BYTES))));
+    assert_eq!(
+        receipt.total_budget,
+        Some(SafePhysicalLimit::new(MESH_TOTAL_BYTES))
+    );
     assert_eq!(receipt.objectives, objectives.to_vec());
 
     // Rejected devices + gate + exact failing fact.
@@ -1038,41 +1172,59 @@ fn receipt_names_snapshot_constraints_rejected_and_selected() {
     let rejected = &receipt.rejected[0];
     assert_eq!(rejected.plan, "whole");
     assert_eq!(rejected.violations[0].gate, GateClass::RequiredMemory);
-    assert!(rejected.violations[0].failing_fact.contains("budget_exceeded"));
+    assert!(rejected.violations[0]
+        .failing_fact
+        .contains("budget_exceeded"));
 
     // Selected devices + ranks + objective scores.
     assert_eq!(receipt.ranked, outcome.ranked);
     assert_eq!(receipt.ranked[0].plan, "split");
     assert_eq!(receipt.ranked[0].rank, 1);
     assert_eq!(
-        receipt.ranked[0].scores.iter().map(|s| s.objective).collect::<Vec<_>>(),
+        receipt.ranked[0]
+            .scores
+            .iter()
+            .map(|s| s.objective)
+            .collect::<Vec<_>>(),
         vec![Objective::Latency, Objective::Throughput]
     );
 
     // Determinism fingerprint: 16 lowercase hex chars, stable per evaluation.
     assert_eq!(receipt.determinism_fingerprint.len(), 16);
-    assert!(receipt.determinism_fingerprint.chars().all(|c| c.is_ascii_hexdigit()));
-    let again = evaluate_all(&snap, &selection, &constraints, &objectives, &[
-        CandidatePlan::new(
-            "whole".to_owned(),
-            vec![DeviceAssignment::new(a.clone(), ledger(SMOLLM2_BYTES))],
-            vec![],
-            SMOLLM2_BYTES,
-            ObjectiveFacts::default(),
-        ),
-        CandidatePlan::new(
-            "split".to_owned(),
-            vec![
-                DeviceAssignment::new(a.clone(), ledger(HALF_SPLIT_BYTES)),
-                DeviceAssignment::new(b.clone(), ledger(HALF_SPLIT_BYTES)),
-            ],
-            vec![],
-            SMOLLM2_BYTES,
-            ObjectiveFacts {
-                throughput_tokens_per_sec: Some(42),
-                ..ObjectiveFacts::default()
-            },
-        ),
-    ]);
-    assert_eq!(again.receipt.determinism_fingerprint, receipt.determinism_fingerprint);
+    assert!(receipt
+        .determinism_fingerprint
+        .chars()
+        .all(|c| c.is_ascii_hexdigit()));
+    let again = evaluate_all(
+        &snap,
+        &selection,
+        &constraints,
+        &objectives,
+        &[
+            CandidatePlan::new(
+                "whole".to_owned(),
+                vec![DeviceAssignment::new(a.clone(), ledger(SMOLLM2_BYTES))],
+                vec![],
+                SMOLLM2_BYTES,
+                ObjectiveFacts::default(),
+            ),
+            CandidatePlan::new(
+                "split".to_owned(),
+                vec![
+                    DeviceAssignment::new(a.clone(), ledger(HALF_SPLIT_BYTES)),
+                    DeviceAssignment::new(b.clone(), ledger(HALF_SPLIT_BYTES)),
+                ],
+                vec![],
+                SMOLLM2_BYTES,
+                ObjectiveFacts {
+                    throughput_tokens_per_sec: Some(42),
+                    ..ObjectiveFacts::default()
+                },
+            ),
+        ],
+    );
+    assert_eq!(
+        again.receipt.determinism_fingerprint,
+        receipt.determinism_fingerprint
+    );
 }

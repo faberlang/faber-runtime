@@ -13,8 +13,8 @@
 //! as declared (never re-derived) — not vocabulary this module introduces.
 
 use crate::bound_plan::{
-    AdmittedLogicalPlan, BindError, BoundDistributedPlan, DeclaredPlacementConstraint,
-    LogicalPartitionId, PartitionBinding, bind,
+    bind, AdmittedLogicalPlan, BindError, BoundDistributedPlan, DeclaredPlacementConstraint,
+    LogicalPartitionId, PartitionBinding,
 };
 use crate::device_identity::{DeviceHealthGeneration, DeviceOrdinal, PhysicalDeviceId};
 use crate::device_set::DeviceSet;
@@ -34,10 +34,10 @@ use crate::partition::{
     TransportClass, VirtualDevicePartition, VirtualDevicePartitionId,
 };
 use crate::transport::{
-    ByteRange, CopyPath, DirectedPair, HostStagedAdapter, MeasuredRates, PairAdmissionError,
-    PeerAdapter, PeerPairMeasurement, PeerPairRegistry, SourceValue, StagingPool,
-    TransferBudget, TransferError, TransferRejection, TransferSpec, TransportAdapter,
-    TransportReceipt, expected_copy_time_nanos, select_copy_path, validate_before_copy,
+    expected_copy_time_nanos, select_copy_path, validate_before_copy, ByteRange, CopyPath,
+    DirectedPair, HostStagedAdapter, MeasuredRates, PairAdmissionError, PeerAdapter,
+    PeerPairMeasurement, PeerPairRegistry, SourceValue, StagingPool, TransferBudget, TransferError,
+    TransferRejection, TransferSpec, TransportAdapter, TransportReceipt,
 };
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -46,8 +46,9 @@ use std::time::Duration;
 const UUID_A: &str = "GPU-3e017562-9ec3-da9a-962d-b8bd5f9e24be";
 const UUID_B: &str = "GPU-22222222-3333-4444-5555-666666666666";
 const PROBE_TIME: u64 = 1_752_717_600_000_000_000; // fixed sample time
-// An admitted (validated) logical hash in the sha256: spelling (FC17/FC11).
-const LOGICAL_HASH: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+                                                   // An admitted (validated) logical hash in the sha256: spelling (FC17/FC11).
+const LOGICAL_HASH: &str =
+    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 // CS-1 declared placement (md0-mode-fixtures.md §3): 2 virtual partitions @
 // 160 MiB, forced 2-way split ≈129 MiB/device.
@@ -88,7 +89,11 @@ fn ledger(class_six_bytes: u64, class_three_bytes: u64) -> PartitionBudgetLedger
 }
 
 /// An admitted virtual partition over `device` under the declared ledger.
-fn vp(seed: u64, device: PhysicalDeviceId, ledger: PartitionBudgetLedger) -> VirtualDevicePartition {
+fn vp(
+    seed: u64,
+    device: PhysicalDeviceId,
+    ledger: PartitionBudgetLedger,
+) -> VirtualDevicePartition {
     VirtualDevicePartition::admit(
         AdmissionRequest::new(VirtualDevicePartitionId::new(seed), device, ledger),
         SafePhysicalLimit::new(CS1_LIMIT_BYTES),
@@ -106,7 +111,10 @@ fn synthetic_entry(
         identity: device,
         device_model: Some("synthetic RTX 5070".to_owned()),
         capabilities: DeviceCapabilities {
-            compute_capability: ComputeCapability { major: 12, minor: 0 },
+            compute_capability: ComputeCapability {
+                major: 12,
+                minor: 0,
+            },
             sm_count: 48,
             dtype_surface: DtypeSurface {
                 f32: true,
@@ -136,7 +144,10 @@ fn snapshot_with(
     let devices: BTreeMap<_, _> = entries
         .into_iter()
         .map(|(ordinal, device, generation)| {
-            (DeviceOrdinal::new(ordinal), synthetic_entry(ordinal, device, generation))
+            (
+                DeviceOrdinal::new(ordinal),
+                synthetic_entry(ordinal, device, generation),
+            )
         })
         .collect();
     DeviceDiscoverySnapshot::new(PROBE_TIME, devices, P2pProbeState::NotAttempted)
@@ -182,11 +193,17 @@ fn fixture_plan() -> BoundDistributedPlan {
     let bindings = BTreeMap::from([
         (
             partition_id(0),
-            PartitionBinding::with_virtual_partition(device_a(), vp(1, device_a(), ledger(10_240, 8_448))),
+            PartitionBinding::with_virtual_partition(
+                device_a(),
+                vp(1, device_a(), ledger(10_240, 8_448)),
+            ),
         ),
         (
             partition_id(1),
-            PartitionBinding::with_virtual_partition(device_b(), vp(2, device_b(), ledger(10_240, 30_976))),
+            PartitionBinding::with_virtual_partition(
+                device_b(),
+                vp(2, device_b(), ledger(10_240, 30_976)),
+            ),
         ),
     ]);
     let snapshot = two_device_snapshot();
@@ -257,7 +274,11 @@ fn assert_adapter_untouched(adapter: &HostStagedAdapter) {
         adapter.selected_transfer_records().is_empty(),
         "a rejected transfer must never be recorded"
     );
-    assert_eq!(adapter.used_bytes(), 0, "a rejected transfer must charge no budget bytes");
+    assert_eq!(
+        adapter.used_bytes(),
+        0,
+        "a rejected transfer must charge no budget bytes"
+    );
     assert_eq!(
         adapter.used_time_nanos(),
         0,
@@ -476,7 +497,11 @@ fn host_staged_copy_is_labeled_timed_and_byte_exact() {
     );
 
     let record = &outcome.record;
-    assert_eq!(record.copy_path, CopyPath::HostStaged, "labeled host-staged");
+    assert_eq!(
+        record.copy_path,
+        CopyPath::HostStaged,
+        "labeled host-staged"
+    );
     assert_eq!(record.staging.capacity_bytes, TRANSFER_RANGE_BYTES);
     assert!(record.staging.pinned, "host staging is pinned host memory");
     assert_eq!(record.bytes, TRANSFER_RANGE_BYTES, "exact byte accounting");
@@ -492,7 +517,10 @@ fn host_staged_copy_is_labeled_timed_and_byte_exact() {
     assert_eq!(record.timeout, Duration::from_secs(1));
     assert_eq!(record.destination, partition_id(1));
     assert!(record.engine.get() >= 1, "the copy ran on an engine/stream");
-    assert!(record.event.get() >= 1, "the copy recorded a completion event");
+    assert!(
+        record.event.get() >= 1,
+        "the copy recorded a completion event"
+    );
 
     assert_eq!(adapter.used_bytes(), TRANSFER_RANGE_BYTES);
     assert_eq!(adapter.used_time_nanos(), record.expected_nanos);
@@ -509,8 +537,14 @@ fn host_staged_copy_is_labeled_timed_and_byte_exact() {
         .expect("the second copy succeeds");
     assert_eq!(adapter.used_bytes(), 2 * TRANSFER_RANGE_BYTES);
     assert_eq!(adapter.selected_transfer_records().len(), 2);
-    assert!(second.record.engine > record.engine, "streams advance per copy");
-    assert!(second.record.event > record.event, "events advance per copy");
+    assert!(
+        second.record.engine > record.engine,
+        "streams advance per copy"
+    );
+    assert!(
+        second.record.event > record.event,
+        "events advance per copy"
+    );
 }
 
 #[test]
@@ -519,8 +553,12 @@ fn transport_receipt_records_path_staging_events_timeout_bytes_timing() {
     adapter.set_simulated_delay(Duration::from_millis(1));
     let spec = base_spec(Duration::from_secs(1));
     let source = base_source();
-    adapter.copy(&spec, &source, &partition_id(1)).expect("first copy succeeds");
-    adapter.copy(&spec, &source, &partition_id(1)).expect("second copy succeeds");
+    adapter
+        .copy(&spec, &source, &partition_id(1))
+        .expect("first copy succeeds");
+    adapter
+        .copy(&spec, &source, &partition_id(1))
+        .expect("second copy succeeds");
 
     let receipt: TransportReceipt = adapter.transport_receipt();
     assert_eq!(receipt.records.len(), 2);
@@ -549,7 +587,8 @@ fn transport_receipt_records_path_staging_events_timeout_bytes_timing() {
 
 #[test]
 fn copy_exceeding_declared_budget_is_rejected() {
-    let mut adapter = HostStagedAdapter::new(TransferBudget::declared(TRANSFER_RANGE_BYTES, 1 << 30));
+    let mut adapter =
+        HostStagedAdapter::new(TransferBudget::declared(TRANSFER_RANGE_BYTES, 1 << 30));
     let spec = base_spec(Duration::from_secs(1));
     let source = base_source();
     adapter
@@ -577,15 +616,14 @@ fn fixture_measured_rate_is_recorded_and_rebudgeted() {
     // A materially different fixture-measured H2D rate: 1 MiB in 100 ms is
     // ≈10 MB/s — an order of magnitude slower than the T1 constant, so the
     // recorded fixture-measured rate re-budgets future accounting.
-    adapter.record_fixture_measurement(
-        TransferDirectionMirror::H2D,
-        1_000_000,
-        100_000_000,
-    );
+    adapter.record_fixture_measurement(TransferDirectionMirror::H2D, 1_000_000, 100_000_000);
     assert_eq!(adapter.rates().h2d_bytes_per_sec, 10_000_000);
     assert_ne!(adapter.rates(), rates_before);
     assert_eq!(adapter.rate_observations().len(), 1);
-    assert_eq!(adapter.rate_observations()[0].measured_bytes_per_sec, 10_000_000);
+    assert_eq!(
+        adapter.rate_observations()[0].measured_bytes_per_sec,
+        10_000_000
+    );
     // Re-budgeted: the recorded rate now drives future budget-time accounting.
     let h2d_spec = TransferSpec::new(
         TransferRef::new("t-h2d"),
@@ -604,7 +642,11 @@ fn fixture_measured_rate_is_recorded_and_rebudgeted() {
     let record = &adapter.selected_transfer_records()[0];
     assert_eq!(
         record.expected_nanos,
-        expected_copy_time_nanos(TRANSFER_RANGE_BYTES, TransferDirectionMirror::H2D, adapter.rates()),
+        expected_copy_time_nanos(
+            TRANSFER_RANGE_BYTES,
+            TransferDirectionMirror::H2D,
+            adapter.rates()
+        ),
         "budget time is accounted at the recorded fixture-measured rate"
     );
 }
@@ -785,7 +827,9 @@ fn timed_out_copy_surfaces_transfer_error_the_coordinator_aborts_on() {
         Duration::from_millis(5),
         TransferBudget::declared(1 << 20, 1 << 30),
     );
-    backend.adapter.set_simulated_delay(Duration::from_millis(50));
+    backend
+        .adapter
+        .set_simulated_delay(Duration::from_millis(50));
     transaction.prepare(&mut backend).expect("prepare succeeds");
     let error = transaction
         .execute(&mut backend)
@@ -907,7 +951,11 @@ fn admitted_pair_flip_is_per_directed_pair_never_global() {
         ))
         .expect("a measured pair admits");
 
-    assert_eq!(select_copy_path(&ab, &registry), CopyPath::Peer, "the measured pair flips");
+    assert_eq!(
+        select_copy_path(&ab, &registry),
+        CopyPath::Peer,
+        "the measured pair flips"
+    );
     assert_eq!(
         select_copy_path(&ba, &registry),
         CopyPath::HostStaged,

@@ -326,8 +326,7 @@ fn two_physical_identity_row_is_explicitly_not_attempted() {
 
     // Exhaustive enumeration: exactly one device entry, one identity.
     assert_eq!(snap.devices().len(), 1);
-    let identities: Vec<&PhysicalDeviceId> =
-        snap.devices().values().map(|e| &e.identity).collect();
+    let identities: Vec<&PhysicalDeviceId> = snap.devices().values().map(|e| &e.identity).collect();
     assert_eq!(identities.len(), 1);
     assert_eq!(
         *identities[0],
@@ -375,9 +374,7 @@ fn every_directed_p2p_pair_is_explicitly_not_attempted() {
     let stranger = PhysicalDeviceId::cuda("GPU-99999999-8888-7777-6666-555555555555", None);
     assert_eq!(
         topo.traversal_allowed(&pharos, &stranger),
-        Err(LinkGateError::UnknownEndpoint {
-            endpoint: stranger
-        })
+        Err(LinkGateError::UnknownEndpoint { endpoint: stranger })
     );
 }
 

@@ -49,7 +49,9 @@ use crate::device_set::{
     DeviceSet, DeviceSetSelection, DeviceTopologySnapshot, LinkGateError, MembershipError,
     SelectionError,
 };
-use crate::discovery::{ComputeCapability, DeviceDiscoveryEntry, DeviceDiscoverySnapshot, DtypeSurface};
+use crate::discovery::{
+    ComputeCapability, DeviceDiscoveryEntry, DeviceDiscoverySnapshot, DtypeSurface,
+};
 use crate::partition::{PartitionBudgetLedger, SafePhysicalLimit};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -542,7 +544,12 @@ fn gate_health_epoch_selection(request: &PolicyRequest) -> Result<DeviceSet, Gat
             .devices()
             .values()
             .filter(|entry| current.is_stale(entry.health_generation))
-            .map(|entry| format!("{} recorded at generation {}", entry.identity, entry.health_generation))
+            .map(|entry| {
+                format!(
+                    "{} recorded at generation {}",
+                    entry.identity, entry.health_generation
+                )
+            })
             .collect();
         return Err(GateViolation {
             gate: GateClass::HealthEpochMembership,
@@ -566,15 +573,17 @@ fn gate_health_epoch_selection(request: &PolicyRequest) -> Result<DeviceSet, Gat
                     "device {id} is not recorded in the snapshot (unknown or replaced)"
                 ),
             },
-            SelectionError::Membership(MembershipError::StaleEpoch { id, recorded, current }) => {
-                GateViolation {
-                    gate: GateClass::HealthEpochMembership,
-                    device: Some(id.clone()),
-                    failing_fact: format!(
-                        "device {id} recorded at generation {recorded}, current is {current}"
-                    ),
-                }
-            }
+            SelectionError::Membership(MembershipError::StaleEpoch {
+                id,
+                recorded,
+                current,
+            }) => GateViolation {
+                gate: GateClass::HealthEpochMembership,
+                device: Some(id.clone()),
+                failing_fact: format!(
+                    "device {id} recorded at generation {recorded}, current is {current}"
+                ),
+            },
             SelectionError::BelowMinimum { min, actual } => GateViolation {
                 gate: GateClass::HealthEpochMembership,
                 device: None,
@@ -614,7 +623,10 @@ fn gate_membership(plan: &CandidatePlan, set: &DeviceSet) -> Vec<GateViolation> 
 /// Gate 2: every operation placed on a device must be executable there —
 /// compute capability, SM count, and dtype surface from the snapshot's
 /// capability facts (C2 §1.2 compatibility).
-fn gate_compatibility(plan: &CandidatePlan, discovery: &DeviceDiscoverySnapshot) -> Vec<GateViolation> {
+fn gate_compatibility(
+    plan: &CandidatePlan,
+    discovery: &DeviceDiscoverySnapshot,
+) -> Vec<GateViolation> {
     let mut out = Vec::new();
     for assignment in &plan.assignments {
         let Some(entry) = find_device(discovery, &assignment.device) else {
@@ -652,7 +664,10 @@ fn gate_compatibility(plan: &CandidatePlan, discovery: &DeviceDiscoverySnapshot)
                 out.push(GateViolation {
                     gate: GateClass::Compatibility,
                     device: Some(assignment.device.clone()),
-                    failing_fact: format!("device {} lacks required dtype {name}", assignment.device),
+                    failing_fact: format!(
+                        "device {} lacks required dtype {name}",
+                        assignment.device
+                    ),
                 });
             }
         }
@@ -771,7 +786,11 @@ fn rank_plans(
         return Vec::new();
     }
 
-    let mut scored: Vec<((usize, &CandidatePlan), Vec<u64>, BTreeSet<PhysicalDeviceId>)> = passers
+    let mut scored: Vec<(
+        (usize, &CandidatePlan),
+        Vec<u64>,
+        BTreeSet<PhysicalDeviceId>,
+    )> = passers
         .into_iter()
         .map(|(idx, plan)| {
             let values: Vec<u64> = objectives
@@ -828,7 +847,11 @@ fn rank_plans(
 /// One objective's score for a plan. Missing declared facts are least-favored
 /// — an objective never rejects a plan for lacking a fact (C2 §1.1: no
 /// objective has reject power).
-fn objective_value(plan: &CandidatePlan, objective: Objective, constraints: &DeclaredConstraints) -> u64 {
+fn objective_value(
+    plan: &CandidatePlan,
+    objective: Objective,
+    constraints: &DeclaredConstraints,
+) -> u64 {
     match objective {
         Objective::Latency => plan.facts.latency_nanos.unwrap_or(u64::MAX),
         Objective::Throughput => plan.facts.throughput_tokens_per_sec.unwrap_or(0),

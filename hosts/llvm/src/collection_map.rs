@@ -333,7 +333,9 @@ fn map_values(context: *mut FaberRtContextV1, map: *mut c_void, keys: bool) -> F
 /// Pointer-carried kinds (textus, ascii, valor, instans, octeti, regex …)
 /// cross the array ABI as `VALUE_KIND_PTR` handles; numeric kinds pass
 /// through unchanged.
-fn canonical_array_element_kind(kind: faber::host_abi::FaberRtValueKindV1) -> faber::host_abi::FaberRtValueKindV1 {
+fn canonical_array_element_kind(
+    kind: faber::host_abi::FaberRtValueKindV1,
+) -> faber::host_abi::FaberRtValueKindV1 {
     match kind {
         faber::host_abi::VALUE_KIND_TEXT
         | faber::host_abi::VALUE_KIND_ASCII

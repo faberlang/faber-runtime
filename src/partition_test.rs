@@ -82,11 +82,8 @@ fn declared_requirements_over_policy_limit_rejected_as_budget_exceeded() {
     );
 
     // Exactly at the limit admits (boundary).
-    let request = AdmissionRequest::new(
-        VirtualDevicePartitionId::new(2),
-        cuda_device(),
-        ledger(100),
-    );
+    let request =
+        AdmissionRequest::new(VirtualDevicePartitionId::new(2), cuda_device(), ledger(100));
     assert!(VirtualDevicePartition::admit(request, SafePhysicalLimit::new(100)).is_ok());
 }
 
@@ -129,11 +126,8 @@ fn admission_is_policy_gated_never_total_reported_memory() {
 /// `PartitionFailure`, never an `AdmissionError` (admission already passed).
 #[test]
 fn post_admission_allocation_failure_maps_to_allocation_failure() {
-    let request = AdmissionRequest::new(
-        VirtualDevicePartitionId::new(1),
-        cuda_device(),
-        ledger(100),
-    );
+    let request =
+        AdmissionRequest::new(VirtualDevicePartitionId::new(1), cuda_device(), ledger(100));
     let mut partition =
         VirtualDevicePartition::admit(request, SafePhysicalLimit::new(1000)).unwrap();
     assert!(partition.is_active());
@@ -155,11 +149,7 @@ fn post_admission_allocation_failure_maps_to_allocation_failure() {
 #[test]
 fn removed_bound_device_maps_to_device_loss() {
     let mut partition = VirtualDevicePartition::admit(
-        AdmissionRequest::new(
-            VirtualDevicePartitionId::new(1),
-            cuda_device(),
-            ledger(100),
-        ),
+        AdmissionRequest::new(VirtualDevicePartitionId::new(1), cuda_device(), ledger(100)),
         SafePhysicalLimit::new(1000),
     )
     .unwrap();
@@ -205,11 +195,7 @@ fn three_failure_classes_are_distinct_and_never_conflated() {
         ..ledger(0)
     };
     let err = VirtualDevicePartition::admit(
-        AdmissionRequest::new(
-            VirtualDevicePartitionId::new(2),
-            cuda_device(),
-            overflowing,
-        ),
+        AdmissionRequest::new(VirtualDevicePartitionId::new(2), cuda_device(), overflowing),
         SafePhysicalLimit::new(u64::MAX),
     )
     .unwrap_err();
@@ -224,11 +210,8 @@ fn three_failure_classes_are_distinct_and_never_conflated() {
     // Post-admission: allocation_failure first, then device_loss — the first
     // failure wins, so an allocation failure is never relabeled as a device
     // loss.
-    let request = AdmissionRequest::new(
-        VirtualDevicePartitionId::new(3),
-        cuda_device(),
-        ledger(10),
-    );
+    let request =
+        AdmissionRequest::new(VirtualDevicePartitionId::new(3), cuda_device(), ledger(10));
     let mut p = VirtualDevicePartition::admit(request, SafePhysicalLimit::new(100)).unwrap();
     p.record_allocation_failure("oom");
     p.report_device_loss("lost later");
@@ -238,15 +221,15 @@ fn three_failure_classes_are_distinct_and_never_conflated() {
     ));
 
     // And a device loss is never downgraded to an allocation failure.
-    let request = AdmissionRequest::new(
-        VirtualDevicePartitionId::new(4),
-        cuda_device(),
-        ledger(10),
-    );
+    let request =
+        AdmissionRequest::new(VirtualDevicePartitionId::new(4), cuda_device(), ledger(10));
     let mut q = VirtualDevicePartition::admit(request, SafePhysicalLimit::new(100)).unwrap();
     q.report_device_loss("lost");
     q.record_allocation_failure("oom after loss");
-    assert!(matches!(q.failure(), Some(PartitionFailure::DeviceLoss { .. })));
+    assert!(matches!(
+        q.failure(),
+        Some(PartitionFailure::DeviceLoss { .. })
+    ));
 }
 
 /// MD-A15 degenerate: one-device execution derives an implicit/local
@@ -281,8 +264,8 @@ fn one_device_degenerate_builds_implicit_local_partition_without_distributed_wra
 #[test]
 fn ledger_covers_all_eight_byte_classes() {
     let full = PartitionBudgetLedger {
-        weight_bytes: 258_000_000, // (1) weights incl. repack/duplication
-        kv_cache_bytes: 4_000_000, // (2) KV per KvCacheLayout (consumed, GI4-owned)
+        weight_bytes: 258_000_000,           // (1) weights incl. repack/duplication
+        kv_cache_bytes: 4_000_000,           // (2) KV per KvCacheLayout (consumed, GI4-owned)
         activation_scratch_bytes: 2_000_000, // (3) peak activations + scratch
         module_storage_bytes: 1_000_000,     // (4) module/kernel/descriptor storage
         allocator_overhead_bytes: 500_000,   // (5) granularity/alignment/headroom
@@ -300,11 +283,7 @@ fn ledger_covers_all_eight_byte_classes() {
     assert_eq!(limit.get(), 300_000_000);
 
     // Admission uses the full ledger against the policy limit.
-    let request = AdmissionRequest::new(
-        VirtualDevicePartitionId::new(1),
-        cuda_device(),
-        full,
-    );
+    let request = AdmissionRequest::new(VirtualDevicePartitionId::new(1), cuda_device(), full);
     assert!(VirtualDevicePartition::admit(request, limit).is_ok());
 }
 
@@ -313,7 +292,10 @@ fn ledger_covers_all_eight_byte_classes() {
 #[test]
 fn receipt_taxonomy_fields_serialize_deterministically() {
     let devices = BTreeSet::from([cuda_device()]);
-    let ids = BTreeSet::from([VirtualDevicePartitionId::new(7), VirtualDevicePartitionId::new(3)]);
+    let ids = BTreeSet::from([
+        VirtualDevicePartitionId::new(7),
+        VirtualDevicePartitionId::new(3),
+    ]);
     let receipt = PartitionReceipt::new(
         devices.clone(),
         ids.clone(),
@@ -326,7 +308,10 @@ fn receipt_taxonomy_fields_serialize_deterministically() {
     assert_eq!(receipt.virtual_partition_count(), 2);
     assert_eq!(receipt.physical_device_ids(), &devices);
     assert_eq!(receipt.virtual_partition_ids(), &ids);
-    assert_eq!(receipt.fixture_identity_class(), FixtureIdentityClass::Virtual);
+    assert_eq!(
+        receipt.fixture_identity_class(),
+        FixtureIdentityClass::Virtual
+    );
     assert_eq!(receipt.transport_class(), TransportClass::HostStaged);
     assert_eq!(
         receipt.hardware_isolation_claimed(),

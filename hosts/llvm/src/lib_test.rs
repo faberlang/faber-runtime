@@ -52,7 +52,10 @@ fn arguments_excludes_host_argv0_and_returns_text_lista() {
 
     let result = unsafe { __faber_rt_v1_arguments(context) };
     assert!(result.status.is_ok(), "arguments symbol must succeed");
-    assert!(!result.value.is_null(), "arguments must return a lista handle");
+    assert!(
+        !result.value.is_null(),
+        "arguments must return a lista handle"
+    );
     let array = array::find_array(runtime, result.value).expect("arguments handle in arena");
     assert_eq!(
         array.kind,
@@ -83,7 +86,10 @@ fn arguments_excludes_host_argv0_and_returns_text_lista() {
 fn arguments_empty_without_process_args() {
     let mut context = ptr::null_mut();
     let status = unsafe { __faber_rt_v1_init(1, std::ptr::null(), &raw mut context) };
-    assert_eq!(status, STATUS_INVALID_ARGUMENT, "argc>0 with null argv rejects");
+    assert_eq!(
+        status, STATUS_INVALID_ARGUMENT,
+        "argc>0 with null argv rejects"
+    );
     let status = unsafe { __faber_rt_v1_init(0, std::ptr::null(), &raw mut context) };
     assert_eq!(status, STATUS_OK);
     let result = unsafe { __faber_rt_v1_arguments(context) };
@@ -184,11 +190,7 @@ fn diagnostic_nota_option_renders_payload_or_nihil() {
     let present = 100usize as *mut c_void;
     assert_eq!(
         unsafe {
-            __faber_rt_v1_diagnostic_nota_option(
-                context,
-                present,
-                faber::host_abi::VALUE_KIND_I64,
-            )
+            __faber_rt_v1_diagnostic_nota_option(context, present, faber::host_abi::VALUE_KIND_I64)
         },
         STATUS_OK
     );
@@ -208,11 +210,7 @@ fn diagnostic_nota_option_renders_payload_or_nihil() {
     // Unknown non-null raw handle with an unsupported kind stays fail-closed.
     assert_eq!(
         unsafe {
-            __faber_rt_v1_diagnostic_nota_option(
-                context,
-                present,
-                faber::host_abi::VALUE_KIND_I8,
-            )
+            __faber_rt_v1_diagnostic_nota_option(context, present, faber::host_abi::VALUE_KIND_I8)
         },
         STATUS_UNSUPPORTED
     );
@@ -1368,7 +1366,10 @@ fn valor_array_text_elements_round_trip_preserves_textus() {
     );
     assert_eq!(
         unsafe { &*array_valor.value.cast::<Valor>() },
-        &Valor::Lista(vec![Valor::Textus("prima".to_owned()), Valor::Textus("secunda".to_owned())])
+        &Valor::Lista(vec![
+            Valor::Textus("prima".to_owned()),
+            Valor::Textus("secunda".to_owned())
+        ])
     );
 
     unsafe { __faber_rt_v1_shutdown(context) };
@@ -3926,11 +3927,7 @@ fn opaque_nota_renders_lista_textus_and_octeti_in_rust_debug_shape() {
         assert_eq!(text.status, STATUS_OK);
         handles.push(array::RuntimeValue::Ptr(text.value));
     }
-    let array = array::store_array(
-        runtime,
-        faber::host_abi::VALUE_KIND_PTR,
-        handles,
-    );
+    let array = array::store_array(runtime, faber::host_abi::VALUE_KIND_PTR, handles);
     assert_eq!(array.status, STATUS_OK);
     assert_eq!(
         super::opaque_diagnostic_text(runtime, array.value),
@@ -4092,10 +4089,12 @@ fn instans_compare_family_orders_handles() {
     );
     let earlier = FaberRtSliceV1::from_static(b"1979-05-27T07:32:00Z");
     let later = FaberRtSliceV1::from_static(b"1980-01-01T00:00:00Z");
-    let earlier =
-        unsafe { __faber_rt_v1_instans_from_text(context, &raw const earlier, INSTANS_PRECISION_SECONDS) };
-    let later =
-        unsafe { __faber_rt_v1_instans_from_text(context, &raw const later, INSTANS_PRECISION_SECONDS) };
+    let earlier = unsafe {
+        __faber_rt_v1_instans_from_text(context, &raw const earlier, INSTANS_PRECISION_SECONDS)
+    };
+    let later = unsafe {
+        __faber_rt_v1_instans_from_text(context, &raw const later, INSTANS_PRECISION_SECONDS)
+    };
     assert_eq!(earlier.status, STATUS_OK);
     assert_eq!(later.status, STATUS_OK);
     let (a, b) = (earlier.value, later.value);
@@ -4103,10 +4102,22 @@ fn instans_compare_family_orders_handles() {
     assert_eq!(unsafe { __faber_rt_v1_compare_lt_2_ptr_ptr_to_i1(b, a) }, 0);
     assert_eq!(unsafe { __faber_rt_v1_compare_gt_2_ptr_ptr_to_i1(b, a) }, 1);
     assert_eq!(unsafe { __faber_rt_v1_compare_gt_2_ptr_ptr_to_i1(a, b) }, 0);
-    assert_eq!(unsafe { __faber_rt_v1_compare_lte_2_ptr_ptr_to_i1(a, b) }, 1);
-    assert_eq!(unsafe { __faber_rt_v1_compare_lte_2_ptr_ptr_to_i1(a, a) }, 1);
-    assert_eq!(unsafe { __faber_rt_v1_compare_gte_2_ptr_ptr_to_i1(b, a) }, 1);
-    assert_eq!(unsafe { __faber_rt_v1_compare_gte_2_ptr_ptr_to_i1(a, b) }, 0);
+    assert_eq!(
+        unsafe { __faber_rt_v1_compare_lte_2_ptr_ptr_to_i1(a, b) },
+        1
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_compare_lte_2_ptr_ptr_to_i1(a, a) },
+        1
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_compare_gte_2_ptr_ptr_to_i1(b, a) },
+        1
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_compare_gte_2_ptr_ptr_to_i1(a, b) },
+        0
+    );
     unsafe { __faber_rt_v1_shutdown(context) };
 }
 
@@ -4123,8 +4134,16 @@ fn tempus_nunc_returns_current_instant_handle() {
     let rendered = unsafe { __faber_rt_v1_instans_get_text(context, nunc.value) };
     assert_eq!(rendered.status, STATUS_OK);
     let rendered = unsafe { &*rendered.value.cast::<FaberRtSliceV1>() };
-    let text = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(rendered.data, rendered.len as usize)) };
-    assert!(text.ends_with('Z'), "RFC3339 wire should end with Z, got {text}");
+    let text = unsafe {
+        std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+            rendered.data,
+            rendered.len as usize,
+        ))
+    };
+    assert!(
+        text.ends_with('Z'),
+        "RFC3339 wire should end with Z, got {text}"
+    );
     unsafe { __faber_rt_v1_shutdown(context) };
 }
 
@@ -4157,9 +4176,13 @@ fn provider_valor_cape_reads_tabula_field() {
     assert_eq!(valor.status, STATUS_OK);
     let field = unsafe { __faber_rt_v1_valor_cape(context, valor.value.cast(), &raw const key) };
     assert_eq!(field.status, STATUS_OK);
-    assert_eq!(unsafe { &*field.value.cast::<Valor>() }, &Valor::Numerus(42));
+    assert_eq!(
+        unsafe { &*field.value.cast::<Valor>() },
+        &Valor::Numerus(42)
+    );
     let missing = FaberRtSliceV1::from_static(b"absentia");
-    let field = unsafe { __faber_rt_v1_valor_cape(context, valor.value.cast(), &raw const missing) };
+    let field =
+        unsafe { __faber_rt_v1_valor_cape(context, valor.value.cast(), &raw const missing) };
     assert_eq!(field.status, STATUS_INVALID_ARGUMENT);
     unsafe { __faber_rt_v1_shutdown(context) };
 }
@@ -4382,7 +4405,7 @@ fn descriptor_single_numerus_binding() -> Vec<u8> {
     bytes.push(0); // mode single
     bytes.push(0); // no version
     bytes.push(0); // no description
-    // name
+                   // name
     bytes.extend_from_slice(&5u16.to_le_bytes());
     bytes.extend_from_slice(b"smoke");
     // exit: Binding("exitum")
@@ -4418,11 +4441,15 @@ fn cli_parse_returns_typed_value_table_and_binding_exit_code() {
     let status = unsafe { __faber_rt_v1_init(2, argv.as_ptr(), &raw mut context) };
     assert_eq!(status, STATUS_OK);
 
-    let result = unsafe {
-        __faber_rt_v1_cli_parse(context, descriptor.as_ptr(), descriptor.len())
-    };
-    assert!(result.status.is_ok(), "descriptor decode + argv parse must succeed");
-    assert!(!result.value.is_null(), "typed value table must be returned");
+    let result = unsafe { __faber_rt_v1_cli_parse(context, descriptor.as_ptr(), descriptor.len()) };
+    assert!(
+        result.status.is_ok(),
+        "descriptor decode + argv parse must succeed"
+    );
+    assert!(
+        !result.value.is_null(),
+        "typed value table must be returned"
+    );
     assert_eq!(
         unsafe { __faber_rt_v1_cli_field_i64(context, result.value, 0) },
         7,

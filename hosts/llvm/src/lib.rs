@@ -44,11 +44,11 @@ use collection_map::{
 use collection_map::{RuntimeMap, RuntimeSet};
 #[cfg(test)]
 use convert::{
-    __faber_rt_v1_convert_runtime_1_ptr_to_ptr, __faber_rt_v1_valor_ascii,
-    __faber_rt_v1_valor_f64, __faber_rt_v1_valor_get_ascii, __faber_rt_v1_valor_get_f64,
-    __faber_rt_v1_valor_get_i1, __faber_rt_v1_valor_get_i64, __faber_rt_v1_valor_get_nihil,
-    __faber_rt_v1_valor_get_text, __faber_rt_v1_valor_i1, __faber_rt_v1_valor_i64,
-    __faber_rt_v1_valor_nihil, __faber_rt_v1_valor_text,
+    __faber_rt_v1_convert_runtime_1_ptr_to_ptr, __faber_rt_v1_valor_ascii, __faber_rt_v1_valor_f64,
+    __faber_rt_v1_valor_get_ascii, __faber_rt_v1_valor_get_f64, __faber_rt_v1_valor_get_i1,
+    __faber_rt_v1_valor_get_i64, __faber_rt_v1_valor_get_nihil, __faber_rt_v1_valor_get_text,
+    __faber_rt_v1_valor_i1, __faber_rt_v1_valor_i64, __faber_rt_v1_valor_nihil,
+    __faber_rt_v1_valor_text,
 };
 #[cfg(not(test))]
 use faber::host_abi::FaberRtExitV1;
@@ -120,14 +120,13 @@ use provider::{
 };
 #[cfg(test)]
 use regex_rt::{
-    __faber_rt_v1_regex_from_ascii, __faber_rt_v1_regex_from_text,
-    __faber_rt_v1_regex_get_text, __faber_rt_v1_regex_literal_1_ptr_to_ptr,
+    __faber_rt_v1_regex_from_ascii, __faber_rt_v1_regex_from_text, __faber_rt_v1_regex_get_text,
+    __faber_rt_v1_regex_literal_1_ptr_to_ptr,
 };
 #[cfg(test)]
 use solum::{
     __faber_rt_v1_read_line_0_to_ptr, __faber_rt_v1_solum_read_bytes,
-    __faber_rt_v1_solum_read_lines, __faber_rt_v1_solum_read_text,
-    __faber_rt_v1_solum_write_text,
+    __faber_rt_v1_solum_read_lines, __faber_rt_v1_solum_read_text, __faber_rt_v1_solum_write_text,
 };
 use sparsa::RuntimeSparse;
 #[cfg(test)]
@@ -343,7 +342,8 @@ pub unsafe extern "C" fn __faber_rt_v1_arguments(
         };
         let mut values = Vec::with_capacity(runtime.arguments.len());
         for argument in &runtime.arguments {
-            let text = format::store_text_owned(context, String::from_utf8_lossy(argument).into_owned());
+            let text =
+                format::store_text_owned(context, String::from_utf8_lossy(argument).into_owned());
             values.push(array::RuntimeValue::Ptr(text));
         }
         array::store_array(runtime, faber::host_abi::VALUE_KIND_PTR, values)
