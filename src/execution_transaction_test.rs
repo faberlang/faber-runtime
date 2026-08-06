@@ -35,7 +35,12 @@ use crate::partition::{
     AdmissionRequest, FixtureIdentityClass, HardwareIsolationClaim, PartitionBudgetLedger,
     SafePhysicalLimit, TransportClass, VirtualDevicePartition, VirtualDevicePartitionId,
 };
+use crate::transport::{
+    CopyPath, HostStagedAdapter, MeasuredRates, SourceValue, TransferBudget, TransferSpec,
+    TransportAdapter, TransportReceipt,
+};
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
 
 // T1 measured facts (pharos) reused for the synthetic snapshot shape.
 const UUID_A: &str = "GPU-3e017562-9ec3-da9a-962d-b8bd5f9e24be";
@@ -1296,6 +1301,97 @@ fn receipt_records_reservation_executed_bytes_and_sync_events() {
             launch_ref: LaunchRef::new("launch-proj-b"),
         }
     ));
+}
+
+/// The S4 selected-transport section (CTO sanity-check amendment on MD3-T1):
+/// a real `ExecutionTransaction` commits and its receipt carries the actual
+/// selected transports (path/staging/events/timeout/bytes/timing) executed
+/// through the transport adapter. The adapter's `transport_receipt()` is
+/// folded in during the transaction; a transaction that never touched a
+/// transport adapter records `None`.
+#[test]
+fn receipt_carries_the_selected_transport_records() {
+    let mut transaction = fixture_transaction();
+    assert_eq!(
+        transaction.selected_transports(),
+        None,
+        "no adapter recorded before the coordinator folds the section in"
+    );
+
+    // The fixture's transfer (t1: p0 → p1, TRANSFER_BYTES, F32 dense BIDI)
+    // executed through the host-staged adapter — the coordinator integration
+    // shape: run the copy, then fold the adapter's `transport_receipt()` over.
+    let transfer = fixture_operations()
+        .iter()
+        .find_map(|operation| match operation {
+            TransactionOperation::Transfer(mirror) => Some(mirror.clone()),
+            _ => None,
+        })
+        .expect("the fixture carries the t1 transfer");
+    let mut adapter = HostStagedAdapter::new(TransferBudget::declared(1 << 20, 1 << 30));
+    adapter.set_simulated_delay(Duration::from_millis(1));
+    let spec = TransferSpec::from_mirror(&transfer, Duration::from_secs(1));
+    let source = SourceValue::new(
+        partition_id(0),
+        MirroredDtype::F32,
+        MirroredStorageLayout::Dense,
+        0,
+        vec![3u8; TRANSFER_BYTES as usize],
+    );
+    let outcome = adapter
+        .copy(&spec, &source, &partition_id(1))
+        .expect("the fixture transfer copy succeeds");
+    assert_eq!(outcome.record.transfer_ref.as_str(), "t1");
+
+    transaction.with_transport_receipt(adapter.transport_receipt());
+    let mut backend = FakeExecutionBackend::new();
+    transaction.prepare(&mut backend).expect("prepare succeeds");
+    transaction
+        .execute(&mut backend)
+        .expect("execute succeeds");
+    let receipt = transaction
+        .commit(&mut backend, PublicationOrdinal::new(9))
+        .expect("commit publishes");
+
+    let selected = receipt
+        .selected_transports
+        .as_ref()
+        .expect("the committed receipt carries the selected-transport section");
+    assert_eq!(selected.records.len(), 1);
+    assert_eq!(selected.used_bytes, TRANSFER_BYTES);
+    assert_eq!(selected.budget_bytes, 1 << 20);
+    assert_eq!(selected.rates, MeasuredRates::t1());
+    let record = &selected.records[0];
+    // path
+    assert_eq!(record.copy_path, CopyPath::HostStaged);
+    // staging
+    assert!(record.staging.pinned);
+    assert_eq!(record.staging.capacity_bytes, TRANSFER_BYTES);
+    // streams/queues/events
+    assert!(record.engine.get() >= 1);
+    assert!(record.event.get() >= 1);
+    // timeout/failure policy
+    assert_eq!(record.timeout, Duration::from_secs(1));
+    // bytes
+    assert_eq!(record.bytes, TRANSFER_BYTES);
+    assert_eq!(record.direction, TransferDirectionMirror::BIDI);
+    assert_eq!(record.destination, partition_id(1));
+    // timing
+    assert!(record.elapsed_nanos >= 1_000_000, "the copy is timed");
+    assert!(record.expected_nanos > 0);
+
+    // The transaction accessor mirrors the folded section.
+    assert!(transaction.selected_transports().is_some());
+
+    // A transaction that never touched a transport adapter records None.
+    let mut bare = fixture_transaction();
+    let mut bare_backend = FakeExecutionBackend::new();
+    bare.prepare(&mut bare_backend).expect("prepare succeeds");
+    bare.execute(&mut bare_backend).expect("execute succeeds");
+    let bare_receipt = bare
+        .commit(&mut bare_backend, PublicationOrdinal::new(10))
+        .expect("commit publishes");
+    assert!(bare_receipt.selected_transports.is_none());
 }
 
 /// StagedWrite is the atomic publication unit — byte counts are the declared

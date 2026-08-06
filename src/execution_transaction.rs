@@ -57,6 +57,7 @@
 use crate::bound_plan::{BoundDistributedPlan, LogicalPartitionId};
 use crate::device_identity::{push_str, push_u64};
 use crate::partition::{PartitionBudgetLedger, PartitionReceipt};
+use crate::transport::TransportReceipt;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
@@ -1745,7 +1746,10 @@ pub struct TransactionTimings {
 /// per-partition reservation summary, the declared staged write-set, the
 /// executed operations with exact bytes, the synchronization events, the
 /// commit/abort decision + reason, the publication summary, teardown facts,
-/// and phase timings. The selected-transport records (S4) land at MD3-T1.
+/// phase timings, and the S4 selected-transport section (the actual selected
+/// transports: copy path/staging/events/timeout/bytes/timing + budget
+/// accounting — the folded [`TransportReceipt`], CTO sanity-check amendment;
+/// `None` when no transport adapter recorded transfers for this transaction).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionReceipt {
     /// The transaction identity.
@@ -1772,6 +1776,11 @@ pub struct TransactionReceipt {
     pub teardown: TeardownFacts,
     /// Phase timings.
     pub timings: TransactionTimings,
+    /// The S4 selected-transport section folded from the transport adapter
+    /// used during the transaction (path/staging/events/timeout/bytes/timing
+    /// + budget accounting at the measured rates). `None` when no transport
+    /// adapter recorded transfers for this transaction.
+    pub selected_transports: Option<TransportReceipt>,
 }
 
 // --- the transaction --------------------------------------------------------
@@ -1800,6 +1809,7 @@ pub struct ExecutionTransaction {
     publish_summary: Option<PublishSummary>,
     teardown: TeardownFacts,
     timings: TransactionTimings,
+    transport_receipt: Option<TransportReceipt>,
     receipt: Option<TransactionReceipt>,
 }
 
@@ -1838,6 +1848,7 @@ impl ExecutionTransaction {
             publish_summary: None,
             teardown: TeardownFacts::default(),
             timings: TransactionTimings::default(),
+            transport_receipt: None,
             receipt: None,
         })
     }
@@ -1910,6 +1921,27 @@ impl ExecutionTransaction {
     #[must_use]
     pub fn receipt(&self) -> Option<&TransactionReceipt> {
         self.receipt.as_ref()
+    }
+
+    /// The S4 selected-transport section recorded for this transaction, if
+    /// the coordinator handed the transport adapter's `transport_receipt()`
+    /// over ([`with_transport_receipt`](Self::with_transport_receipt)).
+    #[must_use]
+    pub fn selected_transports(&self) -> Option<&TransportReceipt> {
+        self.transport_receipt.as_ref()
+    }
+
+    /// Record the S4 selected-transport section from the transport adapter
+    /// used during this transaction. The coordinator folds the adapter's
+    /// `transport_receipt()` over after execution (the actual selected
+    /// transports: copy path/staging/events/timeout/bytes/timing + budget
+    /// accounting at the measured rates); the commit/abort receipt carries it
+    /// verbatim. Additive — a transaction that never touched a transport
+    /// adapter records `None`. The portable logical plan is never touched
+    /// (S4: the mirror carries only the admissibility `path_label`).
+    pub fn with_transport_receipt(&mut self, receipt: TransportReceipt) -> &mut Self {
+        self.transport_receipt = Some(receipt);
+        self
     }
 
     /// Reserve the transaction's resources and validate the accepted plan
@@ -2380,6 +2412,7 @@ impl ExecutionTransaction {
             publish_summary: self.publish_summary,
             teardown: self.teardown.clone(),
             timings: self.timings,
+            selected_transports: self.transport_receipt.clone(),
         }
     }
 }
