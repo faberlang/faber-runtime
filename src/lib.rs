@@ -7,6 +7,7 @@ pub mod arena;
 pub mod ascii;
 mod autograd;
 pub mod bound_plan;
+pub mod dequant;
 pub mod device;
 pub mod device_identity;
 pub mod device_set;
@@ -120,3 +121,7 @@ mod tokenizer_test;
 #[cfg(test)]
 #[path = "tensor_view_test.rs"]
 mod tensor_view_test;
+
+#[cfg(test)]
+#[path = "dequant_test.rs"]
+mod dequant_test;
