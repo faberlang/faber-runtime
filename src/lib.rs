@@ -19,8 +19,10 @@ pub mod discovery;
 pub mod display;
 pub mod execution_transaction;
 pub mod fake_device;
+pub mod failable;
 pub mod frame;
 pub mod gguf;
+pub mod greedy_run;
 pub mod host_abi;
 pub mod http;
 pub mod instans;
@@ -148,6 +150,10 @@ mod decoder_ops_test;
 #[cfg(test)]
 #[path = "cpu_oracle_test.rs"]
 mod cpu_oracle_test;
+
+#[cfg(test)]
+#[path = "greedy_run_test.rs"]
+mod greedy_run_test;
 
 #[cfg(test)]
 #[path = "capability_test.rs"]
