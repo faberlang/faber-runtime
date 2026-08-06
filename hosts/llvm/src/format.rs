@@ -3,7 +3,7 @@
 use super::RuntimeContext;
 use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT,
-    STATUS_OK, STATUS_PANIC,
+    STATUS_OK, STATUS_PANIC, STATUS_UNSUPPORTED,
 };
 use faber::{display_bivalens, display_fractus};
 use std::ffi::c_void;
@@ -148,6 +148,35 @@ pub unsafe extern "C" fn __faber_rt_v1_format_text_i64_i1(
             display_bivalens(boolean != 0).to_owned(),
         ],
     )
+}
+
+/// Render a template with one opaque collection handle (`lista` / `octeti`).
+///
+/// The opaque handle is displayed in its Rust-oracle Debug shape (`[1, 2, 3]`
+/// for numeric lists, `["prima", "secunda"]` for text lists, `[112, 114, …]`
+/// for octeti). Unrecognized handles fail closed with `STATUS_UNSUPPORTED`.
+///
+/// # Safety
+///
+/// `context` must be live. `template` follows the slice validity contract of
+/// [`__faber_rt_v1_write_nota_text`]; `value` is used only for pointer-equality
+/// arena lookups and is never dereferenced directly.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_format_1_ptr_to_ptr(
+    context: *mut FaberRtContextV1,
+    template: FaberRtSliceV1,
+    value: *mut std::ffi::c_void,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| {
+        if context.is_null() {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        }
+        let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+        let Some(rendered) = super::opaque_value_text(runtime, value) else {
+            return FaberRtPtrResultV1::failure(STATUS_UNSUPPORTED);
+        };
+        format_scalar_values(context, template, &[rendered])
+    })
 }
 
 #[no_mangle]

@@ -69,9 +69,9 @@ use faber::host_abi::{
 use faber::{display_bivalens, display_fractus, Valor};
 #[cfg(test)]
 use format::{
-    __faber_rt_v1_format_f64, __faber_rt_v1_format_i1, __faber_rt_v1_format_i64,
-    __faber_rt_v1_format_i64_i64, __faber_rt_v1_format_i64_i64_i64, __faber_rt_v1_format_text,
-    __faber_rt_v1_format_text_i64, __faber_rt_v1_format_text_i64_i1,
+    __faber_rt_v1_format_1_ptr_to_ptr, __faber_rt_v1_format_f64, __faber_rt_v1_format_i1,
+    __faber_rt_v1_format_i64, __faber_rt_v1_format_i64_i64, __faber_rt_v1_format_i64_i64_i64,
+    __faber_rt_v1_format_text, __faber_rt_v1_format_text_i64, __faber_rt_v1_format_text_i64_i1,
     __faber_rt_v1_format_text_text, __faber_rt_v1_text_f64, __faber_rt_v1_text_i1,
     __faber_rt_v1_text_i64, __faber_rt_v1_text_length,
 };
@@ -117,11 +117,13 @@ use provider::{
 };
 #[cfg(test)]
 use regex_rt::{
-    __faber_rt_v1_regex_from_ascii, __faber_rt_v1_regex_from_text, __faber_rt_v1_regex_get_text,
+    __faber_rt_v1_regex_from_ascii, __faber_rt_v1_regex_from_text,
+    __faber_rt_v1_regex_get_text, __faber_rt_v1_regex_literal_1_ptr_to_ptr,
 };
 #[cfg(test)]
 use solum::{
-    __faber_rt_v1_solum_read_bytes, __faber_rt_v1_solum_read_lines, __faber_rt_v1_solum_read_text,
+    __faber_rt_v1_read_line_0_to_ptr, __faber_rt_v1_solum_read_bytes,
+    __faber_rt_v1_solum_read_lines, __faber_rt_v1_solum_read_text,
     __faber_rt_v1_solum_write_text,
 };
 use sparsa::RuntimeSparse;
@@ -463,29 +465,71 @@ fn unsupported_opaque_diagnostic(context: *mut FaberRtContextV1) -> FaberRtStatu
     }
 }
 
-/// Render an opaque `nota`/`mone` handle the LLVM host can display: an
-/// arena-owned `lista<textus>` handle or an `octeti` byte payload. Both render
-/// in the Rust oracle's Debug shape (`["prima", "secunda"]` / `[112, 114, …]`).
-/// Returns `None` for unrecognized or unsupported handles (fail-closed).
-fn opaque_diagnostic_text(runtime: &RuntimeContext, handle: *mut c_void) -> Option<String> {
+/// Render an opaque handle the LLVM host can display: an arena-owned `lista`
+/// handle (numeric or text elements) or an `octeti` byte payload. Both render
+/// in the Rust oracle's Debug shape (`[1, 2, 3]` / `["prima", "secunda"]` /
+/// `[112, 114, …]`). Returns `None` for unrecognized or unsupported handles
+/// (fail-closed).
+pub(crate) fn opaque_value_text(runtime: &RuntimeContext, handle: *mut c_void) -> Option<String> {
     if let Some(array) = array::find_array(runtime, handle) {
-        if array.kind != faber::host_abi::VALUE_KIND_PTR {
-            return None;
-        }
         let mut rendered = Vec::with_capacity(array.values.len());
         for element in &array.values {
-            let array::RuntimeValue::Ptr(element_handle) = element else {
-                return None;
+            let text = match (array.kind, element) {
+                (faber::host_abi::VALUE_KIND_PTR, array::RuntimeValue::Ptr(element_handle)) => {
+                    // Debug of the text payload quotes it (`"prima"`), matching
+                    // `Vec<String>` Debug shape.
+                    format!("{:?}", format::find_text(runtime, *element_handle)?.value)
+                }
+                (faber::host_abi::VALUE_KIND_I1, array::RuntimeValue::I1(value)) => {
+                    format!("{:?}", *value != 0)
+                }
+                (faber::host_abi::VALUE_KIND_I8, array::RuntimeValue::I8(value)) => {
+                    format!("{value}")
+                }
+                (faber::host_abi::VALUE_KIND_I16, array::RuntimeValue::I16(value)) => {
+                    format!("{value}")
+                }
+                (faber::host_abi::VALUE_KIND_I32, array::RuntimeValue::I32(value)) => {
+                    format!("{value}")
+                }
+                (faber::host_abi::VALUE_KIND_I64, array::RuntimeValue::I64(value)) => {
+                    format!("{value}")
+                }
+                (faber::host_abi::VALUE_KIND_U8, array::RuntimeValue::U8(value)) => {
+                    format!("{value}")
+                }
+                (faber::host_abi::VALUE_KIND_U16, array::RuntimeValue::U16(value)) => {
+                    format!("{value}")
+                }
+                (faber::host_abi::VALUE_KIND_U32, array::RuntimeValue::U32(value)) => {
+                    format!("{value}")
+                }
+                (faber::host_abi::VALUE_KIND_U64, array::RuntimeValue::U64(value)) => {
+                    format!("{value}")
+                }
+                (faber::host_abi::VALUE_KIND_F32, array::RuntimeValue::F32(value)) => {
+                    display_fractus(*value)
+                }
+                (faber::host_abi::VALUE_KIND_F64, array::RuntimeValue::F64(value)) => {
+                    display_fractus(*value)
+                }
+                _ => return None,
             };
-            let text = format::find_text(runtime, *element_handle)?;
-            rendered.push(text.value.clone());
+            rendered.push(text);
         }
-        return Some(format!("{rendered:?}"));
+        return Some(format!("[{}]", rendered.join(", ")));
     }
     if let Some(bytes) = valor_aggregate::find_octeti(runtime, handle) {
         return Some(format!("{bytes:?}"));
     }
     None
+}
+
+/// Render an opaque `nota`/`mone` handle the LLVM host can display (see
+/// [`opaque_value_text`]). Returns `None` for unrecognized or unsupported
+/// handles (fail-closed).
+fn opaque_diagnostic_text(runtime: &RuntimeContext, handle: *mut c_void) -> Option<String> {
+    opaque_value_text(runtime, handle)
 }
 
 /// Render an opaque `nota`/`mone` value (see [`opaque_diagnostic_text`]).

@@ -3818,3 +3818,81 @@ fn aggregate_set_index_ptr_i64_sets_text_i64_map_entry() {
     assert_eq!(output, 7);
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+#[test]
+fn format_1_ptr_to_ptr_renders_opaque_lista_debug_shape() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    assert_eq!(array.status, STATUS_OK);
+    for value in [1_i64, 2, 3] {
+        let status = unsafe {
+            __faber_rt_v1_array_push(
+                context,
+                array.value,
+                VALUE_KIND_I64,
+                ptr::from_ref(&value).cast(),
+            )
+        };
+        assert_eq!(status, STATUS_OK);
+    }
+    let formatted = unsafe {
+        __faber_rt_v1_format_1_ptr_to_ptr(
+            context,
+            FaberRtSliceV1::from_static(b"nums=\xC2\xA7"),
+            array.value,
+        )
+    };
+    assert_eq!(formatted.status, STATUS_OK);
+    assert_eq!(
+        unsafe { &*formatted.value.cast::<RuntimeText>() }.value,
+        "nums=[1, 2, 3]"
+    );
+    // Unknown handles fail closed (STATUS_UNSUPPORTED), never panic.
+    let bogus = unsafe {
+        __faber_rt_v1_format_1_ptr_to_ptr(
+            context,
+            FaberRtSliceV1::from_static(b"x"),
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(bogus.status, STATUS_UNSUPPORTED);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn regex_literal_1_ptr_to_ptr_builds_pattern_carrier() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let pattern = b"\\d+\0";
+    let flags = b"i\0";
+    let descriptor = super::regex_rt::RegexLiteralDescriptorV1 {
+        pattern: pattern.as_ptr().cast(),
+        flags: flags.as_ptr().cast(),
+    };
+    let result =
+        unsafe { __faber_rt_v1_regex_literal_1_ptr_to_ptr(context, &raw const descriptor) };
+    assert_eq!(result.status, STATUS_OK);
+    let text = unsafe { __faber_rt_v1_regex_get_text(context, result.value) };
+    assert_eq!(text.status, STATUS_OK);
+    assert_eq!(unsafe { &*text.value.cast::<RuntimeText>() }.value, "\\d+");
+    // Null descriptor fails closed with STATUS_INVALID_ARGUMENT.
+    let invalid = unsafe { __faber_rt_v1_regex_literal_1_ptr_to_ptr(context, ptr::null()) };
+    assert_eq!(invalid.status, STATUS_INVALID_ARGUMENT);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn read_line_0_to_ptr_rejects_null_context_and_links() {
+    // The symbol must be exported and fail closed on a null context; the
+    // live-stdin read path is exercised by the repro link pipeline (stdin is
+    // a process-global the test runner cannot inject).
+    let result = unsafe { __faber_rt_v1_read_line_0_to_ptr(ptr::null_mut()) };
+    assert_eq!(result.status, STATUS_INVALID_ARGUMENT);
+}

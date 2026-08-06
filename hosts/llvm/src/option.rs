@@ -4,7 +4,7 @@ use super::array::{read_value, valid_kind, write_value, RuntimeValue};
 use super::RuntimeContext;
 use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtStatusV1, FaberRtValueKindV1,
-    STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC,
+    STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_PTR,
 };
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
@@ -59,7 +59,15 @@ pub unsafe extern "C" fn __faber_rt_v1_option_is_present(
             return STATUS_INVALID_ARGUMENT;
         };
         let Some(option) = find_option(runtime, option) else {
-            return STATUS_INVALID_ARGUMENT;
+            // Raw null-encoded option (the chain/literal result IS the value;
+            // nil is the null pointer). Present iff the pointer is non-null.
+            if kind != VALUE_KIND_PTR {
+                return STATUS_INVALID_ARGUMENT;
+            }
+            if !(unsafe { write_u8(output, u8::from(!option.is_null())) }) {
+                return STATUS_INVALID_ARGUMENT;
+            }
+            return STATUS_OK;
         };
         if option.kind != kind || !(unsafe { write_u8(output, u8::from(option.value.is_some())) }) {
             return STATUS_INVALID_ARGUMENT;
@@ -80,7 +88,15 @@ pub unsafe extern "C" fn __faber_rt_v1_option_get(
             return STATUS_INVALID_ARGUMENT;
         };
         let Some(option) = find_option(runtime, option) else {
-            return STATUS_INVALID_ARGUMENT;
+            // Raw null-encoded option (chain/literal result): unwrap of a null
+            // (nil) option fails closed; a non-null pointer IS the value.
+            if kind != VALUE_KIND_PTR || option.is_null() {
+                return STATUS_INVALID_ARGUMENT;
+            }
+            if !(unsafe { write_value(RuntimeValue::Ptr(option), output) }) {
+                return STATUS_INVALID_ARGUMENT;
+            }
+            return STATUS_OK;
         };
         let Some(value) = option.value else {
             return STATUS_INVALID_ARGUMENT;
@@ -105,7 +121,24 @@ pub unsafe extern "C" fn __faber_rt_v1_option_get_or(
             return STATUS_INVALID_ARGUMENT;
         };
         let Some(option) = find_option(runtime, option) else {
-            return STATUS_INVALID_ARGUMENT;
+            // Raw null-encoded option: nil is the null pointer, so a null
+            // option coalesces to the fallback and a non-null option IS the
+            // value. (The chain/coalesce path emits this encoding directly.)
+            if kind != VALUE_KIND_PTR {
+                return STATUS_INVALID_ARGUMENT;
+            }
+            let value = if option.is_null() {
+                let Some(value) = (unsafe { read_value(kind, fallback) }) else {
+                    return STATUS_INVALID_ARGUMENT;
+                };
+                value
+            } else {
+                RuntimeValue::Ptr(option)
+            };
+            if !(unsafe { write_value(value, output) }) {
+                return STATUS_INVALID_ARGUMENT;
+            }
+            return STATUS_OK;
         };
         if option.kind != kind {
             return STATUS_INVALID_ARGUMENT;

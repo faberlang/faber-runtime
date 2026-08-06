@@ -87,3 +87,45 @@ pub unsafe extern "C" fn __faber_rt_v1_regex_get_text(
         store_text(context, regex.pattern().to_owned())
     })
 }
+
+/// Static regex literal descriptor: `{ ptr pattern, ptr flags }` where
+/// `pattern` is a NUL-terminated C string and `flags` is a NUL-terminated C
+/// string or null. Matches the emitter's `REGEX_DESCRIPTOR_LAYOUT`.
+#[repr(C)]
+pub struct RegexLiteralDescriptorV1 {
+    pub(crate) pattern: *const c_char,
+    pub(crate) flags: *const c_char,
+}
+
+/// Construct a regex carrier from a static regex literal descriptor.
+///
+/// The literal path (`"…" ↦ regex` on a literal) preserves the pattern text
+/// without engine validation, mirroring [`__faber_rt_v1_regex_from_text`]; the
+/// descriptor carries the pattern bytes (and optional flags text) emitted as
+/// static globals by the compiler.
+///
+/// # Safety
+///
+/// `context` must be live. `descriptor` must be a readable
+/// [`RegexLiteralDescriptorV1`] whose `pattern` is a valid NUL-terminated C
+/// string.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_regex_literal_1_ptr_to_ptr(
+    context: *mut FaberRtContextV1,
+    descriptor: *const RegexLiteralDescriptorV1,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr(|| {
+        let (Some(runtime), Some(descriptor)) = (
+            runtime(context),
+            (!descriptor.is_null()).then(|| unsafe { &*descriptor }),
+        ) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        if descriptor.pattern.is_null() {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        }
+        let bytes = unsafe { CStr::from_ptr(descriptor.pattern) }.to_bytes();
+        let text = String::from_utf8_lossy(bytes).into_owned();
+        store_regex(runtime, Regex::new(&text))
+    })
+}

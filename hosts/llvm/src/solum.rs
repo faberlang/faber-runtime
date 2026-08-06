@@ -8,6 +8,7 @@ use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT,
     STATUS_IO_ERROR, STATUS_OK, VALUE_KIND_PTR,
 };
+use std::io::{self, BufRead};
 
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_solum_read_text(
@@ -82,5 +83,34 @@ pub unsafe extern "C" fn __faber_rt_v1_solum_write_text(
     match std::fs::write(path, text) {
         Ok(()) => STATUS_OK,
         Err(_) => STATUS_IO_ERROR,
+    }
+}
+
+/// `lege` — read one line from the active input stream (stdin).
+///
+/// Reads one line of stdin; the trailing newline is stripped. End of input
+/// returns a null handle (`nihil`), matching `T ∪ nihil` semantics. The text
+/// is stored in the arena so diagnostics can render it.
+///
+/// # Safety
+///
+/// `context` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_read_line_0_to_ptr(
+    context: *mut FaberRtContextV1,
+) -> FaberRtPtrResultV1 {
+    if context.is_null() {
+        return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+    }
+    let mut line = String::new();
+    match io::stdin().lock().read_line(&mut line) {
+        Ok(0) => FaberRtPtrResultV1::success(std::ptr::null_mut()),
+        Ok(_) => {
+            let trimmed = line
+                .trim_end_matches(['\n', '\r'])
+                .to_owned();
+            store_text(context, trimmed)
+        }
+        Err(_) => FaberRtPtrResultV1::failure(STATUS_IO_ERROR),
     }
 }
