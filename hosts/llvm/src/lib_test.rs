@@ -13,6 +13,10 @@
     clippy::cast_sign_loss
 )]
 
+use super::cli::{
+    __faber_rt_v1_cli_exit_code, __faber_rt_v1_cli_field_i64, __faber_rt_v1_cli_parse,
+    __faber_rt_v1_cli_selected_command,
+};
 use super::*;
 use std::ffi::{c_void, CStr};
 
@@ -4276,4 +4280,78 @@ fn read_line_0_to_ptr_rejects_null_context_and_links() {
     // a process-global the test runner cannot inject).
     let result = unsafe { __faber_rt_v1_read_line_0_to_ptr(ptr::null_mut()) };
     assert_eq!(result.status, STATUS_INVALID_ARGUMENT);
+}
+
+// ---------------------------------------------------------------------------
+// Stage 8 S8.2 — static CLI descriptor decode, argv parse, exit policy.
+// ---------------------------------------------------------------------------
+
+/// Hand-constructed `cli_descriptor` v1 bytes for a single-command program
+/// with one numeric operand (`exitum`) and a `Binding` exit policy, in the
+/// radix `cli_descriptor` byte format (an independent decoder check).
+fn descriptor_single_numerus_binding() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"FCLI");
+    bytes.push(1); // version
+    bytes.push(0); // mode single
+    bytes.push(0); // no version
+    bytes.push(0); // no description
+    // name
+    bytes.extend_from_slice(&5u16.to_le_bytes());
+    bytes.extend_from_slice(b"smoke");
+    // exit: Binding("exitum")
+    bytes.push(2);
+    bytes.extend_from_slice(&6u16.to_le_bytes());
+    bytes.extend_from_slice(b"exitum");
+    // global options: 0
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    // global operands: 0
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    // options: 0
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    // operands: 1 (numerus, rest=false, no desc, no default, "exitum")
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.push(1); // ty numerus
+    bytes.push(0); // rest
+    bytes.push(0); // has_description
+    bytes.push(0); // has_default
+    bytes.extend_from_slice(&6u16.to_le_bytes());
+    bytes.extend_from_slice(b"exitum");
+    // commands: 0
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn cli_parse_returns_typed_value_table_and_binding_exit_code() {
+    let descriptor = descriptor_single_numerus_binding();
+    let program = std::ffi::CString::new("prog").unwrap();
+    let operand = std::ffi::CString::new("7").unwrap();
+    let argv = [program.as_ptr(), operand.as_ptr()];
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(2, argv.as_ptr(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    let result = unsafe {
+        __faber_rt_v1_cli_parse(context, descriptor.as_ptr(), descriptor.len())
+    };
+    assert!(result.status.is_ok(), "descriptor decode + argv parse must succeed");
+    assert!(!result.value.is_null(), "typed value table must be returned");
+    assert_eq!(
+        unsafe { __faber_rt_v1_cli_field_i64(context, result.value, 0) },
+        7,
+        "numeric operand must parse to i64"
+    );
+    // The Binding exit policy resolves the record field by binding name.
+    assert_eq!(
+        unsafe { __faber_rt_v1_cli_exit_code(context) },
+        7,
+        "Binding exit policy must resolve the numeric record field"
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_cli_selected_command(context) },
+        -1,
+        "single-command mode has no selected command"
+    );
+    unsafe { __faber_rt_v1_shutdown(context) };
 }

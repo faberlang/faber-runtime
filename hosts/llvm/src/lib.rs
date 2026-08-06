@@ -1,5 +1,6 @@
 mod array;
 mod array_numeric;
+mod cli;
 mod collection_map;
 mod convert;
 mod format;
@@ -226,6 +227,8 @@ struct RuntimeContext {
     /// argv[0] program path (Faber argumenta semantics: `std::env::args()`
     /// parity).
     arguments: Vec<Vec<u8>>,
+    /// Typed CLI value table produced by `__faber_rt_v1_cli_parse` (S8.2).
+    cli_table: Option<StableBox<cli::RuntimeCliTable>>,
     texts: Vec<StableBox<RuntimeText>>,
     valors: Vec<StableBox<Valor>>,
     ascii: Vec<StableBox<[u8]>>,
@@ -278,6 +281,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
         }
         let context = Box::new(RuntimeContext {
             arguments,
+            cli_table: None,
             texts: Vec::new(),
             valors: Vec::new(),
             ascii: Vec::new(),
