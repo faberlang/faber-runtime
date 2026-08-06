@@ -107,8 +107,9 @@ use octeti::{
 use option::RuntimeOption;
 #[cfg(test)]
 use option::{
-    __faber_rt_v1_option_get, __faber_rt_v1_option_get_or, __faber_rt_v1_option_is_present,
-    __faber_rt_v1_option_none, __faber_rt_v1_option_some, __faber_rt_v1_option_unwrap_ptr,
+    __faber_rt_v1_diagnostic_nota_option, __faber_rt_v1_option_get, __faber_rt_v1_option_get_or,
+    __faber_rt_v1_option_is_present, __faber_rt_v1_option_none, __faber_rt_v1_option_some,
+    __faber_rt_v1_option_unwrap_ptr,
 };
 #[cfg(test)]
 use provider::{

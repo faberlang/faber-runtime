@@ -108,6 +108,53 @@ fn diagnostic_nota_text_and_ascii_accept_valid_inputs_reject_nulls() {
 }
 
 #[test]
+fn diagnostic_nota_option_renders_payload_or_nihil() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    // Present raw null-encoded option: the pointer bits ARE the i64 payload
+    // (the optional-chain `inttoptr` representation).
+    let present = 100usize as *mut c_void;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_diagnostic_nota_option(
+                context,
+                present,
+                faber::host_abi::VALUE_KIND_I64,
+            )
+        },
+        STATUS_OK
+    );
+
+    // Nihil option: the null handle renders `nihil`.
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_diagnostic_nota_option(
+                context,
+                ptr::null_mut(),
+                faber::host_abi::VALUE_KIND_I64,
+            )
+        },
+        STATUS_OK
+    );
+
+    // Unknown non-null raw handle with an unsupported kind stays fail-closed.
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_diagnostic_nota_option(
+                context,
+                present,
+                faber::host_abi::VALUE_KIND_I8,
+            )
+        },
+        STATUS_UNSUPPORTED
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
 fn diagnostic_mone_and_vide_families_return_expected_statuses() {
     let mut context = ptr::null_mut();
     let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
