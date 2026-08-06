@@ -27,6 +27,8 @@ pub const SYMBOL_TEXT_LENGTH: &str = "__faber_rt_v1_text_length";
 pub const SYMBOL_TEXT_CONCAT: &str = "__faber_rt_v1_text_concat";
 pub const SYMBOL_TEXT_EQ: &str = "__faber_rt_v1_text_eq";
 pub const SYMBOL_TEXT_NE: &str = "__faber_rt_v1_text_ne";
+pub const SYMBOL_ASCII_EQ: &str = "__faber_rt_v1_ascii_eq";
+pub const SYMBOL_ASCII_NE: &str = "__faber_rt_v1_ascii_ne";
 pub const SYMBOL_TEXT_IS_EMPTY: &str = "__faber_rt_v1_text_is_empty";
 pub const SYMBOL_TEXT_CONTAINS: &str = "__faber_rt_v1_text_contains";
 pub const SYMBOL_TEXT_STARTS_WITH: &str = "__faber_rt_v1_text_starts_with";
@@ -78,6 +80,8 @@ pub const SYMBOL_COMPARE_LT: &str = "__faber_rt_v1_compare_lt_2_ptr_ptr_to_i1";
 pub const SYMBOL_COMPARE_GT: &str = "__faber_rt_v1_compare_gt_2_ptr_ptr_to_i1";
 pub const SYMBOL_COMPARE_LTE: &str = "__faber_rt_v1_compare_lte_2_ptr_ptr_to_i1";
 pub const SYMBOL_COMPARE_GTE: &str = "__faber_rt_v1_compare_gte_2_ptr_ptr_to_i1";
+pub const SYMBOL_COMPARE_EQ: &str = "__faber_rt_v1_compare_eq_2_ptr_ptr_to_i1";
+pub const SYMBOL_COMPARE_NE: &str = "__faber_rt_v1_compare_ne_2_ptr_ptr_to_i1";
 pub const SYMBOL_CONVERT_RUNTIME_PTR: &str = "__faber_rt_v1_convert_runtime_1_ptr_to_ptr";
 pub const SYMBOL_TEMPUS_NUNC: &str = "__faber_rt_v1_tempus_nunc";
 pub const SYMBOL_TOML_SOLVE: &str = "__faber_rt_v1_toml_solve";
@@ -184,6 +188,16 @@ pub const SYMBOL_GRADIENT_ACCUMULATE: &str = "__faber_rt_v1_gradient_accumulate"
 pub const SYMBOL_GRADIENT_READ: &str = "__faber_rt_v1_gradient_read";
 pub const SYMBOL_GRADIENT_ZERO: &str = "__faber_rt_v1_gradient_zero";
 
+// Static CLI descriptor + runtime argv parse (Stage 8 S8.2, campaign D12).
+pub const SYMBOL_CLI_PARSE: &str = "__faber_rt_v1_cli_parse";
+pub const SYMBOL_CLI_TABLE: &str = "__faber_rt_v1_cli_table";
+pub const SYMBOL_CLI_FIELD_PTR: &str = "__faber_rt_v1_cli_field_ptr";
+pub const SYMBOL_CLI_FIELD_I64: &str = "__faber_rt_v1_cli_field_i64";
+pub const SYMBOL_CLI_FIELD_F64: &str = "__faber_rt_v1_cli_field_f64";
+pub const SYMBOL_CLI_FIELD_I1: &str = "__faber_rt_v1_cli_field_i1";
+pub const SYMBOL_CLI_SELECTED_COMMAND: &str = "__faber_rt_v1_cli_selected_command";
+pub const SYMBOL_CLI_EXIT_CODE: &str = "__faber_rt_v1_cli_exit_code";
+
 pub const SYMBOL_GPU_COPY_IN: &str = "__faber_gpu_v1_copy_in";
 pub const SYMBOL_GPU_READBACK: &str = "__faber_gpu_v1_readback";
 pub const SYMBOL_GPU_SYNC: &str = "__faber_gpu_v1_sync";
@@ -250,6 +264,7 @@ pub const DIAGNOSTIC_SYMBOLS_V1: &[(&str, &str, &str)] = &[
     ("nota", "text", "__faber_rt_v1_diagnostic_nota_text"),
     ("nota", "ascii", "__faber_rt_v1_diagnostic_nota_ascii"),
     ("nota", "i64", "__faber_rt_v1_diagnostic_nota_i64"),
+    ("nota", "u64", "__faber_rt_v1_diagnostic_nota_u64"),
     ("nota", "i1", "__faber_rt_v1_diagnostic_nota_i1"),
     ("nota", "float", "__faber_rt_v1_diagnostic_nota_f32"),
     ("nota", "double", "__faber_rt_v1_diagnostic_nota_f64"),

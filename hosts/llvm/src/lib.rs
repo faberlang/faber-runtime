@@ -696,6 +696,19 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i64(
     write_diagnostic(context, false, value)
 }
 
+/// Report an unsigned 64-bit `nota` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_u64(
+    context: *mut FaberRtContextV1,
+    value: u64,
+) -> FaberRtStatusV1 {
+    write_diagnostic(context, false, value)
+}
+
 /// Report a boolean `nota` value.
 ///
 /// # Safety

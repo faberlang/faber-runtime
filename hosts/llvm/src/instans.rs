@@ -175,6 +175,31 @@ pub unsafe extern "C" fn __faber_rt_v1_compare_gte_2_ptr_ptr_to_i1(
     compare_instans(lhs, rhs, |lhs, rhs| lhs >= rhs)
 }
 
+/// `instans ≡ instans` value equality (`i1`).
+///
+/// L15: `Eq`/`NotEq` on `instans` handles previously lowered to raw LLVM
+/// pointer equality, which compares arena allocation identity rather than the
+/// datetime value — two equal instants parsed at different times are distinct
+/// handles, so `adfirma a ≡ b` false-failed, latched `STATUS_PANIC`, and the
+/// L9 exit-struct fix surfaced a nonzero exit code. Value equality mirrors the
+/// ordering family above and restores Rust-oracle parity.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_compare_eq_2_ptr_ptr_to_i1(
+    lhs: *mut c_void,
+    rhs: *mut c_void,
+) -> u8 {
+    compare_instans(lhs, rhs, |lhs, rhs| lhs == rhs)
+}
+
+/// `instans ≠ instans` value inequality (`i1`).
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_compare_ne_2_ptr_ptr_to_i1(
+    lhs: *mut c_void,
+    rhs: *mut c_void,
+) -> u8 {
+    compare_instans(lhs, rhs, |lhs, rhs| lhs != rhs)
+}
+
 /// Current wall-clock instant as an `instans<ns>` handle (`norma:tempus.nunc`).
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_tempus_nunc(

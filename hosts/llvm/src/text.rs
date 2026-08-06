@@ -296,3 +296,72 @@ pub unsafe extern "C" fn __faber_rt_v1_ascii_truthy(
         Some(!unsafe { CStr::from_ptr(ascii) }.to_bytes().is_empty())
     })
 }
+
+/// `textus ≡ textus` value equality (`i1`), comparing the UTF-8 payloads of
+/// two text handles. Both literal descriptors (`{ ptr, i64 }` globals) and
+/// arena `RuntimeText` handles share the leading slice layout, so
+/// [`text_value`] resolves either representation.
+///
+/// L15: the emitter previously lowered `Eq`/`NotEq` on `textus` to raw LLVM
+/// pointer equality, which is only valid for interned literals — a runtime
+/// text handle (from `↦ textus`, valor extraction, instans rendering, …) is a
+/// fresh arena allocation, so `adfirma runtimeText ≡ "literal"` false-failed,
+/// latched `STATUS_PANIC`, and the L9 exit-struct fix surfaced a nonzero exit
+/// code. Value equality restores Rust-oracle parity.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_text_eq(
+    lhs: *const FaberRtSliceV1,
+    rhs: *const FaberRtSliceV1,
+) -> u8 {
+    u8::from(match (text_value(lhs), text_value(rhs)) {
+        (Some(lhs), Some(rhs)) => lhs == rhs,
+        _ => false,
+    })
+}
+
+/// `textus ≠ textus` value inequality (`i1`).
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_text_ne(
+    lhs: *const FaberRtSliceV1,
+    rhs: *const FaberRtSliceV1,
+) -> u8 {
+    u8::from(match (text_value(lhs), text_value(rhs)) {
+        (Some(lhs), Some(rhs)) => lhs != rhs,
+        _ => false,
+    })
+}
+
+/// `ascii ≡ ascii` value equality (`i1`) over null-terminated ASCII byte
+/// payloads (same rationale as [`__faber_rt_v1_text_eq`]).
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_ascii_eq(
+    lhs: *const c_char,
+    rhs: *const c_char,
+) -> u8 {
+    u8::from(match (ascii_bytes(lhs), ascii_bytes(rhs)) {
+        (Some(lhs), Some(rhs)) => lhs == rhs,
+        _ => false,
+    })
+}
+
+/// `ascii ≠ ascii` value inequality (`i1`).
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_ascii_ne(
+    lhs: *const c_char,
+    rhs: *const c_char,
+) -> u8 {
+    u8::from(match (ascii_bytes(lhs), ascii_bytes(rhs)) {
+        (Some(lhs), Some(rhs)) => lhs != rhs,
+        _ => false,
+    })
+}
+
+/// Read a null-terminated ASCII byte payload (fail-closed on a null pointer).
+fn ascii_bytes<'a>(value: *const c_char) -> Option<&'a [u8]> {
+    if value.is_null() {
+        return None;
+    }
+    // SAFETY: the v1 ABI contract requires `ascii` handles to be live
+    // null-terminated byte payloads for the process lifetime.
+    Some(unsafe { CStr::from_ptr(value) }.to_bytes())
+}
