@@ -5,9 +5,10 @@ use super::format::{find_text, text_value};
 use super::{opaque_value_text, RuntimeContext, unsupported_opaque_diagnostic, write_diagnostic};
 use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtStatusV1, FaberRtValueKindV1,
-    STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1,
-    VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR, VALUE_KIND_TEXT,
-    VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,
+    STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_F16, VALUE_KIND_F32,
+    VALUE_KIND_F64, VALUE_KIND_I1, VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8,
+    VALUE_KIND_PTR, VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64,
+    VALUE_KIND_U8,
 };
 use faber::{display_bivalens, display_fractus};
 use std::ffi::c_void;
@@ -64,8 +65,10 @@ pub unsafe extern "C" fn __faber_rt_v1_option_is_present(
         };
         let Some(option) = find_option(runtime, option) else {
             // Raw null-encoded option (the chain/literal result IS the value;
-            // nil is the null pointer). Present iff the pointer is non-null.
-            if kind != VALUE_KIND_PTR {
+            // nil is the null pointer). Present iff the pointer is non-null,
+            // regardless of payload kind — the pointer bits either carry the
+            // scalar payload or ARE the payload handle.
+            if !valid_kind(kind) {
                 return STATUS_INVALID_ARGUMENT;
             }
             if !(unsafe { write_u8(output, u8::from(!option.is_null())) }) {
@@ -93,11 +96,15 @@ pub unsafe extern "C" fn __faber_rt_v1_option_get(
         };
         let Some(option) = find_option(runtime, option) else {
             // Raw null-encoded option (chain/literal result): unwrap of a null
-            // (nil) option fails closed; a non-null pointer IS the value.
-            if kind != VALUE_KIND_PTR || option.is_null() {
+            // (nil) option fails closed; a non-null pointer IS the payload,
+            // decoded from the pointer bits per value-kind.
+            if option.is_null() {
                 return STATUS_INVALID_ARGUMENT;
             }
-            if !(unsafe { write_value(RuntimeValue::Ptr(option), output) }) {
+            let Some(value) = raw_option_value(option, kind) else {
+                return STATUS_INVALID_ARGUMENT;
+            };
+            if !(unsafe { write_value(value, output) }) {
                 return STATUS_INVALID_ARGUMENT;
             }
             return STATUS_OK;
@@ -127,8 +134,9 @@ pub unsafe extern "C" fn __faber_rt_v1_option_get_or(
         let Some(option) = find_option(runtime, option) else {
             // Raw null-encoded option: nil is the null pointer, so a null
             // option coalesces to the fallback and a non-null option IS the
-            // value. (The chain/coalesce path emits this encoding directly.)
-            if kind != VALUE_KIND_PTR {
+            // payload, decoded from the pointer bits per value-kind. (The
+            // chain/coalesce path emits this encoding directly.)
+            if !valid_kind(kind) {
                 return STATUS_INVALID_ARGUMENT;
             }
             let value = if option.is_null() {
@@ -137,7 +145,10 @@ pub unsafe extern "C" fn __faber_rt_v1_option_get_or(
                 };
                 value
             } else {
-                RuntimeValue::Ptr(option)
+                let Some(value) = raw_option_value(option, kind) else {
+                    return STATUS_INVALID_ARGUMENT;
+                };
+                value
             };
             if !(unsafe { write_value(value, output) }) {
                 return STATUS_INVALID_ARGUMENT;
@@ -199,28 +210,88 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_option(
     option: *mut c_void,
     kind: FaberRtValueKindV1,
 ) -> FaberRtStatusV1 {
+    diagnostic_option(context, option, kind, false)
+}
+
+/// Report a `mone` of an option (`T ∪ nihil`) value on the stderr stream
+/// (see [`__faber_rt_v1_diagnostic_nota_option`] for the carrier contract).
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `option` is only used
+/// for pointer-equality arena lookups and bit-pattern decoding.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_option(
+    context: *mut FaberRtContextV1,
+    option: *mut c_void,
+    kind: FaberRtValueKindV1,
+) -> FaberRtStatusV1 {
+    diagnostic_option(context, option, kind, true)
+}
+
+/// Report a `scribe` of an option (`T ∪ nihil`) value on the stdout stream
+/// (see [`__faber_rt_v1_diagnostic_nota_option`] for the carrier contract).
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `option` is only used
+/// for pointer-equality arena lookups and bit-pattern decoding.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_scribe_option(
+    context: *mut FaberRtContextV1,
+    option: *mut c_void,
+    kind: FaberRtValueKindV1,
+) -> FaberRtStatusV1 {
+    diagnostic_option(context, option, kind, false)
+}
+
+/// Report a `vide` of an option (`T ∪ nihil`) value on the stdout stream
+/// (see [`__faber_rt_v1_diagnostic_nota_option`] for the carrier contract).
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `option` is only used
+/// for pointer-equality arena lookups and bit-pattern decoding.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_vide_option(
+    context: *mut FaberRtContextV1,
+    option: *mut c_void,
+    kind: FaberRtValueKindV1,
+) -> FaberRtStatusV1 {
+    diagnostic_option(context, option, kind, false)
+}
+
+/// Shared option diagnostic carrier: render the payload with the Rust
+/// oracle's `display_option` semantics on the stream's channel, or `nihil`
+/// for the null handle. Opaque payloads stay arena-only (fail-closed).
+fn diagnostic_option(
+    context: *mut FaberRtContextV1,
+    option: *mut c_void,
+    kind: FaberRtValueKindV1,
+    stderr: bool,
+) -> FaberRtStatusV1 {
     if context.is_null() {
         return STATUS_INVALID_ARGUMENT;
     }
     let runtime = unsafe { &*context.cast::<RuntimeContext>() };
     if option.is_null() {
-        return write_diagnostic(context, false, "nihil");
+        return write_diagnostic(context, stderr, "nihil");
     }
     if let Some(boxed) = find_option(runtime, option) {
         let Some(value) = &boxed.value else {
-            return write_diagnostic(context, false, "nihil");
+            return write_diagnostic(context, stderr, "nihil");
         };
         let Some(text) = render_option_payload(runtime, boxed.kind, value) else {
             return unsupported_opaque_diagnostic(context);
         };
-        return write_diagnostic(context, false, text);
+        return write_diagnostic(context, stderr, text);
     }
     // Raw null-encoded option: the pointer is the payload (bits for scalar
     // payloads, the payload handle for `ptr` payloads).
     let Some(text) = render_raw_option_payload(runtime, option, kind) else {
         return unsupported_opaque_diagnostic(context);
     };
-    write_diagnostic(context, false, text)
+    write_diagnostic(context, stderr, text)
 }
 
 /// Render an arena-boxed option payload (the `Some` case of
@@ -299,6 +370,32 @@ fn find_option(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&Runtime
         .iter()
         .find(|option| std::ptr::eq(option.as_ref(), handle.cast_const().cast::<RuntimeOption>()))
         .map(super::StableBox::as_ref)
+}
+
+/// Decode a raw null-encoded option payload from the pointer bits (the L9
+/// option-carrier pattern). Scalar payloads are encoded in the pointer bits;
+/// text/opaque payloads ARE the payload handle. Returns `None` for unknown
+/// kinds (fail-closed; opaque handles stay arena-only).
+fn raw_option_value(option: *mut c_void, kind: FaberRtValueKindV1) -> Option<RuntimeValue> {
+    let bits = option as usize as u64;
+    Some(match kind {
+        VALUE_KIND_I1 => RuntimeValue::I1(u8::from(bits != 0)),
+        VALUE_KIND_I8 => RuntimeValue::I8(bits as i8),
+        VALUE_KIND_I16 => RuntimeValue::I16(bits as i16),
+        VALUE_KIND_I32 => RuntimeValue::I32(bits as i32),
+        VALUE_KIND_I64 => RuntimeValue::I64(bits as i64),
+        VALUE_KIND_U8 => RuntimeValue::U8(bits as u8),
+        VALUE_KIND_U16 => RuntimeValue::U16(bits as u16),
+        VALUE_KIND_U32 => RuntimeValue::U32(bits as u32),
+        VALUE_KIND_U64 => RuntimeValue::U64(bits as u64),
+        VALUE_KIND_F16 => RuntimeValue::F16(bits as u16),
+        VALUE_KIND_F32 => RuntimeValue::F32(f32::from_bits(bits as u32)),
+        VALUE_KIND_F64 => RuntimeValue::F64(f64::from_bits(bits)),
+        // Text payloads may be arena text handles or literal-global slice
+        // descriptors; opaque payloads carry the payload handle itself.
+        VALUE_KIND_TEXT | VALUE_KIND_PTR => RuntimeValue::Ptr(option),
+        _ => return None,
+    })
 }
 
 unsafe fn runtime_mut<'a>(context: *mut FaberRtContextV1) -> Option<&'a mut RuntimeContext> {

@@ -154,6 +154,157 @@ fn diagnostic_nota_option_renders_payload_or_nihil() {
     unsafe { __faber_rt_v1_shutdown(context) };
 }
 
+/// L11 (fc9be27a): family 3 — `mone`/`scribe`/`vide` of an option value render
+/// through the option diagnostic carrier like `nota`: the payload for a
+/// present raw null-encoded option, `nihil` for the null handle, on the
+/// stream's channel.
+#[test]
+fn diagnostic_mone_scribe_vide_option_carriers_render_payload_or_nihil() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    // Present raw null-encoded option: the pointer bits ARE the i64 payload.
+    let present = 100usize as *mut c_void;
+    for carrier in [
+        __faber_rt_v1_diagnostic_mone_option,
+        __faber_rt_v1_diagnostic_scribe_option,
+        __faber_rt_v1_diagnostic_vide_option,
+    ] {
+        assert_eq!(
+            unsafe { carrier(context, present, faber::host_abi::VALUE_KIND_I64) },
+            STATUS_OK
+        );
+    }
+
+    // Nihil option: the null handle renders `nihil` on every stream.
+    for carrier in [
+        __faber_rt_v1_diagnostic_mone_option,
+        __faber_rt_v1_diagnostic_scribe_option,
+        __faber_rt_v1_diagnostic_vide_option,
+    ] {
+        assert_eq!(
+            unsafe { carrier(context, ptr::null_mut(), faber::host_abi::VALUE_KIND_I64) },
+            STATUS_OK
+        );
+    }
+
+    // Unknown non-null raw handle with an unsupported kind stays fail-closed.
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_diagnostic_mone_option(context, present, faber::host_abi::VALUE_KIND_I8)
+        },
+        STATUS_UNSUPPORTED
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+/// L11 (fc9be27a): family 3 — raw null-encoded options decode the pointer bits
+/// per value-kind. `est nihil` / `non est nihil` and `vel` on literal-built
+/// scalar unions (`numerus ∪ nihil`) previously failed because the raw carrier
+/// only accepted the pointer kind.
+#[test]
+fn option_raw_scalar_presence_get_and_coalesce_decode_pointer_bits() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    // Raw scalar option: the pointer bits ARE the i64 payload (chain/literal
+    // result). Presence is the non-null pointer regardless of payload kind.
+    let present = 100usize as *mut c_void;
+    let mut is_present = 99_u8;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_is_present(
+                context,
+                present,
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut is_present).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(is_present, 1);
+
+    // A null raw scalar option is absent (not an argument error).
+    is_present = 99;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_is_present(
+                context,
+                ptr::null_mut(),
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut is_present).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(is_present, 0);
+
+    // `get` decodes the raw scalar bits into the output slot.
+    let mut output = 0_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get(
+                context,
+                present,
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(output, 100);
+
+    // `get_or` decodes the raw scalar bits; a null raw option coalesces to the
+    // fallback.
+    let fallback = 9_i64;
+    output = 0;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get_or(
+                context,
+                present,
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&fallback).cast(),
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(output, 100);
+    output = 0;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get_or(
+                context,
+                ptr::null_mut(),
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&fallback).cast(),
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(output, 9);
+
+    // A null raw scalar option still fails closed on `get` (no payload).
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get(
+                context,
+                ptr::null_mut(),
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_INVALID_ARGUMENT
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
 #[test]
 fn diagnostic_mone_and_vide_families_return_expected_statuses() {
     let mut context = ptr::null_mut();

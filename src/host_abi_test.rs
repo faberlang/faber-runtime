@@ -259,7 +259,7 @@ fn host_abi_v1_llvm_slice_type_definition() {
 fn host_abi_v1_llvm_exit_type_definition() {
     assert_eq!(
         LLVM_EXIT_TYPE_DEFINITION,
-        "%FaberRtExitV1 = type { i32, i32 }"
+        "%FaberRtExitV1 = type i64"
     );
 }
 

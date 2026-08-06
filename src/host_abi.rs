@@ -232,7 +232,10 @@ pub const ARRAY_OPTION_REMOVE_LAST: FaberRtArrayOptionModeV1 = 5;
 pub const LLVM_SLICE_TYPE: &str = "%FaberRtSliceV1";
 pub const LLVM_SLICE_TYPE_DEFINITION: &str = "%FaberRtSliceV1 = type { ptr, i64 }";
 pub const LLVM_EXIT_TYPE: &str = "%FaberRtExitV1";
-pub const LLVM_EXIT_TYPE_DEFINITION: &str = "%FaberRtExitV1 = type { i32, i32 }";
+// W16 (L9 cee2f7b7): the exit struct crosses the C boundary packed into one
+// register (`process_code | (status.code << 32)`), so the emitter's module
+// spellings and this mirror agree on a single-register `i64` carrier.
+pub const LLVM_EXIT_TYPE_DEFINITION: &str = "%FaberRtExitV1 = type i64";
 pub const LLVM_PTR_RESULT_TYPE: &str = "%FaberRtPtrResultV1";
 pub const LLVM_PTR_RESULT_TYPE_DEFINITION: &str = "%FaberRtPtrResultV1 = type { i32, ptr }";
 
