@@ -97,6 +97,19 @@ pub const SYMBOL_OCTETI_GET_TEXT_OR: &str = "__faber_rt_v1_octeti_get_text_or";
 pub const SYMBOL_OCTETI_GET_ASCII_OR: &str = "__faber_rt_v1_octeti_get_ascii_or";
 pub const SYMBOL_INSTANS_FROM_TEXT_OR: &str = "__faber_rt_v1_instans_from_text_or";
 pub const SYMBOL_INSTANS_FROM_VALOR_OR: &str = "__faber_rt_v1_instans_from_valor_or";
+// P8 (promotion packet sermo-runtime-surface): mirror of the shared sermo
+// materialization family (radix-host-abi owns the values). SermoOpen opens a
+// sermo stream (route + valor payload → opaque stream handle); SermoSetOpener
+// replaces the first request frame's payload; `↦ textus` / `↦ valor`
+// materialize the inbound frame stream to a carrier; the `_or` row is the
+// `⇥`-style recovery for the stream extraction (P6 per-carrier fallback
+// precedent). Host bindings live in the LLVM host (faber-host-llvm `sermo`
+// module) over `crate::frame`.
+pub const SYMBOL_SERMO_OPEN: &str = "__faber_rt_v1_sermo_open";
+pub const SYMBOL_SERMO_SET_OPENER: &str = "__faber_rt_v1_sermo_set_opener";
+pub const SYMBOL_SERMO_MATERIALIZE_TEXT: &str = "__faber_rt_v1_sermo_materialize_text";
+pub const SYMBOL_SERMO_MATERIALIZE_VALOR: &str = "__faber_rt_v1_sermo_materialize_valor";
+pub const SYMBOL_SERMO_MATERIALIZE_I64_OR: &str = "__faber_rt_v1_sermo_materialize_i64_or";
 pub const SYMBOL_COMPARE_LT: &str = "__faber_rt_v1_compare_lt_2_ptr_ptr_to_i1";
 pub const SYMBOL_COMPARE_GT: &str = "__faber_rt_v1_compare_gt_2_ptr_ptr_to_i1";
 pub const SYMBOL_COMPARE_LTE: &str = "__faber_rt_v1_compare_lte_2_ptr_ptr_to_i1";
