@@ -653,9 +653,11 @@ fn rope_all_heads(
 /// NOTE — this differs from [`crate::decoder_ops::attention_causal`]'s
 /// `h % n_kv_heads` grouping, which matches the OLD llama.cpp convention and
 /// coincides only when `n_heads == n_kv_heads`. The comparator executes the
-/// consecutive-triples grouping, so the oracle must too (the GI2-2 op's
-/// committed golden was generated under the older convention; the oracle does
-/// not reuse it for attention — residual recorded).
+/// consecutive-triples grouping, so the oracle must too. (The GI2-2 op's
+/// attention golden was originally committed under the older `h % n_kv_heads`
+/// convention and is **superseded**: corrected to this grouping and re-pinned
+/// in `testdata/gi2-2-op-goldens/manifest.json` per CTO 8173f0cf — GI3 must
+/// consume the corrected fixture, not the stale one.)
 ///
 /// Layouts (row-major, contiguous — the dequant order):
 /// - `q`: `n_q × (n_heads·HEAD_DIM)`;
@@ -671,7 +673,11 @@ fn rope_all_heads(
 ///
 /// Returns a typed [`OpError`] on a shape contradiction (fail-closed; the
 /// oracle's shapes are fixed by the pinned row).
-fn attention_gqa(
+///
+/// `pub(crate)` so the GI2-2 op-golden generator shares this single verified
+/// grouping (the fixture must be produced by the same math the oracle and the
+/// comparator execute, not by a parallel copy).
+pub(crate) fn attention_gqa(
     q: &[f32],
     k: &[f32],
     v: &[f32],

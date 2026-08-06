@@ -24,6 +24,17 @@
 //!    fixtures + manifest live under `testdata/gi2-2-op-goldens/` (Q3
 //!    default: faber-runtime crate-local testdata).
 //!
+//!    **Attention-golden supersession (CTO 8173f0cf):** the attention
+//!    fixture is computed under the **verified consecutive-triples grouping**
+//!    `h / (n_heads/n_kv_heads)` (`crate::cpu_oracle::attention_gqa` — the
+//!    grouping the pinned llama.cpp comparator executes; FC7), **not** the
+//!    older `h % n_kv_heads` convention that produced the original committed
+//!    golden. The stale fixture is **superseded, not silently replaced**:
+//!    `attention.json` (and the downstream `residual.json`/`swiglu.json`
+//!    fixtures, whose inputs derive from the attention context) were
+//!    recomputed from the admitted row under the verified grouping and
+//!    re-pinned in the manifest. GI3 must consume the corrected fixtures.
+//!
 //! Model-dependent tests follow the `tensor_view_test` / `dequant_test`
 //! convention: skipped (with a loud note) when the pinned row is absent.
 
@@ -643,7 +654,14 @@ fn generate_all_fixtures(view: &TensorView<'_>) -> Vec<OpFixture> {
     assert_eq!(q8_rot.len(), HIDDEN_SIZE);
     assert_eq!(k_rot.len(), 9 * KV_HEAD_COUNT * HEAD_DIM);
     assert_eq!(v_all.len(), 9 * KV_HEAD_COUNT * HEAD_DIM);
-    let context8 = attention_causal(
+    // Comparator-verified consecutive-triples grouping `h / (n_heads/
+    // n_kv_heads)` (CPU-oracle `attention_gqa`; FC7 against the pinned
+    // llama.cpp tree) — the golden the GI3 attention surface must consume.
+    // The original golden used the OLD `h % n_kv_heads` convention
+    // (`decoder_ops::attention_causal`); it is superseded, not reused.
+    // Inputs stay the raw f32 post-RoPE Q / K / V from the admitted row (the
+    // fixture pins op-level determinism, not the f16 KV-cache fidelity path).
+    let context8 = crate::cpu_oracle::attention_gqa(
         &q8_rot,
         &k_rot,
         &v_all,
@@ -654,7 +672,7 @@ fn generate_all_fixtures(view: &TensorView<'_>) -> Vec<OpFixture> {
         HEAD_DIM,
         ATTENTION_SCALE,
     )
-    .expect("attention_causal");
+    .expect("attention_gqa (verified grouping)");
     assert_eq!(context8.len(), HIDDEN_SIZE);
 
     // --- residual golden: layer-0 output projection + add -------------------
@@ -767,6 +785,12 @@ fn generate_all_fixtures(view: &TensorView<'_>) -> Vec<OpFixture> {
                 ("n_kv_heads", Valor::from(KV_HEAD_COUNT as i64)),
                 ("head_dim", Valor::from(HEAD_DIM as i64)),
                 ("scale", Valor::from(ATTENTION_SCALE as f64)),
+                (
+                    "grouping",
+                    Valor::from(
+                        "h / (n_heads/n_kv_heads) — consecutive-triples (llama.cpp comparator grouping, FC7; supersedes the older h % n_kv_heads golden)",
+                    ),
+                ),
             ],
         },
         OpFixture {
