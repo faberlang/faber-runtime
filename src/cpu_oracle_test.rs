@@ -14,21 +14,18 @@
 //!    `ForwardRun::position_logits` is **byte-identical** to `forward_one`
 //!    for the same context (the cache changes no numerics — GI2 non-goal).
 //! 4. **The teacher-forced 17-window numeric-contract comparison**
-//!    (`gi0-numeric-contract.md` v1.0.0 — the only threshold authority):
-//!    prompt end (position 0) + positions 1..16 fed the pinned
-//!    `correctness-top1.json` trace teacher-forced, against the committed
-//!    comparator logp reference window (17×49152, hash-pinned; captured per
-//!    the GI0-4 probe protocol). Checks: (a) top-1 exact over non-EOG {0,2};
-//!    (b) top-k k=5 ≥4/5; (c) the per-element band Δ=1e-5 log-softmax;
-//!    (d) finite gate; (e) the durable first-divergence record
-//!    ([`DivergenceRecord`]) carries the contract fields — comparator trace
-//!    token, EOG-excluded oracle top-1, named failing thresholds, max band
-//!    deviation — at the **first** failing position (contract §4.5). The
-//!    EOG-exclusion scenario at fixture position 1 (raw argmax = 2/EOS,
-//!    trace = 198) is asserted as a fidelity probe. Current honest status
-//!    (module doc in `cpu_oracle.rs`): top-1 + top-k + finite hold at all 17
-//!    positions; the 1e-5 band fails at every position (~1.3e-2..2.2e-2) —
-//!    the divergence is **recorded**, not weakened or hidden.
+//!    (two contract versions — decision `41da94f3`): prompt end (position 0)
+//!    + positions 1..16 fed the pinned `correctness-top1.json` trace
+//!    teacher-forced, against the committed comparator logp reference window
+//!    (17×49152, hash-pinned; captured per the GI0-4 probe protocol).
+//!    **v1.0.0** (1e-5 band) is the honest-failure record — top-1/top-k/finite
+//!    hold at all 17 positions, the band fails at every position, and the
+//!    divergence is recorded, never weakened. **v2.0.0**
+//!    (`Delta_comparator_metal` = 2.5e-2 envelope + hard gates, the
+//!    operator-approved closeout contract) is MET at all 17 positions —
+//!    divergence field = `none`, with the calibration maximum + headroom
+//!    recorded. The EOG-exclusion scenario at fixture position 1 (raw
+//!    argmax=2/EOS, trace=198) is asserted as a fidelity probe.
 //! 5. **GI3 logits golden** (exit gate bullet 5): position-0 prompt-end raw
 //!    logits + normalized logp, byte-stable across two independent runs,
 //!    hash-accounted, byte-identical to the committed fixture under
@@ -426,8 +423,14 @@ fn teacher_forced_window_meets_numeric_contract_v1_0_0() {
             .chunks_exact(4)
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect();
-        let verdict = compare_position(i as u32, &logits, &comparator_logp, TRACE_TOKENS[i])
-            .expect("compare_position");
+        let verdict = compare_position(
+            i as u32,
+            &logits,
+            &comparator_logp,
+            TRACE_TOKENS[i],
+            BAND_DELTA,
+        )
+        .expect("compare_position");
         if i == 1 {
             raw_argmax_pos1 = verdict.raw_argmax;
         }
@@ -570,6 +573,135 @@ fn teacher_forced_window_meets_numeric_contract_v1_0_0() {
     assert!(
         record.max_band_deviation > BAND_DELTA,
         "the recorded band failure must exceed the 1e-5 threshold:\n{report}"
+    );
+}
+
+/// The **v2.0.0** closeout (decision `41da94f3`, operator-approved): the
+/// per-element band is `Delta_comparator_metal` = 2.5e-2 — a pinned-row
+/// empirical compatibility envelope over the normalized-logp surface (NOT an
+/// f32 precision bound, NOT generalizable) — while top-1 exact over non-EOG
+/// {0,2}, top-k k=5 ≥4/5, the finite gate, and the first-divergence rule
+/// stay hard. All 17 window positions must meet the envelope + hard gates;
+/// the divergence field must be `none`. The receipt records the calibration
+/// maximum + headroom (a future observation above the envelope FAILS — no
+/// auto-widen).
+#[test]
+fn teacher_forced_window_meets_numeric_contract_v2_0_0() {
+    let Some(oracle) = shared_oracle() else {
+        return;
+    };
+    let Some(fixture) = load_logp_reference() else {
+        return;
+    };
+    // Hash pin: the same committed reference window is the v2.0.0 behavior
+    // reference (decision item 2 — the Metal fixture is retained).
+    assert_eq!(
+        hex(&sha256(&fixture)),
+        LOGP_REFERENCE_SHA256_HEX,
+        "logp reference fixture must be hash-pinned (capture receipt documents it)"
+    );
+    assert_eq!(
+        fixture.len(),
+        WINDOW_POSITIONS * VOCAB_SIZE * 4,
+        "fixture must be the full 17×49152 f32 LE window"
+    );
+
+    let mut run = ForwardRun::new(oracle, &PROMPT_TOKENS).expect("teacher-forced run");
+    let mut verdicts = Vec::with_capacity(WINDOW_POSITIONS);
+
+    for i in 0..WINDOW_POSITIONS {
+        if i > 0 {
+            run.push_token(TRACE_TOKENS[i - 1])
+                .expect("teacher-forced push");
+        }
+        let logits = run.position_logits().expect("position logits");
+        let base = i * VOCAB_SIZE * 4;
+        let comparator_logp: Vec<f32> = fixture[base..base + VOCAB_SIZE * 4]
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        let verdict = compare_position(
+            i as u32,
+            &logits,
+            &comparator_logp,
+            TRACE_TOKENS[i],
+            BAND_DELTA_V2,
+        )
+        .expect("compare_position");
+        verdicts.push(verdict);
+    }
+
+    let report = format!(
+        "v2.0.0 window positions:\n{}",
+        verdicts
+            .iter()
+            .map(|v| {
+                format!(
+                    "  pos {:2}: top1={} trace={:5} oracle_top1={:5} topk={}/{} band={:.3e} finite={} ok={}",
+                    v.position,
+                    v.top1_matches,
+                    v.trace_token,
+                    v.oracle_top1,
+                    v.topk_overlap,
+                    TOPK_K,
+                    v.max_band_deviation,
+                    v.all_finite,
+                    v.ok
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+
+    // Calibration maximum over the full window + headroom vs the envelope
+    // (CTO receipt condition: calibration maximum + headroom recorded; a
+    // future observation above the envelope FAILS — no auto-widen).
+    let calibration_max = verdicts
+        .iter()
+        .fold(0.0f32, |m, v| m.max(v.max_band_deviation));
+    let headroom = (BAND_DELTA_V2 - calibration_max) / BAND_DELTA_V2;
+    eprintln!(
+        "v2.0.0 calibration max = {calibration_max:.3e}, envelope = {BAND_DELTA_V2:.3e}, headroom = {headroom:.3} ({:.1}%)",
+        headroom * 100.0,
+    );
+    assert!(
+        headroom >= 0.0,
+        "calibration max {calibration_max:.3e} must fit the 2.5e-2 envelope:\n{report}",
+    );
+
+    // The envelope is doing real work: every position's deviation exceeds the
+    // v1.0.0 1e-5 band (v1.0.0 remains an honest, recorded failure — never
+    // weakened, never relabeled as a pass).
+    assert!(
+        verdicts.iter().all(|v| v.max_band_deviation > BAND_DELTA),
+        "every position must exceed the v1.0.0 band (the 1e-5 band is an honest failure):\n{report}",
+    );
+
+    // Hard gates at every position: top-1 exact over non-EOG {0,2}, top-k
+    // k=5 ≥4/5, finite gate.
+    assert!(
+        verdicts.iter().all(|v| v.top1_matches),
+        "top-1 exact over non-EOG must hold everywhere:\n{report}",
+    );
+    assert!(
+        verdicts.iter().all(|v| v.topk_matches),
+        "top-k overlap must be ≥4/5 everywhere:\n{report}",
+    );
+    assert!(
+        verdicts.iter().all(|v| v.all_finite),
+        "finite gate must hold everywhere:\n{report}",
+    );
+    assert!(
+        verdicts.iter().all(|v| v.ok),
+        "every v2.0.0 threshold must pass at every position:\n{report}",
+    );
+
+    // The v2.0.0 divergence field is `none` — a fully passing window has no
+    // first-divergence record.
+    assert_eq!(
+        DivergenceRecord::first(&verdicts),
+        None,
+        "v2.0.0 divergence field must be none (all 17 positions pass):\n{report}",
     );
 }
 

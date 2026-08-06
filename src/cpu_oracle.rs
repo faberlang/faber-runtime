@@ -63,28 +63,45 @@
 //!    teacher-forced comparison applies the EOG-excluding argmax over
 //!    {0, 2} (`<|endoftext|>`, `<|im_end|>`).
 //!
-//! NUMERIC CONTRACT (`gi0-numeric-contract.md` v1.0.0 — the **only**
-//! threshold authority): window positions 0..16 (prompt end + first 16
-//! decode); top-1 exact over non-EOG {0,2} vs `correctness-top1.json`; top-k
-//! k=5 ≥4/5 on raw normalized logits; per-element band Δ=1e-5 in log-softmax
-//! space full vocab; finite gate; first-divergence rule. The first-divergence
-//! record (contract §4.5, [`DivergenceRecord`]) names the comparator trace
-//! token, the EOG-excluded oracle top-1, and the failing threshold(s) at the
-//! first failing position. Training `numeric-policy.md` rows never apply
-//! (memo `fdc2a448`).
+//! NUMERIC CONTRACT — two versions, per the operator-approved v2.0.0
+//! two-level contract (decision need `41da94f3`, closed 2026-08-06):
 //!
-//! BAND STATUS (honest, as of the GI2-3 closeout): the oracle meets **top-1
-//! exact at all 17 window positions** (including the EOG-exclusion case at
-//! position 1) and **top-k ≥4/5 at all 17 positions**, with all values
-//! finite. The per-element 1e-5 band is **not** met: the oracle's log-softmax
-//! deviates from the pinned Metal-comparator reference by ~1.3e-2..2.2e-2
-//! max per position — the residual is the comparator's Metal-kernel
-//! arithmetic (f16 dequant structures for Q6_K/Q5_0, flash-attention
-//! softmax/accumulation, matrix-core accumulation order), which a readable
-//! CPU op surface does not reproduce bit-for-bit. The comparison test
-//! records the failure honestly (first-divergence rule; no tolerance
-//! weakened) — see the `teacher_forced_window_meets_numeric_contract_v1_0_0`
-//! test for the per-position record.
+//! - **v1.0.0** (`gi0-numeric-contract.md` §4 — the original band): window
+//!   positions 0..16; top-1 exact over non-EOG {0,2} vs
+//!   `correctness-top1.json`; top-k k=5 ≥4/5 on raw normalized logits;
+//!   per-element band Δ=1e-5 in log-softmax space full vocab; finite gate;
+//!   first-divergence rule. **Preserved as an honest failure** — the oracle
+//!   does NOT meet the 1e-5 band (see BAND STATUS); the v1.0.0 comparison
+//!   test keeps recording the divergence (two-version history is the
+//!   credibility asset).
+//! - **v2.0.0** (decision `41da94f3` + council input `4488ccab`,
+//!   operator-approved): the hard gates stay — top-1 exact over non-EOG
+//!   {0,2}, top-k k=5 ≥4/5, finite gate, first-divergence rule, model hash,
+//!   tokenizer, RoPE, tied-head facts separately reported — and the
+//!   per-element band is replaced by **`Delta_comparator_metal` = 2.5e-2**,
+//!   a **pinned-row empirical compatibility envelope** over the normalized-
+//!   logp surface (frozen model, comparator binary, workload, positions) —
+//!   explicitly **not** an f32 precision bound and **not** generalizable
+//!   (the compared surfaces are the readable Faber CPU oracle vs the pinned
+//!   llama.cpp Metal comparator). The receipt records the calibration
+//!   maximum + headroom; a future observation above the envelope **FAILS**
+//!   and triggers diagnosis/versioning (no auto-widen). DISCLOSURE (council
+//!   condition 5): 2.5e-2 is 2,500× the v1.0.0 band and exceeds the min
+//!   effective top-1 margin M=9.634e-3, so the envelope cannot prove
+//!   decision invariance — the product decision/ranking claim is preserved
+//!   by the hard top-1/top-k gates. Training `numeric-policy.md` rows never
+//!   apply (memo `fdc2a448`).
+//!
+//! BAND STATUS (honest, v2.0.0 closeout): the oracle meets the **v2.0.0**
+//! contract at all 17 window positions — top-1 exact (including the
+//! EOG-exclusion case at position 1), top-k ≥4/5, finite, and
+//! `max |logp_oracle − logp_comparator|` ≤ `Delta_comparator_metal` (2.5e-2)
+//! at every position, so the v2.0.0 divergence field is `none`. The v1.0.0
+//! 1e-5 band remains unmet (~1.3e-2..2.2e-2 max per position — the residual
+//! is the comparator's Metal-kernel arithmetic: f16 dequant structures for
+//! Q6_K/Q5_0, flash-attention softmax/accumulation, matrix-core accumulation
+//! order, which a readable CPU op surface does not reproduce bit-for-bit).
+//! That v1.0.0 failure is preserved and recorded, never weakened or hidden.
 //!
 //! FAIL CLOSED — [`OracleError`] for: a gapped/forged view (GI1-4 residual,
 //! dequant gates on `coverage_ok()`), an empty token sequence, a token id
@@ -119,8 +136,18 @@ pub const EOG_TOKENS: [i64; 2] = [0, 2];
 /// Contract window: prompt end + first 16 decode positions (numeric contract
 /// §3).
 pub const WINDOW_POSITIONS: usize = 17;
-/// Per-element band Δ (`gi0-numeric-contract.md` v1.0.0 §4.3).
+/// v1.0.0 per-element band Δ (`gi0-numeric-contract.md` v1.0.0 §4.3) — an
+/// **unmet** band, preserved as an honest failure: the v1.0.0 comparison
+/// test records the divergence and never weakens it.
 pub const BAND_DELTA: f32 = 1e-5;
+/// v2.0.0 per-element envelope **`Delta_comparator_metal`** (decision need
+/// `41da94f3`, operator-approved 2026-08-06): the pinned-row empirical
+/// compatibility envelope over the normalized-logp surface (frozen model,
+/// comparator binary, workload, positions) — explicitly NOT an f32 precision
+/// bound and NOT generalizable. The receipt records the calibration maximum
+/// + headroom; a future observation above the envelope FAILS and triggers
+/// diagnosis/versioning (no auto-widen).
+pub const BAND_DELTA_V2: f32 = 2.5e-2;
 /// Top-k default (numeric contract §4.2).
 pub const TOPK_K: usize = 5;
 /// Top-k minimum overlap (≥4/5, numeric contract §4.2).
@@ -1007,7 +1034,8 @@ pub enum FailingThreshold {
     Top1,
     /// §4.2 — top-k (k=5) overlap ≥4/5 vs the comparator top-5 set.
     TopK,
-    /// §4.3 — per-element log-softmax band Δ ≤ 1e-5 over the full vocab.
+    /// §4.3 — per-element log-softmax band: v1.0.0 Δ ≤ 1e-5, v2.0.0
+    /// `Delta_comparator_metal` ≤ 2.5e-2 over the full vocab.
     Band,
     /// §4.4 — finite-value gate (finite logits/logp, in-range ids).
     Finite,
@@ -1104,13 +1132,16 @@ impl DivergenceRecord {
 }
 
 /// Compare one window position against the pinned comparator reference under
-/// the numeric contract v1.0.0.
+/// the binding numeric contract.
 ///
 /// - `oracle_logits`: the oracle's raw full-vocab logits (finite gate);
 /// - `comparator_logp`: the comparator's full-vocab normalized logp (from the
 ///   committed 17×49152 reference fixture), indexed by token id;
 /// - `trace_token`: the pinned greedy trace token at this window position
-///   (`correctness-top1.json`).
+///   (`correctness-top1.json`);
+/// - `band_delta`: the binding band/envelope threshold — v1.0.0 [`BAND_DELTA`]
+///   (1e-5, honest failure) or v2.0.0 [`BAND_DELTA_V2`]
+///   (`Delta_comparator_metal` = 2.5e-2, the closeout contract).
 ///
 /// # Errors
 ///
@@ -1120,6 +1151,7 @@ pub fn compare_position(
     oracle_logits: &[f32],
     comparator_logp: &[f32],
     trace_token: i64,
+    band_delta: f32,
 ) -> Result<PositionVerdict, OracleError> {
     if oracle_logits.len() != VOCAB_SIZE || comparator_logp.len() != VOCAB_SIZE {
         return Err(OracleError::NonFinite {
@@ -1145,7 +1177,7 @@ pub fn compare_position(
     let topk_matches = overlap >= TOPK_MIN_OVERLAP;
 
     let max_dev = max_band_deviation(&oracle_logp, comparator_logp);
-    let band_matches = max_dev <= BAND_DELTA;
+    let band_matches = max_dev <= band_delta;
 
     // §4.5: the named failing threshold(s) at this position.
     let mut failing_thresholds = Vec::new();
