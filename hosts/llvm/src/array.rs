@@ -393,7 +393,7 @@ pub(super) fn find_array(runtime: &RuntimeContext, handle: *mut c_void) -> Optio
         .map(super::StableBox::as_ref)
 }
 
-fn find_array_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&mut RuntimeArray> {
+pub(super) fn find_array_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&mut RuntimeArray> {
     runtime
         .arrays
         .iter_mut()

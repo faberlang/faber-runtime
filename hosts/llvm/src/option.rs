@@ -314,7 +314,19 @@ fn render_option_payload(
         (VALUE_KIND_F32, RuntimeValue::F32(value)) => display_fractus(*value),
         (VALUE_KIND_F64, RuntimeValue::F64(value)) => display_fractus(*value),
         (VALUE_KIND_TEXT, RuntimeValue::Ptr(value)) => render_text_payload(runtime, *value)?,
-        (VALUE_KIND_PTR, RuntimeValue::Ptr(value)) => opaque_value_text(runtime, *value)?,
+        (VALUE_KIND_PTR, RuntimeValue::Ptr(value)) => {
+            // A `ptr`-kind option may carry a textus payload: the array-option
+            // carrier (`primus`/`ultimus`/`accipe` on a `lista<textus>`) stores
+            // the element option under the array's `ptr` element kind, while the
+            // diagnostic path passes `VALUE_KIND_TEXT` — the renderer must
+            // resolve arena text handles / slice descriptors first (same
+            // resolution order as array element rendering), then fall back to
+            // opaque aggregate rendering.
+            find_text(runtime, *value)
+                .map(|text| text.value.clone())
+                .or_else(|| text_value(value.cast()))
+                .or_else(|| opaque_value_text(runtime, *value))?
+        }
         _ => return None,
     };
     Some(text)

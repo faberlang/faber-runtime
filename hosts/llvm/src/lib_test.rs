@@ -946,9 +946,15 @@ fn typed_map_preserves_value_semantics() {
     assert_eq!(length, 1);
     let keys = unsafe { __faber_rt_v1_map_keys(context, map.value) };
     let values = unsafe { __faber_rt_v1_map_values(context, map.value) };
+    // L19: key snapshots are stored with the canonical element kind array
+    // consumers use (`array_get`/`array_set` reject a kind mismatch). The
+    // emitter canonicalizes every pointer-carried element (textus/ascii/
+    // valor/instans/octeti …) to VALUE_KIND_PTR, so a `tabula<textus, T>`
+    // key snapshot is VALUE_KIND_PTR — the raw VALUE_KIND_TEXT made
+    // `itera de <tabula>` fail every element read.
     assert_eq!(
         unsafe { &*keys.value.cast::<RuntimeArray>() }.kind,
-        VALUE_KIND_TEXT
+        VALUE_KIND_PTR
     );
     assert_eq!(
         unsafe { &*values.value.cast::<RuntimeArray>() }.kind,

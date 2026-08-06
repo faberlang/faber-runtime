@@ -120,6 +120,31 @@ pub unsafe extern "C" fn __faber_rt_v1_instans_get_text(
     })
 }
 
+/// Render a raw `instans` value in the Rust oracle's Debug shape
+/// (`Instans { nanos: …, praecisio: … }`) as a text handle.
+///
+/// A `nota`/`mone`/`scribe`/`vide` of a raw `instans` value renders with
+/// `faber::Instans`'s `Debug` in the Rust lane (L19 `conversio/fallibilis`:
+/// `nota inlineRecovery(good), tutum(good), tutumDirect(good)` prints
+/// `Instans { nanos: …, praecisio: … }`), NOT the RFC3339 wire text that the
+/// `↦ textus` conversion produces. The diagnostic path uses this symbol;
+/// `instans_get_text` stays for the explicit text conversion.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_instans_display(
+    context: *mut FaberRtContextV1,
+    handle: *mut c_void,
+) -> FaberRtPtrResultV1 {
+    ffi(|| {
+        let Some(runtime) = runtime(context) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let Some(value) = find(runtime, handle) else {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        store_text(context, format!("{value:?}"))
+    })
+}
+
 /// Ordered comparison of two opaque `instans` handles.
 ///
 /// The v1 ABI contract requires both handles to be live `instans` handles

@@ -314,8 +314,34 @@ fn map_values(context: *mut FaberRtContextV1, map: *mut c_void, keys: bool) -> F
                 )
             }
         };
+        // L19: the snapshot array must be stored with the element kind the
+        // array consumers pass (`array_get`/`array_set` reject a kind
+        // mismatch). The emitter canonicalizes every pointer-carried element
+        // (textus/ascii/valor/instans/octeti/regex …) to VALUE_KIND_PTR, so a
+        // `tabula<textus, T>` key snapshot stored with the raw map key kind
+        // (VALUE_KIND_TEXT) made `itera de <tabula>` fail every element read
+        // (STATUS_INVALID_ARGUMENT) — no keys printed and a nonzero exit code
+        // latched. The map entries themselves are stored as `RuntimeValue::Ptr`
+        // for these kinds, so the PTR snapshot reads them identically.
+        let kind = canonical_array_element_kind(kind);
         store_array(runtime, kind, values)
     })
+}
+
+/// Canonical element kind used by array consumers for a map key/value kind.
+///
+/// Pointer-carried kinds (textus, ascii, valor, instans, octeti, regex …)
+/// cross the array ABI as `VALUE_KIND_PTR` handles; numeric kinds pass
+/// through unchanged.
+fn canonical_array_element_kind(kind: faber::host_abi::FaberRtValueKindV1) -> faber::host_abi::FaberRtValueKindV1 {
+    match kind {
+        faber::host_abi::VALUE_KIND_TEXT
+        | faber::host_abi::VALUE_KIND_ASCII
+        | faber::host_abi::VALUE_KIND_VALOR
+        | faber::host_abi::VALUE_KIND_OPTION_I64
+        | faber::host_abi::VALUE_KIND_INSTANS => faber::host_abi::VALUE_KIND_PTR,
+        other => other,
+    }
 }
 
 #[no_mangle]

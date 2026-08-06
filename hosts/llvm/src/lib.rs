@@ -934,6 +934,24 @@ fn ffi_status(operation: impl FnOnce() -> FaberRtStatusV1) -> FaberRtStatusV1 {
     panic::catch_unwind(AssertUnwindSafe(operation)).unwrap_or(STATUS_PANIC)
 }
 
+/// Panic on checked-arithmetic overflow with the Rust oracle's exact message
+/// (`numerus overflow`, from the generated `checked_add(…).expect("numerus
+/// overflow")`). The debug-built Rust lane panics on `numerus` overflow, so
+/// the LLVM host must too (L19 `operatores/numerus-overflow.fab`); wrapping
+/// stays on the explicit `modulus<W>` modular-word type. Never returns.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_numerus_overflow(context: *mut FaberRtContextV1) -> ! {
+    if !context.is_null() {
+        drop(io::stderr().write_all(b"numerus overflow\n"));
+        drop(io::stderr().flush());
+    }
+    std::process::abort()
+}
+
 #[cfg(not(test))]
 extern "C" {
     fn __faber_program_entry_v1(context: *mut FaberRtContextV1) -> FaberRtExitV1;

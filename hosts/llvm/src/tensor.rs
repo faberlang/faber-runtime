@@ -18,6 +18,7 @@ use faber::tensor::{
 };
 use faber::Tensor;
 use std::ffi::c_void;
+use std::io::Write;
 use std::panic::{self, AssertUnwindSafe};
 
 pub(super) struct RuntimeTensor {
@@ -235,6 +236,14 @@ pub unsafe extern "C" fn __faber_rt_v1_tensor_from_flat(
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
         if !tensor_shape_has_element_count(&shape, data_array.values.len()) {
+            // L19 (tensor/method-errors): the Rust oracle hard-errors with this
+            // exact message on a structa count/shape mismatch; the host must
+            // reproduce it on stderr (the returned failure status latches the
+            // process exit code).
+            let _ = writeln!(
+                std::io::stderr(),
+                "tensor structa element count does not match shape"
+            );
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         }
         let data = data_array.values.clone();
