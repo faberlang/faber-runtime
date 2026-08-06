@@ -59,14 +59,21 @@ fn initial_record_decides_every_family() {
 fn weight_families_are_supported_with_explicit_conversion() {
     let selection = RepackSelection::initial_declared_f32_conversion(RowIdentity::pinned_row());
     let record = CapabilityRecord::initial(RowIdentity::pinned_row(), &selection);
-    for family in [OpFamily::Gather, OpFamily::QuantizedMatmul, OpFamily::LogitsHead] {
+    for family in [
+        OpFamily::Gather,
+        OpFamily::QuantizedMatmul,
+        OpFamily::LogitsHead,
+    ] {
         let cap = record.family(family).expect("family present");
         let CapabilityResult::SupportedWithExplicitConversion {
             candidates,
             conversion_plan,
         } = &cap.result
         else {
-            panic!("{}: expected supported_with_explicit_conversion", family.name());
+            panic!(
+                "{}: expected supported_with_explicit_conversion",
+                family.name()
+            );
         };
         assert_eq!(
             candidates,
@@ -130,7 +137,11 @@ fn tri_state_has_exactly_three_variants_and_no_cpu_fallback() {
             CapabilityResult::SupportedDirect { .. } => true,
             CapabilityResult::SupportedWithExplicitConversion { .. } => true,
         };
-        assert!(decided, "{}: invalid tri-state result", cap.op_family.name());
+        assert!(
+            decided,
+            "{}: invalid tri-state result",
+            cap.op_family.name()
+        );
     }
 }
 
@@ -214,14 +225,23 @@ fn unexercised_dimensions_are_explicitly_pending_second_representation() {
 fn conversion_plan_consumes_the_s1_selection() {
     let selection = RepackSelection::initial_declared_f32_conversion(RowIdentity::pinned_row());
     let record = CapabilityRecord::initial(RowIdentity::pinned_row(), &selection);
-    let cap = record.family(OpFamily::QuantizedMatmul).expect("family present");
-    let CapabilityResult::SupportedWithExplicitConversion { conversion_plan, .. } = &cap.result
+    let cap = record
+        .family(OpFamily::QuantizedMatmul)
+        .expect("family present");
+    let CapabilityResult::SupportedWithExplicitConversion {
+        conversion_plan, ..
+    } = &cap.result
     else {
         panic!("quantized_matmul must carry a conversion plan");
     };
     // Same descriptors as the S1 selection (the two contracts are one
     // concern).
-    for class in [GgmlType::Q4_K, GgmlType::Q5_0, GgmlType::Q6_K, GgmlType::Q8_0] {
+    for class in [
+        GgmlType::Q4_K,
+        GgmlType::Q5_0,
+        GgmlType::Q6_K,
+        GgmlType::Q8_0,
+    ] {
         let from_plan = conversion_plan
             .per_class
             .iter()
@@ -278,7 +298,10 @@ fn load_record() -> Option<Json> {
     let wire = match std::fs::read_to_string(&path) {
         Ok(wire) => wire,
         Err(err) => {
-            eprintln!("SKIP: representation record not readable at {} ({err})", path.display());
+            eprintln!(
+                "SKIP: representation record not readable at {} ({err})",
+                path.display()
+            );
             return None;
         }
     };
@@ -383,7 +406,10 @@ fn committed_evidence_record_is_hash_accounted_and_matches_the_initial_contract(
         let result = obj(f, "result");
         let kind = text(obj(result, "kind"));
         assert!(
-            matches!(kind, "unsupported" | "supported_direct" | "supported_with_explicit_conversion"),
+            matches!(
+                kind,
+                "unsupported" | "supported_direct" | "supported_with_explicit_conversion"
+            ),
             "{name}: invalid tri-state kind"
         );
         let dims = obj(f, "dimensions");
@@ -424,7 +450,10 @@ fn committed_evidence_record_is_hash_accounted_and_matches_the_initial_contract(
                 .iter()
                 .map(|c| text(c))
                 .collect();
-            assert_eq!(plan_classes, consumed, "{name}: plan covers consumed classes");
+            assert_eq!(
+                plan_classes, consumed,
+                "{name}: plan covers consumed classes"
+            );
         }
     }
 }

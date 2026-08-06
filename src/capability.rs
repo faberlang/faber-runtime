@@ -250,7 +250,9 @@ impl CapabilityDimensions {
     /// Count of assessed dimensions.
     #[must_use]
     pub fn assessed_count(&self) -> usize {
-        self.dimensions().filter(|d| matches!(d, CapabilityDimension::Assessed(_))).count()
+        self.dimensions()
+            .filter(|d| matches!(d, CapabilityDimension::Assessed(_)))
+            .count()
     }
 
     /// Count of explicitly-pending dimensions.
@@ -336,10 +338,7 @@ impl CapabilityRecord {
                         })
                         .collect();
                     CapabilityResult::SupportedWithExplicitConversion {
-                        candidates: vec![
-                            Candidate::DeclaredF32Conversion,
-                            Candidate::DirectNative,
-                        ],
+                        candidates: vec![Candidate::DeclaredF32Conversion, Candidate::DirectNative],
                         conversion_plan: ConversionPlan { per_class },
                     }
                 } else {
@@ -360,9 +359,7 @@ impl CapabilityRecord {
     /// One op family's capability.
     #[must_use]
     pub fn family(&self, family: OpFamily) -> Option<&OpFamilyCapability> {
-        self.per_family
-            .iter()
-            .find(|cap| cap.op_family == family)
+        self.per_family.iter().find(|cap| cap.op_family == family)
     }
 
     /// Whether every family carries a tri-state result (no family is left

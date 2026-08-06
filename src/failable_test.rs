@@ -36,9 +36,6 @@ fn is_fallible_discriminates_the_error_channel() {
 #[test]
 fn error_payload_extracts_only_on_the_error_channel() {
     let error = Valor::Textus("empty input".to_owned());
-    assert_eq!(
-        error_payload(STATUS_FALLIBLE, error.clone()),
-        Some(error),
-    );
+    assert_eq!(error_payload(STATUS_FALLIBLE, error.clone()), Some(error),);
     assert_eq!(error_payload(STATUS_OK, Valor::Nihil), None);
 }

@@ -34,8 +34,8 @@
 //! trace agrees with the comparator trace at every position.
 
 use crate::cpu_oracle::{
-    log_softmax, max_band_deviation, top1_non_eog, CpuOracle, ForwardRun, OracleError,
-    BAND_DELTA_V2, EOG_TOKENS, FailingThreshold, VOCAB_SIZE, WINDOW_POSITIONS,
+    log_softmax, max_band_deviation, top1_non_eog, CpuOracle, FailingThreshold, ForwardRun,
+    OracleError, BAND_DELTA_V2, EOG_TOKENS, VOCAB_SIZE, WINDOW_POSITIONS,
 };
 use crate::json::Json;
 use crate::valor::Valor;
@@ -55,28 +55,21 @@ pub const PROMPT_TOKENS: [i64; 9] = [504, 2365, 6354, 16438, 27003, 690, 260, 23
 /// `dee2a846b`, sampling `ignore_eos=true` / temperature 0 / seed 42).
 /// Embedded so the default-lane record tests are hermetic (no trials read).
 pub const TRACE_TOKENS: [i64; GREEDY_TOKEN_COUNT] = [
-    30, 198, 198, 504, 808, 6330, 314, 253, 2232, 4814, 282, 1027,
-    28, 979, 260, 1796, 6330, 314, 253, 540, 1784, 6330, 338, 2925,
-    253, 29219, 17503, 288, 1538, 3171, 1096, 30, 378, 1796, 6330, 597,
-    2925, 253, 540, 5764, 284, 26048, 9238, 28, 527, 314, 5712, 327,
-    253, 2855, 1694, 30, 198, 198, 788, 2656, 282, 6330, 2678, 28,
-    260, 808, 6330, 314, 253, 2232, 6330, 351, 253, 2244, 4791, 17503,
-    28, 979, 260, 1796, 6330, 314, 253, 8568, 6330, 351, 827, 4791,
-    25593, 7238, 411, 253, 25530, 14061, 365, 397, 595, 669, 2022, 260,
-    1796, 6330, 540, 1784, 284, 3684, 288, 1012, 30, 198, 198, 16814,
-    28, 260, 808, 6330, 314, 540, 19484, 284, 1454, 28, 979, 260,
-    1796, 6330, 314, 540, 13992, 284, 2229, 105, 30, 378, 1796, 6330,
-    2925, 540, 5764, 1789, 284, 28766, 260, 722, 282, 260, 2229, 476,
-    38046, 1627, 527, 314, 253, 540, 13270, 2229, 4187, 30, 198, 198,
-    20832, 28, 260, 808, 6330, 314, 540, 14857, 284, 288, 260, 1225,
-    28, 979, 260, 1796, 6330, 314, 540, 1784, 284, 4798, 30, 378,
-    1796, 6330, 597, 2925, 540, 9733, 1789, 284, 28766, 260, 722, 282,
-    260, 2229, 476, 38046, 1627, 527, 314, 253, 540, 13270, 2229, 4187,
-    30, 198, 198, 788, 2656, 282, 3997, 28, 260, 808, 6330, 314,
-    540, 5764, 284, 6987, 28, 979, 260, 1796, 6330, 314, 540, 16344,
-    284, 33820, 30, 378, 808, 6330, 314, 540, 5712, 327, 253, 5764,
-    3794, 355, 2524, 28, 979, 260, 1796, 6330, 314, 540, 5712, 327,
-    253, 5862, 1681, 355,
+    30, 198, 198, 504, 808, 6330, 314, 253, 2232, 4814, 282, 1027, 28, 979, 260, 1796, 6330, 314,
+    253, 540, 1784, 6330, 338, 2925, 253, 29219, 17503, 288, 1538, 3171, 1096, 30, 378, 1796, 6330,
+    597, 2925, 253, 540, 5764, 284, 26048, 9238, 28, 527, 314, 5712, 327, 253, 2855, 1694, 30, 198,
+    198, 788, 2656, 282, 6330, 2678, 28, 260, 808, 6330, 314, 253, 2232, 6330, 351, 253, 2244,
+    4791, 17503, 28, 979, 260, 1796, 6330, 314, 253, 8568, 6330, 351, 827, 4791, 25593, 7238, 411,
+    253, 25530, 14061, 365, 397, 595, 669, 2022, 260, 1796, 6330, 540, 1784, 284, 3684, 288, 1012,
+    30, 198, 198, 16814, 28, 260, 808, 6330, 314, 540, 19484, 284, 1454, 28, 979, 260, 1796, 6330,
+    314, 540, 13992, 284, 2229, 105, 30, 378, 1796, 6330, 2925, 540, 5764, 1789, 284, 28766, 260,
+    722, 282, 260, 2229, 476, 38046, 1627, 527, 314, 253, 540, 13270, 2229, 4187, 30, 198, 198,
+    20832, 28, 260, 808, 6330, 314, 540, 14857, 284, 288, 260, 1225, 28, 979, 260, 1796, 6330, 314,
+    540, 1784, 284, 4798, 30, 378, 1796, 6330, 597, 2925, 540, 9733, 1789, 284, 28766, 260, 722,
+    282, 260, 2229, 476, 38046, 1627, 527, 314, 253, 540, 13270, 2229, 4187, 30, 198, 198, 788,
+    2656, 282, 3997, 28, 260, 808, 6330, 314, 540, 5764, 284, 6987, 28, 979, 260, 1796, 6330, 314,
+    540, 16344, 284, 33820, 30, 378, 808, 6330, 314, 540, 5712, 327, 253, 5764, 3794, 355, 2524,
+    28, 979, 260, 1796, 6330, 314, 540, 5712, 327, 253, 5862, 1681, 355,
 ];
 
 // ---------------------------------------------------------------------------
@@ -149,7 +142,17 @@ impl GreedyRunRecord {
     #[must_use]
     pub fn divergence_field(&self) -> String {
         match &self.first_divergence {
-            Some(d) => format!("position {} (comparator {} vs oracle {}; {})", d.position, d.comparator_trace_token, d.oracle_token, d.failing_thresholds.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")),
+            Some(d) => format!(
+                "position {} (comparator {} vs oracle {}; {})",
+                d.position,
+                d.comparator_trace_token,
+                d.oracle_token,
+                d.failing_thresholds
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
             None => "none".to_owned(),
         }
     }
@@ -268,15 +271,15 @@ pub const TRACE_FILE_SHA256_HEX: &str =
 pub fn record_to_json(record: &GreedyRunRecord) -> String {
     let mut root = BTreeMap::new();
     root.insert("schema".to_string(), Valor::from(RECORD_SCHEMA));
-    root.insert("prompt_tokens".to_string(), Valor::from(PROMPT_TOKENS.to_vec()));
+    root.insert(
+        "prompt_tokens".to_string(),
+        Valor::from(PROMPT_TOKENS.to_vec()),
+    );
     root.insert(
         "generated_token_count".to_string(),
         Valor::from(record.generated_tokens.len() as i64),
     );
-    root.insert(
-        "all_finite".to_string(),
-        Valor::from(record.all_finite),
-    );
+    root.insert("all_finite".to_string(), Valor::from(record.all_finite));
     root.insert(
         "all_agree".to_string(),
         Valor::from(record.first_divergence.is_none()),
@@ -291,10 +294,7 @@ pub fn record_to_json(record: &GreedyRunRecord) -> String {
         "file_sha256".to_string(),
         Valor::from(TRACE_FILE_SHA256_HEX),
     );
-    trace.insert(
-        "sampling_ignore_eos".to_string(),
-        Valor::from(true),
-    );
+    trace.insert("sampling_ignore_eos".to_string(), Valor::from(true));
     trace.insert("temperature".to_string(), Valor::from(0.0f64));
     root.insert("trace".to_string(), trace.into());
 
@@ -323,10 +323,7 @@ pub fn record_to_json(record: &GreedyRunRecord) -> String {
             root.insert("first_divergence".to_string(), div.into());
         }
         None => {
-            root.insert(
-                "first_divergence".to_string(),
-                Valor::from(None::<Valor>),
-            );
+            root.insert("first_divergence".to_string(), Valor::from(None::<Valor>));
         }
     }
 

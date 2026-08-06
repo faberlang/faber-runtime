@@ -103,7 +103,10 @@ fn declared_f32_descriptor_carries_the_full_field_set() {
             desc.element_interpretation,
             ElementInterpretation::F32LogicalElement
         );
-        assert_eq!(desc.algorithm_family, AlgorithmFamily::DeclaredF32Conversion);
+        assert_eq!(
+            desc.algorithm_family,
+            AlgorithmFamily::DeclaredF32Conversion
+        );
         assert_eq!(desc.shape.element_count, facts.total_elements);
         assert_eq!(desc.padding, Padding::None);
         assert_eq!(desc.alignment_bytes, F32_ELEMENT_BYTES);

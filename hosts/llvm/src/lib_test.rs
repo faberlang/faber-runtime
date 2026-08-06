@@ -4508,14 +4508,24 @@ fn find_numeric(runtime: &RuntimeContext, handle: *mut c_void) -> Option<i64> {
 fn sermo_open_returns_an_opaque_stream_handle() {
     let context = sermo_context();
     let payload = store_payload(context, Valor::Nihil);
-    let opened = unsafe { __faber_rt_v1_sermo_open(context, &FaberRtSliceV1::from_static(b"runtime:echo"), payload) };
+    let opened = unsafe {
+        __faber_rt_v1_sermo_open(
+            context,
+            &FaberRtSliceV1::from_static(b"runtime:echo"),
+            payload,
+        )
+    };
     assert!(opened.status.is_ok(), "SermoOpen must succeed");
     assert!(
         !opened.value.is_null(),
         "SermoOpen must return an opaque stream handle (value-returning runtime call)"
     );
     let runtime = unsafe { &*context.cast::<RuntimeContext>() };
-    assert_eq!(runtime.sermos.len(), 1, "stream handle registered in the arena");
+    assert_eq!(
+        runtime.sermos.len(),
+        1,
+        "stream handle registered in the arena"
+    );
     unsafe { __faber_rt_v1_shutdown(context) };
 }
 
@@ -4523,7 +4533,13 @@ fn sermo_open_returns_an_opaque_stream_handle() {
 fn sermo_open_and_materialize_text_echoes_the_opener() {
     let context = sermo_context();
     let payload = store_payload(context, Valor::Textus("salve, munde".into()));
-    let opened = unsafe { __faber_rt_v1_sermo_open(context, &FaberRtSliceV1::from_static(b"runtime:echo"), payload) };
+    let opened = unsafe {
+        __faber_rt_v1_sermo_open(
+            context,
+            &FaberRtSliceV1::from_static(b"runtime:echo"),
+            payload,
+        )
+    };
     assert!(opened.status.is_ok(), "SermoOpen must succeed");
 
     // ad/sermo-conversio.fab shape: `ad 'runtime:echo'(payload) ↦ textus`.
@@ -4539,7 +4555,13 @@ fn sermo_open_and_materialize_text_echoes_the_opener() {
 fn sermo_materialize_valor_returns_the_frame_payload() {
     let context = sermo_context();
     let payload = store_payload(context, Valor::Textus("salve".into()));
-    let opened = unsafe { __faber_rt_v1_sermo_open(context, &FaberRtSliceV1::from_static(b"runtime:echo"), payload) };
+    let opened = unsafe {
+        __faber_rt_v1_sermo_open(
+            context,
+            &FaberRtSliceV1::from_static(b"runtime:echo"),
+            payload,
+        )
+    };
     assert!(opened.status.is_ok());
 
     // ad/sermo-* shape: `sermo ↦ valor` — the stream materializes to a valor
@@ -4556,7 +4578,13 @@ fn sermo_materialize_valor_returns_the_frame_payload() {
 fn sermo_set_opener_replaces_the_request_payload() {
     let context = sermo_context();
     let payload = store_payload(context, Valor::Nihil);
-    let opened = unsafe { __faber_rt_v1_sermo_open(context, &FaberRtSliceV1::from_static(b"runtime:echo"), payload) };
+    let opened = unsafe {
+        __faber_rt_v1_sermo_open(
+            context,
+            &FaberRtSliceV1::from_static(b"runtime:echo"),
+            payload,
+        )
+    };
     assert!(opened.status.is_ok());
 
     // SermoSetOpener replaces the first request frame's payload before the
@@ -4577,7 +4605,13 @@ fn sermo_set_opener_replaces_the_request_payload() {
 fn sermo_materialize_i64_or_extracts_a_numeric_payload() {
     let context = sermo_context();
     let payload = store_payload(context, Valor::Numerus(42));
-    let opened = unsafe { __faber_rt_v1_sermo_open(context, &FaberRtSliceV1::from_static(b"runtime:echo"), payload) };
+    let opened = unsafe {
+        __faber_rt_v1_sermo_open(
+            context,
+            &FaberRtSliceV1::from_static(b"runtime:echo"),
+            payload,
+        )
+    };
     assert!(opened.status.is_ok());
 
     let result = unsafe { __faber_rt_v1_sermo_materialize_i64_or(context, opened.value, 0) };
@@ -4591,7 +4625,13 @@ fn sermo_materialize_i64_or_extracts_a_numeric_payload() {
 fn sermo_materialize_i64_or_recovers_on_type_mismatch() {
     let context = sermo_context();
     let payload = store_payload(context, Valor::Textus("non-numeric".into()));
-    let opened = unsafe { __faber_rt_v1_sermo_open(context, &FaberRtSliceV1::from_static(b"runtime:echo"), payload) };
+    let opened = unsafe {
+        __faber_rt_v1_sermo_open(
+            context,
+            &FaberRtSliceV1::from_static(b"runtime:echo"),
+            payload,
+        )
+    };
     assert!(opened.status.is_ok());
 
     // ad/sermo-recovery.fab shape: `ad 'runtime:echo'(payload) ↦ i64 ⇥ 0` —

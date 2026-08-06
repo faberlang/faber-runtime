@@ -94,10 +94,7 @@ fn or_recovery_symbols_cohere_with_radix_host_abi() {
 #[test]
 fn failable_rows_cohere_with_radix_host_abi() {
     // P10: the failable status/payload rows mirror the radix-host-abi table.
-    assert_eq!(
-        radix_host_abi::SYMBOL_FALLIBLE_ERROR,
-        SYMBOL_FALLIBLE_ERROR,
-    );
+    assert_eq!(radix_host_abi::SYMBOL_FALLIBLE_ERROR, SYMBOL_FALLIBLE_ERROR,);
     assert_eq!(SYMBOL_FALLIBLE_ERROR, "__faber_rt_v1_fallible_error");
     let fallible_code = radix_host_abi::STATUS_CODES
         .iter()

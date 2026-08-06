@@ -21,8 +21,7 @@
 //! convention: skipped (with a loud note) when the pinned row is absent.
 
 use crate::cpu_oracle::{
-    top1_non_eog, CpuOracle, ForwardRun, EOG_TOKENS, FailingThreshold, VOCAB_SIZE,
-    WINDOW_POSITIONS,
+    top1_non_eog, CpuOracle, FailingThreshold, ForwardRun, EOG_TOKENS, VOCAB_SIZE, WINDOW_POSITIONS,
 };
 use crate::gguf::{admit_gguf, hex, sha256, PINNED_SHA256_HEX};
 use crate::greedy_run::*;
@@ -170,7 +169,10 @@ fn record_serialization_round_trips_and_divergence_field() {
         }),
     };
     let wire = record_to_json(&record);
-    let root = Json::parse(&wire).expect("record parses").as_valor().clone();
+    let root = Json::parse(&wire)
+        .expect("record parses")
+        .as_valor()
+        .clone();
     assert_eq!(text(field(&root, "schema")), RECORD_SCHEMA);
     assert_eq!(int(field(&root, "generated_token_count")), 16);
     assert_eq!(flag(field(&root, "all_finite")), true);
@@ -197,7 +199,10 @@ fn record_serialization_round_trips_and_divergence_field() {
         first_divergence: None,
     };
     let wire_ok = record_to_json(&ok);
-    let root_ok = Json::parse(&wire_ok).expect("ok record parses").as_valor().clone();
+    let root_ok = Json::parse(&wire_ok)
+        .expect("ok record parses")
+        .as_valor()
+        .clone();
     assert!(matches!(field(&root_ok, "first_divergence"), Valor::Nihil));
     assert_eq!(ok.divergence_field(), "none");
 }
@@ -223,11 +228,17 @@ fn committed_greedy_record_is_schema_valid_and_self_consistent() {
             return;
         }
     };
-    let root = Json::parse(&wire).expect("record parses").as_valor().clone();
+    let root = Json::parse(&wire)
+        .expect("record parses")
+        .as_valor()
+        .clone();
 
     assert_eq!(text(field(&root, "schema")), RECORD_SCHEMA);
     let n = int(field(&root, "generated_token_count"));
-    assert_eq!(n, GREEDY_TOKEN_COUNT as i64, "the committed record is the full 256-token run");
+    assert_eq!(
+        n, GREEDY_TOKEN_COUNT as i64,
+        "the committed record is the full 256-token run"
+    );
 
     let generated: Vec<i64> = list(field(&root, "generated_tokens"))
         .iter()
@@ -235,7 +246,9 @@ fn committed_greedy_record_is_schema_valid_and_self_consistent() {
         .collect();
     assert_eq!(generated.len(), GREEDY_TOKEN_COUNT);
     assert!(
-        generated.iter().all(|&t| (0..VOCAB_SIZE as i64).contains(&t)),
+        generated
+            .iter()
+            .all(|&t| (0..VOCAB_SIZE as i64).contains(&t)),
         "all generated token ids must be in [0, vocab_size)"
     );
 
@@ -253,11 +266,18 @@ fn committed_greedy_record_is_schema_valid_and_self_consistent() {
 
     match field(&root, "first_divergence") {
         Valor::Nihil => {
-            assert!(all_agree, "divergence field must be none only when the full trace agrees");
+            assert!(
+                all_agree,
+                "divergence field must be none only when the full trace agrees"
+            );
         }
         div => {
             let pos = int(field(div, "position"));
-            assert_eq!(Some(pos as usize), first_mismatch, "the record is taken at the FIRST diverging position");
+            assert_eq!(
+                Some(pos as usize),
+                first_mismatch,
+                "the record is taken at the FIRST diverging position"
+            );
             assert_eq!(
                 int(field(div, "comparator_trace_token")),
                 TRACE_TOKENS[pos as usize],
@@ -291,7 +311,11 @@ fn committed_greedy_record_is_schema_valid_and_self_consistent() {
             }
         }
     }
-    assert_eq!(flag(field(&root, "all_finite")), true, "finite gate must hold");
+    assert_eq!(
+        flag(field(&root, "all_finite")),
+        true,
+        "finite gate must hold"
+    );
 
     // The trace provenance is hash-accounted in the committed record.
     let trace = field(&root, "trace");
@@ -458,10 +482,7 @@ fn greedy_256_run_matches_embedded_trace() {
                         .all(|(o, c)| o == c),
                 "the record must be at the FIRST diverging position"
             );
-            eprintln!(
-                "GI2-4 verdict: {d} (all finite = {})",
-                record.all_finite
-            );
+            eprintln!("GI2-4 verdict: {d} (all finite = {})", record.all_finite);
         }
     }
 }

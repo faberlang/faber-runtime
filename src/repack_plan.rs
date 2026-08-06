@@ -322,7 +322,10 @@ impl RepackDescriptor {
     /// Whether the descriptor is for the declared f32 conversion.
     #[must_use]
     pub const fn is_declared_f32_conversion(&self) -> bool {
-        matches!(self.algorithm_family, AlgorithmFamily::DeclaredF32Conversion)
+        matches!(
+            self.algorithm_family,
+            AlgorithmFamily::DeclaredF32Conversion
+        )
     }
 }
 
@@ -428,9 +431,10 @@ impl RepackSelection {
     pub fn every_class_selected(&self) -> bool {
         self.per_class.len() == pinned_row_class_facts().len()
             && self.per_class.iter().all(|sel| {
-                !matches!(sel.representation, SelectedRepresentation::Unsupported { .. })
+                !matches!(
+                    sel.representation,
+                    SelectedRepresentation::Unsupported { .. }
+                )
             })
     }
 }
-
-

@@ -127,7 +127,8 @@ use regex_rt::{
 #[cfg(test)]
 use sermo::{
     __faber_rt_v1_sermo_materialize_i64_or, __faber_rt_v1_sermo_materialize_text,
-    __faber_rt_v1_sermo_materialize_valor, __faber_rt_v1_sermo_open, __faber_rt_v1_sermo_set_opener,
+    __faber_rt_v1_sermo_materialize_valor, __faber_rt_v1_sermo_open,
+    __faber_rt_v1_sermo_set_opener,
 };
 #[cfg(test)]
 use solum::{

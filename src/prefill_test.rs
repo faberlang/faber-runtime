@@ -18,7 +18,7 @@
 //! 4. **Receipts**: the S6 prefill-regime fields + execution facts + timing
 //!    serialize/round-trip under `gi3-prefill-receipt-v1`.
 
-use crate::cpu_oracle::{FailingThreshold, VOCAB_SIZE, EOG_TOKENS};
+use crate::cpu_oracle::{FailingThreshold, EOG_TOKENS, VOCAB_SIZE};
 use crate::json::Json;
 use crate::prefill::*;
 use crate::valor::Valor;
@@ -60,7 +60,10 @@ fn text(v: &Valor) -> &str {
 fn golden_raw_logits() -> Vec<f32> {
     let wire = std::fs::read_to_string(goldens_dir().join("logits-pos0.json"))
         .expect("committed logits golden must exist");
-    let root = Json::parse(&wire).expect("golden parses").as_valor().clone();
+    let root = Json::parse(&wire)
+        .expect("golden parses")
+        .as_valor()
+        .clone();
     let raw = field(field(&root, "raw_logits"), "f32_le_hex");
     hex_f32s(text(raw))
 }
@@ -122,16 +125,28 @@ fn program_builder_assembles_the_pinned_row_prefill() {
 
     // Weight-free kernels carry no weight tensor.
     assert_eq!(layer0[4].weight_tensor, None, "rope has no weight tensor");
-    assert_eq!(layer0[6].weight_tensor, None, "causal softmax has no weight");
+    assert_eq!(
+        layer0[6].weight_tensor, None,
+        "causal softmax has no weight"
+    );
     assert_eq!(layer0[8].weight_tensor, None, "residual has no weight");
-    assert_eq!(layer0[10].weight_tensor, None, "swiglu has no single weight");
+    assert_eq!(
+        layer0[10].weight_tensor, None,
+        "swiglu has no single weight"
+    );
 
     // Tail: output_norm + tied-head projection.
     let n = program.kernel_count();
     assert_eq!(program.kernels[n - 2].recipe, PrefillRecipe::RmsNorm);
-    assert_eq!(program.kernels[n - 2].weight_tensor, Some("output_norm.weight"));
+    assert_eq!(
+        program.kernels[n - 2].weight_tensor,
+        Some("output_norm.weight")
+    );
     assert_eq!(program.kernels[n - 1].recipe, PrefillRecipe::Matmul);
-    assert_eq!(program.kernels[n - 1].weight_tensor, Some("token_embd.weight"));
+    assert_eq!(
+        program.kernels[n - 1].weight_tensor,
+        Some("token_embd.weight")
+    );
     assert_eq!(program.kernels[n - 1].shape, vec![49152]);
 }
 
@@ -164,13 +179,19 @@ fn q2_identity_logits_pass_and_divergence_field_is_none() {
     let golden = golden_raw_logits();
     let comparison = compare_gpu_logits(&golden, &golden).expect("compare");
     assert!(comparison.top1_matches, "top-1 exact for identical logits");
-    assert!(comparison.numeric_matches, "numeric rows pass for identical logits");
+    assert!(
+        comparison.numeric_matches,
+        "numeric rows pass for identical logits"
+    );
     assert!(comparison.all_finite, "finite gate");
     assert!(comparison.ok, "every Q2 threshold passes");
     assert_eq!(comparison.failing_thresholds, vec![]);
     assert_eq!(comparison.divergence_field(), "none");
     assert_eq!(comparison.max_delta, 0.0);
-    assert_eq!(comparison.golden_top1, 30, "the golden's EOG-excluded top-1 is token 30");
+    assert_eq!(
+        comparison.golden_top1, 30,
+        "the golden's EOG-excluded top-1 is token 30"
+    );
 }
 
 #[test]
@@ -211,9 +232,14 @@ fn q2_out_of_band_delta_fails_the_numeric_row() {
     let idx = 100;
     perturbed[idx] = golden[idx] + 1e-3;
     let comparison = compare_gpu_logits(&perturbed, &golden).expect("compare");
-    assert!(!comparison.numeric_matches, "an out-of-band delta fails the numeric row");
     assert!(
-        comparison.failing_thresholds.contains(&FailingThreshold::Band),
+        !comparison.numeric_matches,
+        "an out-of-band delta fails the numeric row"
+    );
+    assert!(
+        comparison
+            .failing_thresholds
+            .contains(&FailingThreshold::Band),
         "the failing threshold must name the band/numeric row: {:?}",
         comparison.failing_thresholds
     );
@@ -226,8 +252,13 @@ fn q2_non_finite_gpu_logit_fails_the_finite_gate() {
     let mut nan = golden.clone();
     nan[500] = f32::NAN;
     let comparison = compare_gpu_logits(&nan, &golden).expect("compare");
-    assert!(!comparison.all_finite, "a NaN GPU logit fails the finite gate");
-    assert!(comparison.failing_thresholds.contains(&FailingThreshold::Finite));
+    assert!(
+        !comparison.all_finite,
+        "a NaN GPU logit fails the finite gate"
+    );
+    assert!(comparison
+        .failing_thresholds
+        .contains(&FailingThreshold::Finite));
     assert!(!comparison.ok);
 }
 
@@ -250,7 +281,10 @@ fn gpu_top1_excludes_eog_tokens() {
         "the GPU top-1 must never be an EOG token (got {})",
         comparison.gpu_top1
     );
-    assert_eq!(comparison.gpu_top1, 30, "the non-EOG argmax is still token 30");
+    assert_eq!(
+        comparison.gpu_top1, 30,
+        "the non-EOG argmax is still token 30"
+    );
 }
 
 /// The index of the golden's raw argmax (the EOG-excluded top-1 = 30).
@@ -279,8 +313,11 @@ fn prefill_receipt_serializes_with_s6_regime_fields() {
         observations: 1,
         regime_fields: PrefillRegimeFields {
             shape_class: "prefill-9t".to_owned(),
-            representation: "declared f32 conversion (GI2-1 dequant; never direct GGUF quantized execution)".to_owned(),
-            algorithm: "GQA consecutive-triples; CausalMaskedSoftmax; declared-f32 matmul".to_owned(),
+            representation:
+                "declared f32 conversion (GI2-1 dequant; never direct GGUF quantized execution)"
+                    .to_owned(),
+            algorithm: "GQA consecutive-triples; CausalMaskedSoftmax; declared-f32 matmul"
+                .to_owned(),
             workspace: "29 program buffers + 1 output".to_owned(),
             evidence: "gi3-prefill-comparison.json + gi3-prefill-receipts.md".to_owned(),
         },
@@ -291,7 +328,10 @@ fn prefill_receipt_serializes_with_s6_regime_fields() {
         capture_us: 4_567,
     };
     let wire = receipt_to_json(&receipt);
-    let root = Json::parse(&wire).expect("receipt parses").as_valor().clone();
+    let root = Json::parse(&wire)
+        .expect("receipt parses")
+        .as_valor()
+        .clone();
     assert_eq!(text(field(&root, "schema")), "gi3-prefill-receipt-v1");
     assert_eq!(text(field(&root, "regime")), "prefill");
     assert_eq!(int(field(&root, "launches")), 355);

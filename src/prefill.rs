@@ -54,7 +54,7 @@
 //! goldens (`testdata/gi2-2-op-goldens/`) stay the localization floor —
 //! never the exit gate.
 
-use crate::cpu_oracle::{top1_non_eog, FailingThreshold, LAYER_COUNT, VOCAB_SIZE, EOG_TOKENS};
+use crate::cpu_oracle::{top1_non_eog, FailingThreshold, EOG_TOKENS, LAYER_COUNT, VOCAB_SIZE};
 use crate::decoder_ops::{
     ATTENTION_SCALE, FFN_SIZE, HEAD_COUNT, HEAD_DIM, HIDDEN_SIZE, KV_HEAD_COUNT, RMS_EPS,
 };
@@ -512,7 +512,10 @@ pub fn receipt_to_json(receipt: &PrefillReceipt) -> String {
     let mut root = BTreeMap::new();
     root.insert("schema".to_string(), Valor::from("gi3-prefill-receipt-v1"));
     root.insert("regime".to_string(), Valor::from(receipt.regime.label()));
-    root.insert("transfers".to_string(), Valor::from(receipt.transfers as i64));
+    root.insert(
+        "transfers".to_string(),
+        Valor::from(receipt.transfers as i64),
+    );
     root.insert(
         "allocations".to_string(),
         Valor::from(receipt.allocations as i64),
