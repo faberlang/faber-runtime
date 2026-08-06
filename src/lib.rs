@@ -15,6 +15,7 @@ pub mod device_set;
 pub mod discovery;
 pub mod display;
 pub mod execution_transaction;
+pub mod fake_device;
 pub mod frame;
 pub mod gguf;
 pub mod host_abi;
