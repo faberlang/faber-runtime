@@ -33,6 +33,7 @@ pub mod tensor;
 pub mod tensor_view;
 pub mod textus;
 pub mod tokenizer;
+pub mod transport;
 pub mod valor;
 
 pub use arena::{Arena, ArenaHandle};
