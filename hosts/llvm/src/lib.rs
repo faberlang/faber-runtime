@@ -222,7 +222,10 @@ impl<T: ?Sized + Unpin> DerefMut for StableBox<T> {
 }
 
 struct RuntimeContext {
-    _arguments: Vec<Vec<u8>>,
+    /// Process argumenta captured at `__faber_rt_v1_init`, excluding the host
+    /// argv[0] program path (Faber argumenta semantics: `std::env::args()`
+    /// parity).
+    arguments: Vec<Vec<u8>>,
     texts: Vec<StableBox<RuntimeText>>,
     valors: Vec<StableBox<Valor>>,
     ascii: Vec<StableBox<[u8]>>,
@@ -262,8 +265,11 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
         }
         // SAFETY: `argc` is checked non-negative above (line 229).
         let argc = usize::try_from(argc).unwrap_or(0);
-        let mut arguments = Vec::with_capacity(argc);
-        for index in 0..argc {
+        // Faber argumenta semantics: argv excludes the host argv[0] program
+        // path (the Rust oracle's `std::env::args()` excludes it too), so the
+        // captured context holds exactly the program arguments.
+        let mut arguments = Vec::with_capacity(argc.saturating_sub(1));
+        for index in 1..argc {
             let value = *argv.add(index);
             if value.is_null() {
                 return STATUS_INVALID_ARGUMENT;
@@ -271,7 +277,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             arguments.push(std::ffi::CStr::from_ptr(value).to_bytes().to_vec());
         }
         let context = Box::new(RuntimeContext {
-            _arguments: arguments,
+            arguments,
             texts: Vec::new(),
             valors: Vec::new(),
             ascii: Vec::new(),
@@ -311,6 +317,33 @@ pub unsafe extern "C" fn __faber_rt_v1_shutdown(context: *mut FaberRtContextV1) 
         drop(io::stdout().flush());
         drop(io::stderr().flush());
     })));
+}
+
+/// Return the process argumenta captured at [`__faber_rt_v1_init`] as an
+/// arena-owned `lista<textus>` handle.
+///
+/// Faber argumenta semantics: the list excludes the host argv[0] program path
+/// (the Rust oracle's `std::env::args()` excludes it too), so the returned
+/// elements are exactly the program arguments the Rust lane observes.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_arguments(
+    context: *mut FaberRtContextV1,
+) -> faber::host_abi::FaberRtPtrResultV1 {
+    format::ffi_ptr_result(|| {
+        let Some(runtime) = (unsafe { array::runtime_mut(context) }) else {
+            return faber::host_abi::FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let mut values = Vec::with_capacity(runtime.arguments.len());
+        for argument in &runtime.arguments {
+            let text = format::store_text_owned(context, String::from_utf8_lossy(argument).into_owned());
+            values.push(array::RuntimeValue::Ptr(text));
+        }
+        array::store_array(runtime, faber::host_abi::VALUE_KIND_PTR, values)
+    })
 }
 
 /// Write one `nota` text payload followed by its canonical newline.

@@ -29,6 +29,68 @@ fn init_write_and_shutdown_round_trip() {
 }
 
 #[test]
+fn arguments_excludes_host_argv0_and_returns_text_lista() {
+    let program = std::ffi::CString::new("prog").unwrap();
+    let first = std::ffi::CString::new("alpha").unwrap();
+    let second = std::ffi::CString::new("beta").unwrap();
+    let argv = [program.as_ptr(), first.as_ptr(), second.as_ptr()];
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(3, argv.as_ptr(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    // Faber argumenta semantics: the captured arguments exclude argv[0].
+    let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+    assert_eq!(
+        runtime.arguments,
+        vec![b"alpha".to_vec(), b"beta".to_vec()],
+        "process argumenta must exclude the host argv[0] program path"
+    );
+
+    let result = unsafe { __faber_rt_v1_arguments(context) };
+    assert!(result.status.is_ok(), "arguments symbol must succeed");
+    assert!(!result.value.is_null(), "arguments must return a lista handle");
+    let array = array::find_array(runtime, result.value).expect("arguments handle in arena");
+    assert_eq!(
+        array.kind,
+        faber::host_abi::VALUE_KIND_PTR,
+        "argumenta list must be a lista<textus>"
+    );
+    let rendered = array
+        .values
+        .iter()
+        .filter_map(|value| match value {
+            array::RuntimeValue::Ptr(handle) => {
+                let text = format::find_text(runtime, *handle)?;
+                Some(text.value.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        rendered,
+        vec!["alpha".to_owned(), "beta".to_owned()],
+        "argumenta list must carry the exact argv[1..] text elements"
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn arguments_empty_without_process_args() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(1, std::ptr::null(), &raw mut context) };
+    assert_eq!(status, STATUS_INVALID_ARGUMENT, "argc>0 with null argv rejects");
+    let status = unsafe { __faber_rt_v1_init(0, std::ptr::null(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+    let result = unsafe { __faber_rt_v1_arguments(context) };
+    assert!(result.status.is_ok());
+    let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+    let array = array::find_array(runtime, result.value).expect("empty arguments handle");
+    assert!(array.values.is_empty());
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
 fn invalid_slice_fails_closed() {
     let status = unsafe {
         __faber_rt_v1_write_nota_text(

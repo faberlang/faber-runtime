@@ -9,7 +9,7 @@ use faber::{display_bivalens, display_fractus};
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 
-fn ffi_ptr_result(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrResultV1 {
+pub(super) fn ffi_ptr_result(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrResultV1 {
     panic::catch_unwind(AssertUnwindSafe(operation))
         .unwrap_or(FaberRtPtrResultV1::failure(STATUS_PANIC))
 }
@@ -306,6 +306,23 @@ pub(super) fn store_text(context: *mut FaberRtContextV1, value: String) -> Faber
     let handle = text.handle();
     runtime.texts.push(text);
     FaberRtPtrResultV1::success(handle)
+}
+
+/// Store one arena-owned text value and return its opaque handle.
+///
+/// # Safety
+///
+/// `context` must be non-null and a live runtime context.
+pub(super) unsafe fn store_text_owned(context: *mut FaberRtContextV1, value: String) -> *mut c_void {
+    let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
+    let slice = FaberRtSliceV1 {
+        data: value.as_ptr(),
+        len: value.len() as u64,
+    };
+    let text = super::StableBox::new(RuntimeText { slice, value });
+    let handle = text.handle();
+    runtime.texts.push(text);
+    handle
 }
 
 fn render_template(template: &str, args: &[String]) -> String {
