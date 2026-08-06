@@ -67,7 +67,9 @@ pub unsafe extern "C" fn __faber_rt_v1_format_f64(
     template: FaberRtSliceV1,
     value: f64,
 ) -> FaberRtPtrResultV1 {
-    format_scalar_values(context, template, &[value.to_string()])
+    // Scalar float display parity with the Rust oracle: integral floats keep
+    // the `.0` decimal marker (display_fractus), matching `__faber_rt_v1_text_f64`.
+    format_scalar_values(context, template, &[display_fractus(value)])
 }
 
 #[no_mangle]
