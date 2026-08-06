@@ -23,6 +23,13 @@ fn gradient_symbols_cohere_with_radix_host_abi() {
 }
 
 #[test]
+fn cursor_stream_symbol_coheres_with_radix_host_abi() {
+    // P5: the shared cursor-stream row mirrors the radix-host-abi table.
+    assert_eq!(radix_host_abi::SYMBOL_CURSOR_STREAM, SYMBOL_CURSOR_STREAM,);
+    assert_eq!(SYMBOL_CURSOR_STREAM, "__faber_rt_v1_cursor_stream");
+}
+
+#[test]
 fn solum_symbols_cohere_with_radix_host_abi() {
     assert_eq!(
         radix_host_abi::SYMBOL_SOLUM_READ_TEXT,

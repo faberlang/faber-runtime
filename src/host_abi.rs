@@ -177,6 +177,12 @@ pub const SYMBOL_REGEX_FROM_ASCII: &str = "__faber_rt_v1_regex_from_ascii";
 pub const SYMBOL_REGEX_GET_TEXT: &str = "__faber_rt_v1_regex_get_text";
 pub const SYMBOL_REGEX_LITERAL_1_PTR_TO_PTR: &str = "__faber_rt_v1_regex_literal_1_ptr_to_ptr";
 pub const SYMBOL_READ_LINE_0_TO_PTR: &str = "__faber_rt_v1_read_line_0_to_ptr";
+// P5 (promotion packet cursor-stream-abi): mirror of the shared
+// `cursor_stream` materialization row (radix-host-abi owns the value). One
+// fixed symbol whose signature carries the generator function id; the host
+// invokes the generator to completion and collects its `cede` yields into a
+// `lista<T>`. See `crate::cursor_stream` for the host binding.
+pub const SYMBOL_CURSOR_STREAM: &str = "__faber_rt_v1_cursor_stream";
 pub const SYMBOL_INTERVAL_NEW: &str = "__faber_rt_v1_interval_new";
 pub const SYMBOL_INTERVAL_INTERSECT: &str = "__faber_rt_v1_interval_intersect";
 pub const SYMBOL_INTERVAL_UNION: &str = "__faber_rt_v1_interval_union";

@@ -9,6 +9,7 @@ mod autograd;
 pub mod bound_plan;
 pub mod capability;
 pub mod cpu_oracle;
+pub mod cursor_stream;
 pub mod decoder_ops;
 pub mod dequant;
 pub mod device;
@@ -41,6 +42,7 @@ pub mod valor;
 
 pub use arena::{Arena, ArenaHandle};
 pub use ascii::Ascii;
+pub use cursor_stream::{materialize_cursor_stream, CursorStreamSink};
 pub use display::{
     display_bivalens, display_fractus, display_option, display_option_bivalens,
     display_option_fractus, display_option_vacuum, display_text_payload, display_valor,
