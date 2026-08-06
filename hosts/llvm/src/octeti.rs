@@ -25,6 +25,59 @@ fn runtime(context: *mut FaberRtContextV1) -> Option<&'static mut RuntimeContext
     (!context.is_null()).then(|| unsafe { &mut *context.cast::<RuntimeContext>() })
 }
 
+/// The byte payload for an `octeti` handle.
+///
+/// `octeti` is type-identical to `lista<numerus<u8>>` (`octeti/unify.fab`:
+/// "representation-identical and bidirectionally assignable"), and the
+/// cross-assignment crosses the arena as a plain handle — the constructed
+/// `lista<numerus<u8>>` handle is stored unchanged into the `octeti` slot.
+/// The octeti ABI therefore resolves the handle through EITHER the octeti
+/// list or a `VALUE_KIND_U8` array list.
+fn octeti_bytes<'a>(
+    runtime: &'a RuntimeContext,
+    handle: *mut c_void,
+) -> Option<Vec<u8>> {
+    if let Some(bytes) = find_octeti(runtime, handle) {
+        return Some(bytes.clone());
+    }
+    let array = super::array::find_array(runtime, handle)?;
+    if array.kind != VALUE_KIND_U8 {
+        return None;
+    }
+    let mut out = Vec::with_capacity(array.values.len());
+    for value in &array.values {
+        match value {
+            super::array::RuntimeValue::U8(byte) => out.push(*byte),
+            _ => return None,
+        }
+    }
+    Some(out)
+}
+
+/// Append one byte to an `octeti` handle (octeti arena or U8 array arena).
+fn octeti_push(
+    runtime: &mut RuntimeContext,
+    handle: *mut c_void,
+    byte: u8,
+) -> bool {
+    if let Some(bytes) = runtime
+        .octeti
+        .iter_mut()
+        .find(|bytes| std::ptr::eq(bytes.as_ref(), handle.cast()))
+    {
+        bytes.push(byte);
+        return true;
+    }
+    let Some(array) = super::array::find_array_mut(runtime, handle) else {
+        return false;
+    };
+    if array.kind != VALUE_KIND_U8 {
+        return false;
+    }
+    array.values.push(super::array::RuntimeValue::U8(byte));
+    true
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_octeti_append(
     context: *mut FaberRtContextV1,
@@ -35,14 +88,9 @@ pub unsafe extern "C" fn __faber_rt_v1_octeti_append(
         let Some(runtime) = runtime(context) else {
             return STATUS_INVALID_ARGUMENT;
         };
-        let Some(bytes) = runtime
-            .octeti
-            .iter_mut()
-            .find(|bytes| std::ptr::eq(bytes.as_ref(), handle.cast()))
-        else {
+        if !octeti_push(runtime, handle, value) {
             return STATUS_INVALID_ARGUMENT;
-        };
-        bytes.push(value);
+        }
         STATUS_OK
     })
 }
@@ -59,7 +107,7 @@ pub unsafe extern "C" fn __faber_rt_v1_octeti_get(
         };
         let value = usize::try_from(index)
             .ok()
-            .and_then(|index| find_octeti(runtime, handle)?.get(index).copied());
+            .and_then(|index| octeti_bytes(runtime, handle)?.get(index).copied());
         store_option(runtime, VALUE_KIND_U8, value.map(RuntimeValue::U8))
     })
 }
@@ -75,7 +123,7 @@ pub unsafe extern "C" fn __faber_rt_v1_octeti_length(
             return STATUS_INVALID_ARGUMENT;
         };
         let Some(length) =
-            find_octeti(runtime, handle).and_then(|bytes| i64::try_from(bytes.len()).ok())
+            octeti_bytes(runtime, handle).and_then(|bytes| i64::try_from(bytes.len()).ok())
         else {
             return STATUS_INVALID_ARGUMENT;
         };

@@ -379,7 +379,9 @@ pub(super) fn valid_kind(kind: FaberRtValueKindV1) -> bool {
     )
 }
 
-unsafe fn runtime_mut<'a>(context: *mut FaberRtContextV1) -> Option<&'a mut RuntimeContext> {
+pub(super) unsafe fn runtime_mut<'a>(
+    context: *mut FaberRtContextV1,
+) -> Option<&'a mut RuntimeContext> {
     (!context.is_null()).then(|| unsafe { &mut *context.cast::<RuntimeContext>() })
 }
 
@@ -391,7 +393,7 @@ pub(super) fn find_array(runtime: &RuntimeContext, handle: *mut c_void) -> Optio
         .map(super::StableBox::as_ref)
 }
 
-fn find_array_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&mut RuntimeArray> {
+pub(super) fn find_array_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&mut RuntimeArray> {
     runtime
         .arrays
         .iter_mut()

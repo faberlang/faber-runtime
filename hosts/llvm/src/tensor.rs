@@ -18,6 +18,7 @@ use faber::tensor::{
 };
 use faber::Tensor;
 use std::ffi::c_void;
+use std::io::Write;
 use std::panic::{self, AssertUnwindSafe};
 
 pub(super) struct RuntimeTensor {
@@ -41,9 +42,12 @@ fn runtime(context: *mut FaberRtContextV1) -> Option<&'static mut RuntimeContext
 
 /// Element kinds admitted by the LLVM host tensor ABI.
 ///
-/// Keep this set aligned with `apply_binary` and `tensor_sum_value`: callers
-/// should not be able to construct a tensor kind that fails only at the first
-/// arithmetic or reduction boundary.
+/// Keep the numeric half of this set aligned with `apply_binary` and
+/// `tensor_sum_value`: callers should not be able to construct a tensor kind
+/// that fails only at the first arithmetic or reduction boundary. `PTR`
+/// (textus and other universal-container elements) is admitted as a storage
+/// carrier only — arithmetic on non-numeric element types is rejected at
+/// typecheck, so PTR tensors never reach the arithmetic boundary.
 fn tensor_kind(kind: FaberRtValueKindV1) -> bool {
     matches!(
         kind,
@@ -51,6 +55,9 @@ fn tensor_kind(kind: FaberRtValueKindV1) -> bool {
             | faber::host_abi::VALUE_KIND_F64
             | faber::host_abi::VALUE_KIND_I32
             | faber::host_abi::VALUE_KIND_I64
+            | faber::host_abi::VALUE_KIND_U8
+            | faber::host_abi::VALUE_KIND_U16
+            | faber::host_abi::VALUE_KIND_PTR
     )
 }
 
@@ -60,6 +67,9 @@ fn default_value(kind: FaberRtValueKindV1) -> Option<RuntimeValue> {
         faber::host_abi::VALUE_KIND_I64 => RuntimeValue::I64(0),
         faber::host_abi::VALUE_KIND_F32 => RuntimeValue::F32(0.0),
         faber::host_abi::VALUE_KIND_F64 => RuntimeValue::F64(0.0),
+        faber::host_abi::VALUE_KIND_U8 => RuntimeValue::U8(0),
+        faber::host_abi::VALUE_KIND_U16 => RuntimeValue::U16(0),
+        faber::host_abi::VALUE_KIND_PTR => RuntimeValue::Ptr(std::ptr::null_mut()),
         _ => return None,
     })
 }
@@ -95,18 +105,37 @@ fn find_tensor_mut(
         .map(super::StableBox::as_mut)
 }
 
+/// Read a shape or index vector from an arena integer `lista`.
+///
+/// Index vectors follow the tensor ABI contract: any i64-fit integer list type
+/// is accepted (`lista<u32>`, `lista<numerus<i32>>`, …) and widened to the i64
+/// carrier here — the emitter may construct the vector in its natural element
+/// width. Returns `None` for non-integer arrays and for cells that do not fit
+/// the i64 carrier.
 fn shape_from_array(array: &RuntimeArray) -> Option<Vec<i64>> {
-    if array.kind != VALUE_KIND_I64 {
-        return None;
-    }
     array
         .values
         .iter()
-        .map(|value| match value {
-            RuntimeValue::I64(dim) => Some(*dim),
-            _ => None,
-        })
+        .map(integer_cell_as_i64)
         .collect()
+}
+
+/// Convert an integer `RuntimeValue` cell to its `i64` carrier, or `None` for
+/// non-integer cells and `u64` cells at or above 2^63 (the index-vector
+/// contract requires i64-fit widths).
+fn integer_cell_as_i64(value: &RuntimeValue) -> Option<i64> {
+    Some(match value {
+        RuntimeValue::I1(value) => i64::from(*value),
+        RuntimeValue::I8(value) => i64::from(*value),
+        RuntimeValue::I16(value) => i64::from(*value),
+        RuntimeValue::I32(value) => i64::from(*value),
+        RuntimeValue::I64(value) => *value,
+        RuntimeValue::U8(value) => i64::from(*value),
+        RuntimeValue::U16(value) => i64::from(*value),
+        RuntimeValue::U32(value) => i64::from(*value),
+        RuntimeValue::U64(value) => i64::try_from(*value).ok()?,
+        _ => return None,
+    })
 }
 
 fn validate_shape(shape: &[i64]) -> Result<usize, &'static str> {
@@ -207,6 +236,14 @@ pub unsafe extern "C" fn __faber_rt_v1_tensor_from_flat(
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         };
         if !tensor_shape_has_element_count(&shape, data_array.values.len()) {
+            // L19 (tensor/method-errors): the Rust oracle hard-errors with this
+            // exact message on a structa count/shape mismatch; the host must
+            // reproduce it on stderr (the returned failure status latches the
+            // process exit code).
+            let _ = writeln!(
+                std::io::stderr(),
+                "tensor structa element count does not match shape"
+            );
             return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
         }
         let data = data_array.values.clone();
@@ -545,6 +582,28 @@ fn apply_binary(
             };
             Some(from_tensor_i32(&result))
         }
+        faber::host_abi::VALUE_KIND_U8 => {
+            let lhs = to_tensor_u8(left)?;
+            let rhs = to_tensor_u8(right)?;
+            let result = match op {
+                BinaryOp::Add => lhs.addita(&rhs).ok()?,
+                BinaryOp::Sub => lhs.subtrahe(&rhs).ok()?,
+                BinaryOp::Mul => lhs.multiplica(&rhs).ok()?,
+                BinaryOp::MatMul => lhs.matmul(&rhs).ok()?,
+            };
+            Some(from_tensor_u8(&result))
+        }
+        faber::host_abi::VALUE_KIND_U16 => {
+            let lhs = to_tensor_u16(left)?;
+            let rhs = to_tensor_u16(right)?;
+            let result = match op {
+                BinaryOp::Add => lhs.addita(&rhs).ok()?,
+                BinaryOp::Sub => lhs.subtrahe(&rhs).ok()?,
+                BinaryOp::Mul => lhs.multiplica(&rhs).ok()?,
+                BinaryOp::MatMul => lhs.matmul(&rhs).ok()?,
+            };
+            Some(from_tensor_u16(&result))
+        }
         _ => None,
     }
 }
@@ -637,6 +696,52 @@ fn from_tensor_i32(tensor: &Tensor<i32>) -> (Vec<i64>, Vec<RuntimeValue>) {
             .planata()
             .into_iter()
             .map(RuntimeValue::I32)
+            .collect(),
+    )
+}
+
+fn to_tensor_u8(tensor: &RuntimeTensor) -> Option<Tensor<u8>> {
+    let data = tensor
+        .data
+        .iter()
+        .map(|value| match value {
+            RuntimeValue::U8(value) => Some(*value),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Tensor::structa(data, &tensor.shape).ok()
+}
+
+fn from_tensor_u8(tensor: &Tensor<u8>) -> (Vec<i64>, Vec<RuntimeValue>) {
+    (
+        tensor.magnitudines(),
+        tensor
+            .planata()
+            .into_iter()
+            .map(RuntimeValue::U8)
+            .collect(),
+    )
+}
+
+fn to_tensor_u16(tensor: &RuntimeTensor) -> Option<Tensor<u16>> {
+    let data = tensor
+        .data
+        .iter()
+        .map(|value| match value {
+            RuntimeValue::U16(value) => Some(*value),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Tensor::structa(data, &tensor.shape).ok()
+}
+
+fn from_tensor_u16(tensor: &Tensor<u16>) -> (Vec<i64>, Vec<RuntimeValue>) {
+    (
+        tensor.magnitudines(),
+        tensor
+            .planata()
+            .into_iter()
+            .map(RuntimeValue::U16)
             .collect(),
     )
 }
@@ -740,6 +845,8 @@ fn tensor_sum_value(tensor: &RuntimeTensor) -> Option<RuntimeValue> {
         faber::host_abi::VALUE_KIND_F64 => Some(RuntimeValue::F64(to_tensor_f64(tensor)?.summa())),
         faber::host_abi::VALUE_KIND_I64 => Some(RuntimeValue::I64(to_tensor_i64(tensor)?.summa())),
         faber::host_abi::VALUE_KIND_I32 => Some(RuntimeValue::I32(to_tensor_i32(tensor)?.summa())),
+        faber::host_abi::VALUE_KIND_U8 => Some(RuntimeValue::U8(to_tensor_u8(tensor)?.summa())),
+        faber::host_abi::VALUE_KIND_U16 => Some(RuntimeValue::U16(to_tensor_u16(tensor)?.summa())),
         _ => None,
     }
 }

@@ -1,5 +1,6 @@
 mod array;
 mod array_numeric;
+mod cli;
 mod collection_map;
 mod convert;
 mod format;
@@ -9,6 +10,7 @@ mod instans;
 mod intervallum;
 mod octeti;
 mod option;
+mod provider;
 mod regex_rt;
 mod solum;
 mod sparsa;
@@ -29,7 +31,8 @@ use array::{
 use array_numeric::{__faber_rt_v1_array_sort, __faber_rt_v1_array_sum};
 #[cfg(test)]
 use collection_map::{
-    __faber_rt_v1_array_from_set, __faber_rt_v1_map_contains, __faber_rt_v1_map_delete,
+    __faber_rt_v1_aggregate_set_index_ptr_i64, __faber_rt_v1_array_from_set,
+    __faber_rt_v1_map_contains, __faber_rt_v1_map_delete, __faber_rt_v1_map_get,
     __faber_rt_v1_map_is_empty, __faber_rt_v1_map_keys, __faber_rt_v1_map_length,
     __faber_rt_v1_map_new, __faber_rt_v1_map_option, __faber_rt_v1_map_put,
     __faber_rt_v1_map_values, __faber_rt_v1_set_add, __faber_rt_v1_set_contains,
@@ -41,10 +44,11 @@ use collection_map::{
 use collection_map::{RuntimeMap, RuntimeSet};
 #[cfg(test)]
 use convert::{
-    __faber_rt_v1_valor_ascii, __faber_rt_v1_valor_f64, __faber_rt_v1_valor_get_ascii,
-    __faber_rt_v1_valor_get_f64, __faber_rt_v1_valor_get_i1, __faber_rt_v1_valor_get_i64,
-    __faber_rt_v1_valor_get_nihil, __faber_rt_v1_valor_get_text, __faber_rt_v1_valor_i1,
-    __faber_rt_v1_valor_i64, __faber_rt_v1_valor_nihil, __faber_rt_v1_valor_text,
+    __faber_rt_v1_convert_runtime_1_ptr_to_ptr, __faber_rt_v1_valor_ascii,
+    __faber_rt_v1_valor_f64, __faber_rt_v1_valor_get_ascii, __faber_rt_v1_valor_get_f64,
+    __faber_rt_v1_valor_get_i1, __faber_rt_v1_valor_get_i64, __faber_rt_v1_valor_get_nihil,
+    __faber_rt_v1_valor_get_text, __faber_rt_v1_valor_i1, __faber_rt_v1_valor_i64,
+    __faber_rt_v1_valor_nihil, __faber_rt_v1_valor_text,
 };
 #[cfg(not(test))]
 use faber::host_abi::FaberRtExitV1;
@@ -66,11 +70,11 @@ use faber::host_abi::{
 use faber::{display_bivalens, display_fractus, Valor};
 #[cfg(test)]
 use format::{
-    __faber_rt_v1_format_f64, __faber_rt_v1_format_i1, __faber_rt_v1_format_i64,
-    __faber_rt_v1_format_i64_i64, __faber_rt_v1_format_i64_i64_i64, __faber_rt_v1_format_text,
-    __faber_rt_v1_format_text_i64, __faber_rt_v1_format_text_i64_i1,
-    __faber_rt_v1_format_text_text, __faber_rt_v1_text_f64, __faber_rt_v1_text_i1,
-    __faber_rt_v1_text_i64, __faber_rt_v1_text_length,
+    __faber_rt_v1_format_1_ptr_to_ptr, __faber_rt_v1_format_f32, __faber_rt_v1_format_f64,
+    __faber_rt_v1_format_i1, __faber_rt_v1_format_i64, __faber_rt_v1_format_i64_i64,
+    __faber_rt_v1_format_i64_i64_i64, __faber_rt_v1_format_text, __faber_rt_v1_format_text_i64,
+    __faber_rt_v1_format_text_i64_i1, __faber_rt_v1_format_text_text, __faber_rt_v1_text_f64,
+    __faber_rt_v1_text_i1, __faber_rt_v1_text_i64, __faber_rt_v1_text_length,
 };
 use format::{text_value, RuntimeText};
 #[cfg(test)]
@@ -82,8 +86,10 @@ use gradient::{
 };
 #[cfg(test)]
 use instans::{
+    __faber_rt_v1_compare_gt_2_ptr_ptr_to_i1, __faber_rt_v1_compare_gte_2_ptr_ptr_to_i1,
+    __faber_rt_v1_compare_lt_2_ptr_ptr_to_i1, __faber_rt_v1_compare_lte_2_ptr_ptr_to_i1,
     __faber_rt_v1_instans_from_text, __faber_rt_v1_instans_from_valor,
-    __faber_rt_v1_instans_get_text, __faber_rt_v1_instans_retag,
+    __faber_rt_v1_instans_get_text, __faber_rt_v1_instans_retag, __faber_rt_v1_tempus_nunc,
 };
 #[cfg(test)]
 use intervallum::{
@@ -102,12 +108,26 @@ use octeti::{
 use option::RuntimeOption;
 #[cfg(test)]
 use option::{
+    __faber_rt_v1_diagnostic_mone_option, __faber_rt_v1_diagnostic_nota_option,
+    __faber_rt_v1_diagnostic_scribe_option, __faber_rt_v1_diagnostic_vide_option,
     __faber_rt_v1_option_get, __faber_rt_v1_option_get_or, __faber_rt_v1_option_is_present,
-    __faber_rt_v1_option_none, __faber_rt_v1_option_some,
+    __faber_rt_v1_option_none, __faber_rt_v1_option_some, __faber_rt_v1_option_unwrap_ptr,
+};
+#[cfg(test)]
+use provider::{
+    __faber_rt_v1_json_pange, __faber_rt_v1_json_solve, __faber_rt_v1_json_tempta,
+    __faber_rt_v1_toml_solve, __faber_rt_v1_valor_cape,
 };
 #[cfg(test)]
 use regex_rt::{
-    __faber_rt_v1_regex_from_ascii, __faber_rt_v1_regex_from_text, __faber_rt_v1_regex_get_text,
+    __faber_rt_v1_regex_from_ascii, __faber_rt_v1_regex_from_text,
+    __faber_rt_v1_regex_get_text, __faber_rt_v1_regex_literal_1_ptr_to_ptr,
+};
+#[cfg(test)]
+use solum::{
+    __faber_rt_v1_read_line_0_to_ptr, __faber_rt_v1_solum_read_bytes,
+    __faber_rt_v1_solum_read_lines, __faber_rt_v1_solum_read_text,
+    __faber_rt_v1_solum_write_text,
 };
 use sparsa::RuntimeSparse;
 #[cfg(test)]
@@ -115,7 +135,7 @@ use sparsa::{
     __faber_rt_v1_sparse_densify, __faber_rt_v1_sparse_from_tensor, __faber_rt_v1_sparse_get,
     __faber_rt_v1_sparse_new, __faber_rt_v1_sparse_nonzero, __faber_rt_v1_sparse_set,
 };
-use std::ffi::{c_char, c_int};
+use std::ffi::{c_char, c_int, c_void};
 use std::fmt::Display;
 use std::io::{self, Write};
 use std::ops::{Deref, DerefMut};
@@ -203,7 +223,12 @@ impl<T: ?Sized + Unpin> DerefMut for StableBox<T> {
 }
 
 struct RuntimeContext {
-    _arguments: Vec<Vec<u8>>,
+    /// Process argumenta captured at `__faber_rt_v1_init`, excluding the host
+    /// argv[0] program path (Faber argumenta semantics: `std::env::args()`
+    /// parity).
+    arguments: Vec<Vec<u8>>,
+    /// Typed CLI value table produced by `__faber_rt_v1_cli_parse` (S8.2).
+    cli_table: Option<StableBox<cli::RuntimeCliTable>>,
     texts: Vec<StableBox<RuntimeText>>,
     valors: Vec<StableBox<Valor>>,
     ascii: Vec<StableBox<[u8]>>,
@@ -220,6 +245,7 @@ struct RuntimeContext {
     gradient_views: Vec<StableBox<gradient::GradientViewV1>>,
     regexes: Vec<StableBox<faber::Regex>>,
     intervals: Vec<StableBox<faber::Intervallum<i64>>>,
+    union_boxes: Vec<StableBox<*mut std::ffi::c_void>>,
 }
 
 /// Initialize one process-lifetime LLVM host context.
@@ -242,8 +268,11 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
         }
         // SAFETY: `argc` is checked non-negative above (line 229).
         let argc = usize::try_from(argc).unwrap_or(0);
-        let mut arguments = Vec::with_capacity(argc);
-        for index in 0..argc {
+        // Faber argumenta semantics: argv excludes the host argv[0] program
+        // path (the Rust oracle's `std::env::args()` excludes it too), so the
+        // captured context holds exactly the program arguments.
+        let mut arguments = Vec::with_capacity(argc.saturating_sub(1));
+        for index in 1..argc {
             let value = *argv.add(index);
             if value.is_null() {
                 return STATUS_INVALID_ARGUMENT;
@@ -251,7 +280,8 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             arguments.push(std::ffi::CStr::from_ptr(value).to_bytes().to_vec());
         }
         let context = Box::new(RuntimeContext {
-            _arguments: arguments,
+            arguments,
+            cli_table: None,
             texts: Vec::new(),
             valors: Vec::new(),
             ascii: Vec::new(),
@@ -268,6 +298,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             gradient_views: Vec::new(),
             regexes: Vec::new(),
             intervals: Vec::new(),
+            union_boxes: Vec::new(),
         });
         *out_context = Box::into_raw(context).cast();
         STATUS_OK
@@ -290,6 +321,33 @@ pub unsafe extern "C" fn __faber_rt_v1_shutdown(context: *mut FaberRtContextV1) 
         drop(io::stdout().flush());
         drop(io::stderr().flush());
     })));
+}
+
+/// Return the process argumenta captured at [`__faber_rt_v1_init`] as an
+/// arena-owned `lista<textus>` handle.
+///
+/// Faber argumenta semantics: the list excludes the host argv[0] program path
+/// (the Rust oracle's `std::env::args()` excludes it too), so the returned
+/// elements are exactly the program arguments the Rust lane observes.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_arguments(
+    context: *mut FaberRtContextV1,
+) -> faber::host_abi::FaberRtPtrResultV1 {
+    format::ffi_ptr_result(|| {
+        let Some(runtime) = (unsafe { array::runtime_mut(context) }) else {
+            return faber::host_abi::FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        };
+        let mut values = Vec::with_capacity(runtime.arguments.len());
+        for argument in &runtime.arguments {
+            let text = format::store_text_owned(context, String::from_utf8_lossy(argument).into_owned());
+            values.push(array::RuntimeValue::Ptr(text));
+        }
+        array::store_array(runtime, faber::host_abi::VALUE_KIND_PTR, values)
+    })
 }
 
 /// Write one `nota` text payload followed by its canonical newline.
@@ -446,17 +504,165 @@ fn unsupported_opaque_diagnostic(context: *mut FaberRtContextV1) -> FaberRtStatu
     }
 }
 
-/// Report an unsupported opaque `nota` value.
+/// Render an opaque handle the LLVM host can display: an arena-owned `lista`
+/// handle (numeric or text elements), an `octeti` byte payload, a `valor`, a
+/// `tabula`, or a `copia`. Each renders in the Rust oracle's Debug shape
+/// (`[1, 2, 3]` / `["prima", "secunda"]` / `[112, 114, …]` /
+/// `Json(Tabula({...}))` / `{1, 2, 3}`). Returns `None` for unrecognized or
+/// unsupported handles (fail-closed).
+pub(crate) fn opaque_value_text(runtime: &RuntimeContext, handle: *mut c_void) -> Option<String> {
+    if let Some(array) = array::find_array(runtime, handle) {
+        let mut rendered = Vec::with_capacity(array.values.len());
+        for element in &array.values {
+            rendered.push(opaque_element_text(runtime, array.kind, element)?);
+        }
+        return Some(format!("[{}]", rendered.join(", ")));
+    }
+    if let Some(bytes) = valor_aggregate::find_octeti(runtime, handle) {
+        return Some(format!("{bytes:?}"));
+    }
+    if let Some(instans) = instans::find(runtime, handle) {
+        // L28 (ab91f49f): a raw `instans` handle in a grouped multi-arg nota
+        // renders its Rust-oracle Debug shape — the same carrier
+        // `__faber_rt_v1_instans_display` uses for the per-argument path.
+        return Some(format!("{instans:?}"));
+    }
+    if let Some(valor) = convert::find_valor(runtime, handle) {
+        return Some(match valor {
+            // `bytes ↦ valor` boxes the payload; the Rust oracle renders the
+            // equivalent `Valor::Lista` of numeri as the byte-list Debug shape,
+            // so an octeti payload renders `[222, 173]` rather than
+            // `display_valor`'s `<n bytes>` placeholder.
+            Valor::Octeti(bytes) => format!("{bytes:?}"),
+            other => faber::display_valor(other),
+        });
+    }
+    if let Some(map) = collection_map::find_map(runtime, handle) {
+        // JSON-literal `tabula` values render in the Rust oracle's derived
+        // `Json(Valor::Tabula({...}))` Debug shape. Non-text keys fail closed.
+        let mut entries = std::collections::BTreeMap::new();
+        for (key, value) in &map.entries {
+            let Some(Valor::Textus(key)) =
+                valor_aggregate::runtime_value_to_valor(runtime, map.key_kind, *key)
+            else {
+                return None;
+            };
+            let Some(value) =
+                valor_aggregate::runtime_value_to_valor(runtime, map.value_kind, *value)
+            else {
+                return None;
+            };
+            entries.insert(key, value);
+        }
+        let valor = Valor::Tabula(entries);
+        return Some(format!("Json({valor:?})"));
+    }
+    if let Some(set) = collection_map::find_set(runtime, handle) {
+        // `copia` values render `{1, 2, 3}` in stored order (the Rust oracle's
+        // `HashSet` Debug order is per-instance nondeterministic, so no
+        // byte-exact order is guaranteed).
+        let mut rendered = Vec::with_capacity(set.values.len());
+        for element in &set.values {
+            rendered.push(opaque_element_text(runtime, set.kind, element)?);
+        }
+        return Some(format!("{{{}}}", rendered.join(", ")));
+    }
+    None
+}
+
+/// Render one `lista`/`copia` element in the Rust oracle's Debug shape.
+fn opaque_element_text(
+    runtime: &RuntimeContext,
+    kind: faber::host_abi::FaberRtValueKindV1,
+    element: &array::RuntimeValue,
+) -> Option<String> {
+    Some(match (kind, element) {
+        (faber::host_abi::VALUE_KIND_PTR, array::RuntimeValue::Ptr(element_handle)) => {
+            // Text payload (arena handle or static text-literal descriptor)
+            // quotes it (`"prima"`), matching `Vec<String>` Debug shape.
+            let payload = format::find_text(runtime, *element_handle)
+                .map(|text| text.value.clone())
+                .or_else(|| format::text_value(element_handle.cast()));
+            format!("{:?}", payload?)
+        }
+        (faber::host_abi::VALUE_KIND_I1, array::RuntimeValue::I1(value)) => {
+            format!("{:?}", *value != 0)
+        }
+        (faber::host_abi::VALUE_KIND_I8, array::RuntimeValue::I8(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_I16, array::RuntimeValue::I16(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_I32, array::RuntimeValue::I32(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_I64, array::RuntimeValue::I64(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_U8, array::RuntimeValue::U8(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_U16, array::RuntimeValue::U16(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_U32, array::RuntimeValue::U32(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_U64, array::RuntimeValue::U64(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_F32, array::RuntimeValue::F32(value)) => {
+            display_fractus(*value)
+        }
+        (faber::host_abi::VALUE_KIND_F64, array::RuntimeValue::F64(value)) => {
+            display_fractus(*value)
+        }
+        _ => return None,
+    })
+}
+
+/// Render an opaque `nota`/`mone` handle the LLVM host can display (see
+/// [`opaque_value_text`]). Returns `None` for unrecognized or unsupported
+/// handles (fail-closed).
+fn opaque_diagnostic_text(runtime: &RuntimeContext, handle: *mut c_void) -> Option<String> {
+    opaque_value_text(runtime, handle)
+}
+
+/// Render an opaque `nota`/`mone` value (see [`opaque_diagnostic_text`]).
 ///
 /// # Safety
 ///
-/// `context` must be null or a live runtime context. `_value` is ignored.
+/// `context` must be null or a live runtime context. `value` is only used for
+/// pointer-equality arena lookups; it is never dereferenced directly.
+fn render_opaque_diagnostic(
+    context: *mut FaberRtContextV1,
+    stderr: bool,
+    value: *const u8,
+) -> FaberRtStatusV1 {
+    if context.is_null() {
+        return STATUS_INVALID_ARGUMENT;
+    }
+    let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+    let handle = value.cast_mut().cast::<c_void>();
+    let Some(text) = opaque_diagnostic_text(runtime, handle) else {
+        return unsupported_opaque_diagnostic(context);
+    };
+    write_diagnostic(context, stderr, text)
+}
+
+/// Report an opaque `nota` value (`lista<textus>` / `octeti` when displayable).
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context. `value` is only used for
+/// pointer-equality arena lookups.
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_ptr(
     context: *mut FaberRtContextV1,
-    _value: *const u8,
+    value: *const u8,
 ) -> FaberRtStatusV1 {
-    unsupported_opaque_diagnostic(context)
+    render_opaque_diagnostic(context, false, value)
 }
 
 /// Report a text `nota` value.
@@ -496,6 +702,19 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_ascii(
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i64(
     context: *mut FaberRtContextV1,
     value: i64,
+) -> FaberRtStatusV1 {
+    write_diagnostic(context, false, value)
+}
+
+/// Report an unsigned 64-bit `nota` value.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_u64(
+    context: *mut FaberRtContextV1,
+    value: u64,
 ) -> FaberRtStatusV1 {
     write_diagnostic(context, false, value)
 }
@@ -573,9 +792,9 @@ pub unsafe extern "C" fn __faber_rt_v1_diagnostic_nota_i32(
 #[no_mangle]
 pub unsafe extern "C" fn __faber_rt_v1_diagnostic_mone_ptr(
     context: *mut FaberRtContextV1,
-    _value: *const u8,
+    value: *const u8,
 ) -> FaberRtStatusV1 {
-    unsupported_opaque_diagnostic(context)
+    render_opaque_diagnostic(context, true, value)
 }
 
 /// Report a text `mone` value.
@@ -719,6 +938,24 @@ pub unsafe extern "C" fn __faber_rt_v1_fatal_opaque(
 
 fn ffi_status(operation: impl FnOnce() -> FaberRtStatusV1) -> FaberRtStatusV1 {
     panic::catch_unwind(AssertUnwindSafe(operation)).unwrap_or(STATUS_PANIC)
+}
+
+/// Panic on checked-arithmetic overflow with the Rust oracle's exact message
+/// (`numerus overflow`, from the generated `checked_add(…).expect("numerus
+/// overflow")`). The debug-built Rust lane panics on `numerus` overflow, so
+/// the LLVM host must too (L19 `operatores/numerus-overflow.fab`); wrapping
+/// stays on the explicit `modulus<W>` modular-word type. Never returns.
+///
+/// # Safety
+///
+/// `context` must be null or a live runtime context.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_numerus_overflow(context: *mut FaberRtContextV1) -> ! {
+    if !context.is_null() {
+        drop(io::stderr().write_all(b"numerus overflow\n"));
+        drop(io::stderr().flush());
+    }
+    std::process::abort()
 }
 
 #[cfg(not(test))]

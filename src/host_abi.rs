@@ -16,16 +16,22 @@ pub const SYMBOL_FORMAT_I1: &str = "__faber_rt_v1_format_i1";
 pub const SYMBOL_FORMAT_I64_I64: &str = "__faber_rt_v1_format_i64_i64";
 pub const SYMBOL_FORMAT_I64_I64_I64: &str = "__faber_rt_v1_format_i64_i64_i64";
 pub const SYMBOL_FORMAT_F64: &str = "__faber_rt_v1_format_f64";
+// L28 (ab91f49f, W16): f32 scalar format carrier mirror — the emitter's
+// FormatString f32 display ABI (`display_fractus` keeps f32 precision).
+pub const SYMBOL_FORMAT_F32: &str = "__faber_rt_v1_format_f32";
 pub const SYMBOL_FORMAT_TEXT: &str = "__faber_rt_v1_format_text";
 pub const SYMBOL_FORMAT_TEXT_TEXT: &str = "__faber_rt_v1_format_text_text";
 pub const SYMBOL_FORMAT_TEXT_I64: &str = "__faber_rt_v1_format_text_i64";
 pub const SYMBOL_FORMAT_I64_TEXT: &str = "__faber_rt_v1_format_i64_text";
 pub const SYMBOL_FORMAT_TEXT_TEXT_TEXT: &str = "__faber_rt_v1_format_text_text_text";
 pub const SYMBOL_FORMAT_TEXT_I64_I1: &str = "__faber_rt_v1_format_text_i64_i1";
+pub const SYMBOL_FORMAT_1_PTR_TO_PTR: &str = "__faber_rt_v1_format_1_ptr_to_ptr";
 pub const SYMBOL_TEXT_LENGTH: &str = "__faber_rt_v1_text_length";
 pub const SYMBOL_TEXT_CONCAT: &str = "__faber_rt_v1_text_concat";
 pub const SYMBOL_TEXT_EQ: &str = "__faber_rt_v1_text_eq";
 pub const SYMBOL_TEXT_NE: &str = "__faber_rt_v1_text_ne";
+pub const SYMBOL_ASCII_EQ: &str = "__faber_rt_v1_ascii_eq";
+pub const SYMBOL_ASCII_NE: &str = "__faber_rt_v1_ascii_ne";
 pub const SYMBOL_TEXT_IS_EMPTY: &str = "__faber_rt_v1_text_is_empty";
 pub const SYMBOL_TEXT_CONTAINS: &str = "__faber_rt_v1_text_contains";
 pub const SYMBOL_TEXT_STARTS_WITH: &str = "__faber_rt_v1_text_starts_with";
@@ -46,6 +52,8 @@ pub const SYMBOL_TEXT_F64: &str = "__faber_rt_v1_text_f64";
 pub const SYMBOL_TEXT_I1: &str = "__faber_rt_v1_text_i1";
 pub const SYMBOL_ASCII_TRUTHY: &str = "__faber_rt_v1_ascii_truthy";
 pub const SYMBOL_SOLUM_READ_TEXT: &str = "__faber_rt_v1_solum_read_text";
+pub const SYMBOL_SOLUM_READ_LINES: &str = "__faber_rt_v1_solum_read_lines";
+pub const SYMBOL_SOLUM_READ_BYTES: &str = "__faber_rt_v1_solum_read_bytes";
 pub const SYMBOL_SOLUM_WRITE_TEXT: &str = "__faber_rt_v1_solum_write_text";
 pub const SYMBOL_VALOR_I64: &str = "__faber_rt_v1_valor_i64";
 pub const SYMBOL_VALOR_F64: &str = "__faber_rt_v1_valor_f64";
@@ -71,6 +79,19 @@ pub const SYMBOL_INSTANS_FROM_TEXT: &str = "__faber_rt_v1_instans_from_text";
 pub const SYMBOL_INSTANS_FROM_VALOR: &str = "__faber_rt_v1_instans_from_valor";
 pub const SYMBOL_INSTANS_RETAG: &str = "__faber_rt_v1_instans_retag";
 pub const SYMBOL_INSTANS_GET_TEXT: &str = "__faber_rt_v1_instans_get_text";
+pub const SYMBOL_COMPARE_LT: &str = "__faber_rt_v1_compare_lt_2_ptr_ptr_to_i1";
+pub const SYMBOL_COMPARE_GT: &str = "__faber_rt_v1_compare_gt_2_ptr_ptr_to_i1";
+pub const SYMBOL_COMPARE_LTE: &str = "__faber_rt_v1_compare_lte_2_ptr_ptr_to_i1";
+pub const SYMBOL_COMPARE_GTE: &str = "__faber_rt_v1_compare_gte_2_ptr_ptr_to_i1";
+pub const SYMBOL_COMPARE_EQ: &str = "__faber_rt_v1_compare_eq_2_ptr_ptr_to_i1";
+pub const SYMBOL_COMPARE_NE: &str = "__faber_rt_v1_compare_ne_2_ptr_ptr_to_i1";
+pub const SYMBOL_CONVERT_RUNTIME_PTR: &str = "__faber_rt_v1_convert_runtime_1_ptr_to_ptr";
+pub const SYMBOL_TEMPUS_NUNC: &str = "__faber_rt_v1_tempus_nunc";
+pub const SYMBOL_TOML_SOLVE: &str = "__faber_rt_v1_toml_solve";
+pub const SYMBOL_VALOR_CAPE: &str = "__faber_rt_v1_valor_cape";
+pub const SYMBOL_JSON_PANGE: &str = "__faber_rt_v1_json_pange";
+pub const SYMBOL_JSON_SOLVE: &str = "__faber_rt_v1_json_solve";
+pub const SYMBOL_JSON_TEMPTA: &str = "__faber_rt_v1_json_tempta";
 pub const SYMBOL_VALOR_OCTETI: &str = "__faber_rt_v1_valor_octeti";
 pub const SYMBOL_VALOR_ARRAY: &str = "__faber_rt_v1_valor_array";
 pub const SYMBOL_VALOR_MAP: &str = "__faber_rt_v1_valor_map";
@@ -98,6 +119,7 @@ pub const SYMBOL_OPTION_SOME: &str = "__faber_rt_v1_option_some";
 pub const SYMBOL_OPTION_IS_PRESENT: &str = "__faber_rt_v1_option_is_present";
 pub const SYMBOL_OPTION_GET: &str = "__faber_rt_v1_option_get";
 pub const SYMBOL_OPTION_GET_OR: &str = "__faber_rt_v1_option_get_or";
+pub const SYMBOL_OPTION_UNWRAP_PTR: &str = "__faber_rt_v1_option_unwrap_ptr";
 pub const SYMBOL_MAP_NEW: &str = "__faber_rt_v1_map_new";
 pub const SYMBOL_MAP_PUT: &str = "__faber_rt_v1_map_put";
 pub const SYMBOL_MAP_OPTION: &str = "__faber_rt_v1_map_option";
@@ -108,6 +130,7 @@ pub const SYMBOL_MAP_LENGTH: &str = "__faber_rt_v1_map_length";
 pub const SYMBOL_MAP_IS_EMPTY: &str = "__faber_rt_v1_map_is_empty";
 pub const SYMBOL_MAP_KEYS: &str = "__faber_rt_v1_map_keys";
 pub const SYMBOL_MAP_VALUES: &str = "__faber_rt_v1_map_values";
+pub const SYMBOL_AGGREGATE_SET_INDEX_PTR_I64: &str = "__faber_rt_v1_aggregate_set_index_ptr_i64";
 pub const SYMBOL_VALOR_TENSOR: &str = "__faber_rt_v1_valor_tensor";
 pub const SYMBOL_SET_NEW: &str = "__faber_rt_v1_set_new";
 pub const SYMBOL_SET_ADD: &str = "__faber_rt_v1_set_add";
@@ -152,6 +175,8 @@ pub const SYMBOL_SPARSE_FROM_TENSOR: &str = "__faber_rt_v1_sparse_from_tensor";
 pub const SYMBOL_REGEX_FROM_TEXT: &str = "__faber_rt_v1_regex_from_text";
 pub const SYMBOL_REGEX_FROM_ASCII: &str = "__faber_rt_v1_regex_from_ascii";
 pub const SYMBOL_REGEX_GET_TEXT: &str = "__faber_rt_v1_regex_get_text";
+pub const SYMBOL_REGEX_LITERAL_1_PTR_TO_PTR: &str = "__faber_rt_v1_regex_literal_1_ptr_to_ptr";
+pub const SYMBOL_READ_LINE_0_TO_PTR: &str = "__faber_rt_v1_read_line_0_to_ptr";
 pub const SYMBOL_INTERVAL_NEW: &str = "__faber_rt_v1_interval_new";
 pub const SYMBOL_INTERVAL_INTERSECT: &str = "__faber_rt_v1_interval_intersect";
 pub const SYMBOL_INTERVAL_UNION: &str = "__faber_rt_v1_interval_union";
@@ -165,6 +190,16 @@ pub const SYMBOL_GRADIENT_CREATE: &str = "__faber_rt_v1_gradient_create";
 pub const SYMBOL_GRADIENT_ACCUMULATE: &str = "__faber_rt_v1_gradient_accumulate";
 pub const SYMBOL_GRADIENT_READ: &str = "__faber_rt_v1_gradient_read";
 pub const SYMBOL_GRADIENT_ZERO: &str = "__faber_rt_v1_gradient_zero";
+
+// Static CLI descriptor + runtime argv parse (Stage 8 S8.2, campaign D12).
+pub const SYMBOL_CLI_PARSE: &str = "__faber_rt_v1_cli_parse";
+pub const SYMBOL_CLI_TABLE: &str = "__faber_rt_v1_cli_table";
+pub const SYMBOL_CLI_FIELD_PTR: &str = "__faber_rt_v1_cli_field_ptr";
+pub const SYMBOL_CLI_FIELD_I64: &str = "__faber_rt_v1_cli_field_i64";
+pub const SYMBOL_CLI_FIELD_F64: &str = "__faber_rt_v1_cli_field_f64";
+pub const SYMBOL_CLI_FIELD_I1: &str = "__faber_rt_v1_cli_field_i1";
+pub const SYMBOL_CLI_SELECTED_COMMAND: &str = "__faber_rt_v1_cli_selected_command";
+pub const SYMBOL_CLI_EXIT_CODE: &str = "__faber_rt_v1_cli_exit_code";
 
 pub const SYMBOL_GPU_COPY_IN: &str = "__faber_gpu_v1_copy_in";
 pub const SYMBOL_GPU_READBACK: &str = "__faber_gpu_v1_readback";
@@ -214,7 +249,10 @@ pub const ARRAY_OPTION_REMOVE_LAST: FaberRtArrayOptionModeV1 = 5;
 pub const LLVM_SLICE_TYPE: &str = "%FaberRtSliceV1";
 pub const LLVM_SLICE_TYPE_DEFINITION: &str = "%FaberRtSliceV1 = type { ptr, i64 }";
 pub const LLVM_EXIT_TYPE: &str = "%FaberRtExitV1";
-pub const LLVM_EXIT_TYPE_DEFINITION: &str = "%FaberRtExitV1 = type { i32, i32 }";
+// W16 (L9 cee2f7b7): the exit struct crosses the C boundary packed into one
+// register (`process_code | (status.code << 32)`), so the emitter's module
+// spellings and this mirror agree on a single-register `i64` carrier.
+pub const LLVM_EXIT_TYPE_DEFINITION: &str = "%FaberRtExitV1 = type i64";
 pub const LLVM_PTR_RESULT_TYPE: &str = "%FaberRtPtrResultV1";
 pub const LLVM_PTR_RESULT_TYPE_DEFINITION: &str = "%FaberRtPtrResultV1 = type { i32, ptr }";
 
@@ -229,6 +267,7 @@ pub const DIAGNOSTIC_SYMBOLS_V1: &[(&str, &str, &str)] = &[
     ("nota", "text", "__faber_rt_v1_diagnostic_nota_text"),
     ("nota", "ascii", "__faber_rt_v1_diagnostic_nota_ascii"),
     ("nota", "i64", "__faber_rt_v1_diagnostic_nota_i64"),
+    ("nota", "u64", "__faber_rt_v1_diagnostic_nota_u64"),
     ("nota", "i1", "__faber_rt_v1_diagnostic_nota_i1"),
     ("nota", "float", "__faber_rt_v1_diagnostic_nota_f32"),
     ("nota", "double", "__faber_rt_v1_diagnostic_nota_f64"),

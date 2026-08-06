@@ -1,16 +1,17 @@
 //! Recursive opaque collection conversion for the LLVM host Valor ABI.
 
-use super::array::{find_array, store_array, RuntimeValue};
-use super::collection_map::{find_map, store_map};
+use super::array::{find_array, store_array, RuntimeArray, RuntimeValue};
+use super::collection_map::{find_map, find_set, store_map, RuntimeMap};
 use super::convert::{store_valor, with_valor};
-use super::format::{store_text, text_value};
+use super::format::{find_text, store_text, text_value};
 use super::tensor::find_tensor;
 use super::RuntimeContext;
 use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtValueKindV1,
     STATUS_INVALID_ARGUMENT, STATUS_PANIC, VALUE_KIND_F32, VALUE_KIND_F64, VALUE_KIND_I1,
-    VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_TEXT, VALUE_KIND_U16,
-    VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8, VALUE_KIND_VALOR,
+    VALUE_KIND_I16, VALUE_KIND_I32, VALUE_KIND_I64, VALUE_KIND_I8, VALUE_KIND_PTR,
+    VALUE_KIND_TEXT, VALUE_KIND_U16, VALUE_KIND_U32, VALUE_KIND_U64, VALUE_KIND_U8,
+    VALUE_KIND_VALOR,
 };
 use faber::{FromValor, Valor};
 use std::collections::BTreeMap;
@@ -263,6 +264,31 @@ pub(super) fn runtime_value_to_valor(
         (VALUE_KIND_F32, RuntimeValue::F32(value)) => Valor::Fractus(value.into()),
         (VALUE_KIND_F64, RuntimeValue::F64(value)) => Valor::Fractus(value),
         (VALUE_KIND_TEXT, RuntimeValue::Ptr(value)) => Valor::Textus(text_value(value.cast())?),
+        // L27: a `ptr`-kind element may carry a textus payload — the array
+        // element kind for textus is `ptr` (`runtime_value_abi`), so `↦ valor`
+        // of a `lista<textus>` stored PTR handles (arena text or literal
+        // slice descriptor) and `valor_array` failed with
+        // `STATUS_INVALID_ARGUMENT`, latching a nonzero process exit for
+        // stdout-correct programs. Resolve arena handles by pointer equality
+        // FIRST (memory-safety: never dereference an unknown handle), recurse
+        // into aggregates, and only then fall back to literal slice
+        // descriptors (`text_value`). Set handles have no `Valor` variant, so
+        // they fail closed here instead of reaching the descriptor fallback.
+        (VALUE_KIND_PTR, RuntimeValue::Ptr(value)) => {
+            if let Some(text) = find_text(runtime, value) {
+                Valor::Textus(text.value.clone())
+            } else if let Some(bytes) = find_octeti(runtime, value) {
+                Valor::Octeti(bytes.clone())
+            } else if let Some(array) = find_array(runtime, value) {
+                array_to_valor(runtime, array)?
+            } else if let Some(map) = find_map(runtime, value) {
+                map_to_valor(runtime, map)?
+            } else if find_set(runtime, value).is_some() {
+                return None;
+            } else {
+                Valor::Textus(text_value(value.cast())?)
+            }
+        }
         (VALUE_KIND_VALOR, RuntimeValue::Ptr(value)) => with_valor(
             std::ptr::from_ref(runtime).cast_mut().cast(),
             value.cast(),
@@ -270,6 +296,39 @@ pub(super) fn runtime_value_to_valor(
         )?,
         _ => return None,
     })
+}
+
+/// Convert a versioned array handle's elements into a `Valor::Lista`.
+///
+/// Element handles are resolved through [`runtime_value_to_valor`], so nested
+/// aggregates (textus, octeti, further listas, tabulae) decode recursively.
+fn array_to_valor(runtime: &RuntimeContext, array: &RuntimeArray) -> Option<Valor> {
+    let values = array
+        .values
+        .iter()
+        .copied()
+        .map(|value| runtime_value_to_valor(runtime, array.kind, value))
+        .collect::<Option<Vec<_>>>()?;
+    Some(Valor::Lista(values))
+}
+
+/// Convert a versioned map handle's entries into a `Valor::Tabula`.
+///
+/// Non-text keys fail closed (the `Valor::Tabula` key contract is `String`),
+/// matching the diagnostic renderer's key resolution.
+fn map_to_valor(runtime: &RuntimeContext, map: &RuntimeMap) -> Option<Valor> {
+    let entries = map
+        .entries
+        .iter()
+        .copied()
+        .map(|(key, value)| {
+            let Valor::Textus(key) = runtime_value_to_valor(runtime, map.key_kind, key)? else {
+                return None;
+            };
+            Some((key, runtime_value_to_valor(runtime, map.value_kind, value)?))
+        })
+        .collect::<Option<BTreeMap<_, _>>>()?;
+    Some(Valor::Tabula(entries))
 }
 
 pub(super) fn valor_to_runtime_value(

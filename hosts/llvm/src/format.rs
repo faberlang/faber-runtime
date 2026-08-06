@@ -3,12 +3,13 @@
 use super::RuntimeContext;
 use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, STATUS_INVALID_ARGUMENT,
-    STATUS_OK, STATUS_PANIC,
+    STATUS_OK, STATUS_PANIC, STATUS_UNSUPPORTED,
 };
 use faber::{display_bivalens, display_fractus};
+use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 
-fn ffi_ptr_result(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrResultV1 {
+pub(super) fn ffi_ptr_result(operation: impl FnOnce() -> FaberRtPtrResultV1) -> FaberRtPtrResultV1 {
     panic::catch_unwind(AssertUnwindSafe(operation))
         .unwrap_or(FaberRtPtrResultV1::failure(STATUS_PANIC))
 }
@@ -66,7 +67,24 @@ pub unsafe extern "C" fn __faber_rt_v1_format_f64(
     template: FaberRtSliceV1,
     value: f64,
 ) -> FaberRtPtrResultV1 {
-    format_scalar_values(context, template, &[value.to_string()])
+    // Scalar float display parity with the Rust oracle: integral floats keep
+    // the `.0` decimal marker (display_fractus), matching `__faber_rt_v1_text_f64`.
+    format_scalar_values(context, template, &[display_fractus(value)])
+}
+
+/// L28 (ab91f49f, W16): render a template with one f32 scalar value.
+///
+/// `display_fractus` keeps the f32 precision (`0.1f32` renders `0.1`, NOT the
+/// widened `0.10000000149011612` an f64 carrier would produce). This is the
+/// f32 display ABI the grouped multi-arg nota path needs so `fractus<f32>`
+/// scribe args join like the HIR-Rust lane.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_format_f32(
+    context: *mut FaberRtContextV1,
+    template: FaberRtSliceV1,
+    value: f32,
+) -> FaberRtPtrResultV1 {
+    format_scalar_values(context, template, &[display_fractus(value)])
 }
 
 #[no_mangle]
@@ -145,6 +163,35 @@ pub unsafe extern "C" fn __faber_rt_v1_format_text_i64_i1(
             display_bivalens(boolean != 0).to_owned(),
         ],
     )
+}
+
+/// Render a template with one opaque collection handle (`lista` / `octeti`).
+///
+/// The opaque handle is displayed in its Rust-oracle Debug shape (`[1, 2, 3]`
+/// for numeric lists, `["prima", "secunda"]` for text lists, `[112, 114, …]`
+/// for octeti). Unrecognized handles fail closed with `STATUS_UNSUPPORTED`.
+///
+/// # Safety
+///
+/// `context` must be live. `template` follows the slice validity contract of
+/// [`__faber_rt_v1_write_nota_text`]; `value` is used only for pointer-equality
+/// arena lookups and is never dereferenced directly.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_format_1_ptr_to_ptr(
+    context: *mut FaberRtContextV1,
+    template: FaberRtSliceV1,
+    value: *mut std::ffi::c_void,
+) -> FaberRtPtrResultV1 {
+    ffi_ptr_result(|| {
+        if context.is_null() {
+            return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
+        }
+        let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+        let Some(rendered) = super::opaque_value_text(runtime, value) else {
+            return FaberRtPtrResultV1::failure(STATUS_UNSUPPORTED);
+        };
+        format_scalar_values(context, template, &[rendered])
+    })
 }
 
 #[no_mangle]
@@ -251,6 +298,16 @@ pub(super) fn text_value(text: *const FaberRtSliceV1) -> Option<String> {
     std::str::from_utf8(bytes).ok().map(str::to_owned)
 }
 
+/// Resolve an arena text handle to its [`RuntimeText`] (pointer-equality
+/// lookup; never dereferences an unknown handle).
+pub(super) fn find_text(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeText> {
+    runtime
+        .texts
+        .iter()
+        .find(|text| std::ptr::eq(text.as_ref(), handle.cast_const().cast::<RuntimeText>()))
+        .map(super::StableBox::as_ref)
+}
+
 pub(super) fn store_text(context: *mut FaberRtContextV1, value: String) -> FaberRtPtrResultV1 {
     if context.is_null() {
         return FaberRtPtrResultV1::failure(STATUS_INVALID_ARGUMENT);
@@ -264,6 +321,23 @@ pub(super) fn store_text(context: *mut FaberRtContextV1, value: String) -> Faber
     let handle = text.handle();
     runtime.texts.push(text);
     FaberRtPtrResultV1::success(handle)
+}
+
+/// Store one arena-owned text value and return its opaque handle.
+///
+/// # Safety
+///
+/// `context` must be non-null and a live runtime context.
+pub(super) unsafe fn store_text_owned(context: *mut FaberRtContextV1, value: String) -> *mut c_void {
+    let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
+    let slice = FaberRtSliceV1 {
+        data: value.as_ptr(),
+        len: value.len() as u64,
+    };
+    let text = super::StableBox::new(RuntimeText { slice, value });
+    let handle = text.handle();
+    runtime.texts.push(text);
+    handle
 }
 
 fn render_template(template: &str, args: &[String]) -> String {

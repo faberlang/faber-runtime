@@ -13,6 +13,10 @@
     clippy::cast_sign_loss
 )]
 
+use super::cli::{
+    __faber_rt_v1_cli_exit_code, __faber_rt_v1_cli_field_i64, __faber_rt_v1_cli_parse,
+    __faber_rt_v1_cli_selected_command,
+};
 use super::*;
 use std::ffi::{c_void, CStr};
 
@@ -25,6 +29,68 @@ fn init_write_and_shutdown_round_trip() {
     let status =
         unsafe { __faber_rt_v1_write_nota_text(context, FaberRtSliceV1::from_static(b"")) };
     assert_eq!(status, STATUS_OK);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn arguments_excludes_host_argv0_and_returns_text_lista() {
+    let program = std::ffi::CString::new("prog").unwrap();
+    let first = std::ffi::CString::new("alpha").unwrap();
+    let second = std::ffi::CString::new("beta").unwrap();
+    let argv = [program.as_ptr(), first.as_ptr(), second.as_ptr()];
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(3, argv.as_ptr(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    // Faber argumenta semantics: the captured arguments exclude argv[0].
+    let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+    assert_eq!(
+        runtime.arguments,
+        vec![b"alpha".to_vec(), b"beta".to_vec()],
+        "process argumenta must exclude the host argv[0] program path"
+    );
+
+    let result = unsafe { __faber_rt_v1_arguments(context) };
+    assert!(result.status.is_ok(), "arguments symbol must succeed");
+    assert!(!result.value.is_null(), "arguments must return a lista handle");
+    let array = array::find_array(runtime, result.value).expect("arguments handle in arena");
+    assert_eq!(
+        array.kind,
+        faber::host_abi::VALUE_KIND_PTR,
+        "argumenta list must be a lista<textus>"
+    );
+    let rendered = array
+        .values
+        .iter()
+        .filter_map(|value| match value {
+            array::RuntimeValue::Ptr(handle) => {
+                let text = format::find_text(runtime, *handle)?;
+                Some(text.value.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        rendered,
+        vec!["alpha".to_owned(), "beta".to_owned()],
+        "argumenta list must carry the exact argv[1..] text elements"
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn arguments_empty_without_process_args() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(1, std::ptr::null(), &raw mut context) };
+    assert_eq!(status, STATUS_INVALID_ARGUMENT, "argc>0 with null argv rejects");
+    let status = unsafe { __faber_rt_v1_init(0, std::ptr::null(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+    let result = unsafe { __faber_rt_v1_arguments(context) };
+    assert!(result.status.is_ok());
+    let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+    let array = array::find_array(runtime, result.value).expect("empty arguments handle");
+    assert!(array.values.is_empty());
     unsafe { __faber_rt_v1_shutdown(context) };
 }
 
@@ -102,6 +168,204 @@ fn diagnostic_nota_text_and_ascii_accept_valid_inputs_reject_nulls() {
     assert_eq!(
         unsafe { __faber_rt_v1_diagnostic_nota_ptr(context, ptr::null()) },
         STATUS_UNSUPPORTED
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn diagnostic_nota_option_renders_payload_or_nihil() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    // Present raw null-encoded option: the pointer bits ARE the i64 payload
+    // (the optional-chain `inttoptr` representation).
+    let present = 100usize as *mut c_void;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_diagnostic_nota_option(
+                context,
+                present,
+                faber::host_abi::VALUE_KIND_I64,
+            )
+        },
+        STATUS_OK
+    );
+
+    // Nihil option: the null handle renders `nihil`.
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_diagnostic_nota_option(
+                context,
+                ptr::null_mut(),
+                faber::host_abi::VALUE_KIND_I64,
+            )
+        },
+        STATUS_OK
+    );
+
+    // Unknown non-null raw handle with an unsupported kind stays fail-closed.
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_diagnostic_nota_option(
+                context,
+                present,
+                faber::host_abi::VALUE_KIND_I8,
+            )
+        },
+        STATUS_UNSUPPORTED
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+/// L11 (fc9be27a): family 3 — `mone`/`scribe`/`vide` of an option value render
+/// through the option diagnostic carrier like `nota`: the payload for a
+/// present raw null-encoded option, `nihil` for the null handle, on the
+/// stream's channel.
+#[test]
+fn diagnostic_mone_scribe_vide_option_carriers_render_payload_or_nihil() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    // Present raw null-encoded option: the pointer bits ARE the i64 payload.
+    let present = 100usize as *mut c_void;
+    for carrier in [
+        __faber_rt_v1_diagnostic_mone_option,
+        __faber_rt_v1_diagnostic_scribe_option,
+        __faber_rt_v1_diagnostic_vide_option,
+    ] {
+        assert_eq!(
+            unsafe { carrier(context, present, faber::host_abi::VALUE_KIND_I64) },
+            STATUS_OK
+        );
+    }
+
+    // Nihil option: the null handle renders `nihil` on every stream.
+    for carrier in [
+        __faber_rt_v1_diagnostic_mone_option,
+        __faber_rt_v1_diagnostic_scribe_option,
+        __faber_rt_v1_diagnostic_vide_option,
+    ] {
+        assert_eq!(
+            unsafe { carrier(context, ptr::null_mut(), faber::host_abi::VALUE_KIND_I64) },
+            STATUS_OK
+        );
+    }
+
+    // Unknown non-null raw handle with an unsupported kind stays fail-closed.
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_diagnostic_mone_option(context, present, faber::host_abi::VALUE_KIND_I8)
+        },
+        STATUS_UNSUPPORTED
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+/// L11 (fc9be27a): family 3 — raw null-encoded options decode the pointer bits
+/// per value-kind. `est nihil` / `non est nihil` and `vel` on literal-built
+/// scalar unions (`numerus ∪ nihil`) previously failed because the raw carrier
+/// only accepted the pointer kind.
+#[test]
+fn option_raw_scalar_presence_get_and_coalesce_decode_pointer_bits() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    // Raw scalar option: the pointer bits ARE the i64 payload (chain/literal
+    // result). Presence is the non-null pointer regardless of payload kind.
+    let present = 100usize as *mut c_void;
+    let mut is_present = 99_u8;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_is_present(
+                context,
+                present,
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut is_present).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(is_present, 1);
+
+    // A null raw scalar option is absent (not an argument error).
+    is_present = 99;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_is_present(
+                context,
+                ptr::null_mut(),
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut is_present).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(is_present, 0);
+
+    // `get` decodes the raw scalar bits into the output slot.
+    let mut output = 0_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get(
+                context,
+                present,
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(output, 100);
+
+    // `get_or` decodes the raw scalar bits; a null raw option coalesces to the
+    // fallback.
+    let fallback = 9_i64;
+    output = 0;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get_or(
+                context,
+                present,
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&fallback).cast(),
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(output, 100);
+    output = 0;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get_or(
+                context,
+                ptr::null_mut(),
+                VALUE_KIND_I64,
+                std::ptr::from_ref(&fallback).cast(),
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    assert_eq!(output, 9);
+
+    // A null raw scalar option still fails closed on `get` (no payload).
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_option_get(
+                context,
+                ptr::null_mut(),
+                VALUE_KIND_I64,
+                std::ptr::from_mut(&mut output).cast(),
+            )
+        },
+        STATUS_INVALID_ARGUMENT
     );
 
     unsafe { __faber_rt_v1_shutdown(context) };
@@ -203,6 +467,36 @@ fn format_single_substitution_scalars_renders_correct_text() {
     assert_eq!(
         unsafe { &*boolean.value.cast::<RuntimeText>() }.value,
         "b=verum"
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+/// L28 (ab91f49f, W16): the f32 format carrier keeps the f32 precision —
+/// `0.1f32` renders `0.1`, NOT the `0.10000000149011612` an f64-widened
+/// carrier would produce — and integral f32s keep the `.0` decimal marker
+/// (`display_fractus` semantics, matching the HIR-Rust lane).
+#[test]
+fn format_f32_keeps_f32_precision_and_decimal_marker() {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    let integral = unsafe {
+        __faber_rt_v1_format_f32(context, FaberRtSliceV1::from_static("§".as_bytes()), 4.0f32)
+    };
+    let fractional = unsafe {
+        __faber_rt_v1_format_f32(context, FaberRtSliceV1::from_static("§".as_bytes()), 0.1f32)
+    };
+    assert_eq!(integral.status, STATUS_OK);
+    assert_eq!(fractional.status, STATUS_OK);
+    assert_eq!(
+        unsafe { &*integral.value.cast::<RuntimeText>() }.value,
+        "4.0"
+    );
+    assert_eq!(
+        unsafe { &*fractional.value.cast::<RuntimeText>() }.value,
+        "0.1"
     );
 
     unsafe { __faber_rt_v1_shutdown(context) };
@@ -682,9 +976,15 @@ fn typed_map_preserves_value_semantics() {
     assert_eq!(length, 1);
     let keys = unsafe { __faber_rt_v1_map_keys(context, map.value) };
     let values = unsafe { __faber_rt_v1_map_values(context, map.value) };
+    // L19: key snapshots are stored with the canonical element kind array
+    // consumers use (`array_get`/`array_set` reject a kind mismatch). The
+    // emitter canonicalizes every pointer-carried element (textus/ascii/
+    // valor/instans/octeti …) to VALUE_KIND_PTR, so a `tabula<textus, T>`
+    // key snapshot is VALUE_KIND_PTR — the raw VALUE_KIND_TEXT made
+    // `itera de <tabula>` fail every element read.
     assert_eq!(
         unsafe { &*keys.value.cast::<RuntimeArray>() }.kind,
-        VALUE_KIND_TEXT
+        VALUE_KIND_PTR
     );
     assert_eq!(
         unsafe { &*values.value.cast::<RuntimeArray>() }.kind,
@@ -1020,6 +1320,56 @@ fn valor_array_round_trip_preserves_elements() {
         );
         assert_eq!(actual, expected);
     }
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn valor_array_text_elements_round_trip_preserves_textus() {
+    // L27 (d31792f5): the array element kind for textus is VALUE_KIND_PTR
+    // (`runtime_value_abi`), so `↦ valor` of a `lista<textus>` stored raw
+    // handle pointers and `valor_array` previously failed to decode them
+    // (STATUS_INVALID_ARGUMENT), latching a nonzero process exit for
+    // stdout-correct programs (est/est exit-code row). Ptr-kind elements now
+    // resolve arena text / literal descriptors / nested aggregates.
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+
+    let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_PTR) };
+    // Distinct live descriptors with stable addresses (stack locals kept
+    // alive past the pushes; a Vec would reallocate and move them).
+    let prima = FaberRtSliceV1::from_static(b"prima");
+    let secunda = FaberRtSliceV1::from_static(b"secunda");
+    let handles = [
+        ptr::from_ref(&prima).cast::<c_void>(),
+        ptr::from_ref(&secunda).cast::<c_void>(),
+    ];
+    for handle in &handles {
+        assert_eq!(
+            unsafe {
+                __faber_rt_v1_array_push(
+                    context,
+                    array.value,
+                    VALUE_KIND_PTR,
+                    ptr::from_ref(handle).cast(),
+                )
+            },
+            STATUS_OK
+        );
+    }
+    let array_valor = unsafe { __faber_rt_v1_valor_array(context, array.value) };
+    assert!(
+        array_valor.status.is_ok(),
+        "lista<textus> ↦ valor must succeed: {:?}",
+        array_valor.status
+    );
+    assert_eq!(
+        unsafe { &*array_valor.value.cast::<Valor>() },
+        &Valor::Lista(vec![Valor::Textus("prima".to_owned()), Valor::Textus("secunda".to_owned())])
+    );
 
     unsafe { __faber_rt_v1_shutdown(context) };
 }
@@ -3494,5 +3844,600 @@ fn llvm_golden_oracle_multiply_by_two() {
     let sync_status = unsafe { __faber_gpu_v1_sync(43) };
     assert_eq!(sync_status, STATUS_OK);
 
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn solum_read_lines_splits_file_into_text_lista() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let path =
+        std::env::temp_dir().join(format!("faber-solum-read-lines-{}.txt", std::process::id()));
+    std::fs::write(&path, "prima\nsecunda\n").expect("write fixture file");
+    let path = path.to_string_lossy().into_owned();
+    let path_slice = FaberRtSliceV1 {
+        data: path.as_ptr(),
+        len: path.len() as u64,
+    };
+
+    let result = unsafe { __faber_rt_v1_solum_read_lines(context, &raw const path_slice) };
+    assert_eq!(result.status, STATUS_OK);
+    let array = unsafe { &*result.value.cast::<RuntimeArray>() };
+    assert_eq!(array.kind, VALUE_KIND_PTR);
+    let lines = array
+        .values
+        .iter()
+        .map(|value| match value {
+            array::RuntimeValue::Ptr(handle) => {
+                unsafe { &*handle.cast::<RuntimeText>() }.value.as_str()
+            }
+            _ => panic!("read_lines produced non-text carrier"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(lines, ["prima", "secunda"]);
+
+    std::fs::remove_file(&path).ok();
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn solum_read_bytes_reads_raw_file_bytes() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let path =
+        std::env::temp_dir().join(format!("faber-solum-read-bytes-{}.txt", std::process::id()));
+    std::fs::write(&path, b"\x00\x01prima\nsecunda\n").expect("write fixture file");
+    let path = path.to_string_lossy().into_owned();
+    let path_slice = FaberRtSliceV1 {
+        data: path.as_ptr(),
+        len: path.len() as u64,
+    };
+
+    let result = unsafe { __faber_rt_v1_solum_read_bytes(context, &raw const path_slice) };
+    assert_eq!(result.status, STATUS_OK);
+    assert_eq!(
+        unsafe { &*result.value.cast::<Vec<u8>>() },
+        b"\x00\x01prima\nsecunda\n"
+    );
+
+    std::fs::remove_file(&path).ok();
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn opaque_nota_renders_lista_textus_and_octeti_in_rust_debug_shape() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
+
+    // lista<textus>: array of text handles renders ["prima", "secunda"].
+    let mut handles = Vec::new();
+    for line in ["prima", "secunda"] {
+        let text = format::store_text(context, line.to_owned());
+        assert_eq!(text.status, STATUS_OK);
+        handles.push(array::RuntimeValue::Ptr(text.value));
+    }
+    let array = array::store_array(
+        runtime,
+        faber::host_abi::VALUE_KIND_PTR,
+        handles,
+    );
+    assert_eq!(array.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, array.value),
+        Some(r#"["prima", "secunda"]"#.to_owned())
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_ptr(context, array.value.cast()) },
+        STATUS_OK
+    );
+
+    // octeti: byte payload renders as decimal byte list.
+    let octeti = valor_aggregate::store_octeti(runtime, b"prima\n".to_vec());
+    assert_eq!(octeti.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, octeti.value),
+        Some("[112, 114, 105, 109, 97, 10]".to_owned())
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_ptr(context, octeti.value.cast()) },
+        STATUS_OK
+    );
+
+    // Unrecognized handle stays fail-closed.
+    assert_eq!(
+        unsafe { __faber_rt_v1_diagnostic_nota_ptr(context, ptr::null()) },
+        STATUS_UNSUPPORTED
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+/// L10 (fa1a5d8c): numeric `lista` elements render in the Rust oracle's Debug
+/// shape (`[1.0, 4.0, 9.0, 16.0]` / `[2, 3]`), and a `valor` renders via the
+/// oracle's `display_valor` (`42`, `{"alpha": 10}`) with octeti payloads
+/// rendering as byte lists (`[222, 173]`, the oracle's `bytes ↦ valor` Lista
+/// Debug shape).
+#[test]
+fn opaque_nota_renders_numeric_lista_and_valor_in_rust_debug_shape() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
+
+    // lista<f32>: array of f32 elements renders [1.0, 4.0, 9.0, 16.0].
+    let f32_array = array::store_array(
+        runtime,
+        faber::host_abi::VALUE_KIND_F32,
+        vec![
+            array::RuntimeValue::F32(1.0),
+            array::RuntimeValue::F32(4.0),
+            array::RuntimeValue::F32(9.0),
+            array::RuntimeValue::F32(16.0),
+        ],
+    );
+    assert_eq!(f32_array.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, f32_array.value),
+        Some("[1.0, 4.0, 9.0, 16.0]".to_owned())
+    );
+
+    // lista<numerus>: renders [2, 3].
+    let i64_array = array::store_array(
+        runtime,
+        faber::host_abi::VALUE_KIND_I64,
+        vec![array::RuntimeValue::I64(2), array::RuntimeValue::I64(3)],
+    );
+    assert_eq!(i64_array.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, i64_array.value),
+        Some("[2, 3]".to_owned())
+    );
+
+    // valor numerus renders its displayed magnitude.
+    let numerus = convert::store_valor(context, faber::Valor::Numerus(42));
+    assert_eq!(numerus.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, numerus.value),
+        Some("42".to_owned())
+    );
+
+    // valor octeti renders the byte-list Debug shape ([222, 173]).
+    let octeti_valor = convert::store_valor(context, faber::Valor::Octeti(vec![0xde, 0xad]));
+    assert_eq!(octeti_valor.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, octeti_valor.value),
+        Some("[222, 173]".to_owned())
+    );
+
+    // valor tabula renders display_valor's map shape.
+    let mut tabula = std::collections::BTreeMap::new();
+    tabula.insert("alpha".to_owned(), faber::Valor::Numerus(10));
+    let tabula_valor = convert::store_valor(context, faber::Valor::Tabula(tabula));
+    assert_eq!(tabula_valor.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, tabula_valor.value),
+        Some(r#"{"alpha": 10}"#.to_owned())
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+/// L10 (fa1a5d8c): a `tabula` handle renders in the Rust oracle's derived
+/// `Json(Valor::Tabula({...}))` Debug shape, and a `copia` handle renders
+/// `{1, 2, 3}` in stored order.
+#[test]
+fn opaque_nota_renders_tabula_and_copia_in_rust_debug_shape() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
+
+    // tabula<textus, numerus>: JSON-literal map renders Json(Tabula({...})).
+    let key = format::store_text(context, "alpha".to_owned());
+    assert_eq!(key.status, STATUS_OK);
+    let map = collection_map::store_map(
+        runtime,
+        faber::host_abi::VALUE_KIND_TEXT,
+        faber::host_abi::VALUE_KIND_I64,
+        vec![(
+            array::RuntimeValue::Ptr(key.value),
+            array::RuntimeValue::I64(10),
+        )],
+    );
+    assert_eq!(map.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, map.value),
+        Some(r#"Json(Tabula({"alpha": Numerus(10)}))"#.to_owned())
+    );
+
+    // copia<numerus>: renders {1, 2, 3}.
+    let set = collection_map::store_set(
+        runtime,
+        faber::host_abi::VALUE_KIND_I64,
+        vec![
+            array::RuntimeValue::I64(1),
+            array::RuntimeValue::I64(2),
+            array::RuntimeValue::I64(3),
+        ],
+    );
+    assert_eq!(set.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, set.value),
+        Some("{1, 2, 3}".to_owned())
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn instans_compare_family_orders_handles() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let earlier = FaberRtSliceV1::from_static(b"1979-05-27T07:32:00Z");
+    let later = FaberRtSliceV1::from_static(b"1980-01-01T00:00:00Z");
+    let earlier =
+        unsafe { __faber_rt_v1_instans_from_text(context, &raw const earlier, INSTANS_PRECISION_SECONDS) };
+    let later =
+        unsafe { __faber_rt_v1_instans_from_text(context, &raw const later, INSTANS_PRECISION_SECONDS) };
+    assert_eq!(earlier.status, STATUS_OK);
+    assert_eq!(later.status, STATUS_OK);
+    let (a, b) = (earlier.value, later.value);
+    assert_eq!(unsafe { __faber_rt_v1_compare_lt_2_ptr_ptr_to_i1(a, b) }, 1);
+    assert_eq!(unsafe { __faber_rt_v1_compare_lt_2_ptr_ptr_to_i1(b, a) }, 0);
+    assert_eq!(unsafe { __faber_rt_v1_compare_gt_2_ptr_ptr_to_i1(b, a) }, 1);
+    assert_eq!(unsafe { __faber_rt_v1_compare_gt_2_ptr_ptr_to_i1(a, b) }, 0);
+    assert_eq!(unsafe { __faber_rt_v1_compare_lte_2_ptr_ptr_to_i1(a, b) }, 1);
+    assert_eq!(unsafe { __faber_rt_v1_compare_lte_2_ptr_ptr_to_i1(a, a) }, 1);
+    assert_eq!(unsafe { __faber_rt_v1_compare_gte_2_ptr_ptr_to_i1(b, a) }, 1);
+    assert_eq!(unsafe { __faber_rt_v1_compare_gte_2_ptr_ptr_to_i1(a, b) }, 0);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn tempus_nunc_returns_current_instant_handle() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let nunc = unsafe { __faber_rt_v1_tempus_nunc(context) };
+    assert_eq!(nunc.status, STATUS_OK);
+    assert!(!nunc.value.is_null());
+    let rendered = unsafe { __faber_rt_v1_instans_get_text(context, nunc.value) };
+    assert_eq!(rendered.status, STATUS_OK);
+    let rendered = unsafe { &*rendered.value.cast::<FaberRtSliceV1>() };
+    let text = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(rendered.data, rendered.len as usize)) };
+    assert!(text.ends_with('Z'), "RFC3339 wire should end with Z, got {text}");
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn provider_valor_cape_reads_tabula_field() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let map = unsafe { __faber_rt_v1_map_new(context, VALUE_KIND_TEXT, VALUE_KIND_I64) };
+    assert_eq!(map.status, STATUS_OK);
+    let key = FaberRtSliceV1::from_static(b"creatus");
+    let key_handle = ptr::from_ref(&key).cast_mut().cast::<c_void>();
+    let value = 42_i64;
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_map_put(
+                context,
+                map.value,
+                VALUE_KIND_TEXT,
+                ptr::from_ref(&key_handle).cast(),
+                VALUE_KIND_I64,
+                ptr::from_ref(&value).cast(),
+            )
+        },
+        STATUS_OK
+    );
+    let valor = unsafe { __faber_rt_v1_valor_map(context, map.value) };
+    assert_eq!(valor.status, STATUS_OK);
+    let field = unsafe { __faber_rt_v1_valor_cape(context, valor.value.cast(), &raw const key) };
+    assert_eq!(field.status, STATUS_OK);
+    assert_eq!(unsafe { &*field.value.cast::<Valor>() }, &Valor::Numerus(42));
+    let missing = FaberRtSliceV1::from_static(b"absentia");
+    let field = unsafe { __faber_rt_v1_valor_cape(context, valor.value.cast(), &raw const missing) };
+    assert_eq!(field.status, STATUS_INVALID_ARGUMENT);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn provider_json_solve_pange_round_trip() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let wire = FaberRtSliceV1::from_static(br#"{"nomen":"Ada"}"#);
+    let solved = unsafe { __faber_rt_v1_json_solve(context, &raw const wire) };
+    assert_eq!(solved.status, STATUS_OK);
+    let panged = unsafe { __faber_rt_v1_json_pange(context, solved.value.cast()) };
+    assert_eq!(panged.status, STATUS_OK);
+    let panged = unsafe { &*panged.value.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(panged.data, panged.len as usize) },
+        br#"{"nomen":"Ada"}"#
+    );
+    let bad = FaberRtSliceV1::from_static(b"{ nope");
+    let solved = unsafe { __faber_rt_v1_json_solve(context, &raw const bad) };
+    assert_eq!(solved.status, STATUS_INVALID_ARGUMENT);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn provider_json_tempta_boxes_text_payload() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let wire = FaberRtSliceV1::from_static(br#"{"ok":true}"#);
+    let tentativa = unsafe { __faber_rt_v1_json_tempta(context, &raw const wire) };
+    assert_eq!(tentativa.status, STATUS_OK);
+    assert!(!tentativa.value.is_null());
+    // The union box holds the text form of the payload.
+    let payload = unsafe { *(tentativa.value.cast::<*mut c_void>()) };
+    let payload = unsafe { &*payload.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(payload.data, payload.len as usize) },
+        br#"{"ok":true}"#
+    );
+    let nil = FaberRtSliceV1::from_static(b"{ nope");
+    let tentativa = unsafe { __faber_rt_v1_json_tempta(context, &raw const nil) };
+    assert_eq!(tentativa.status, STATUS_OK);
+    let payload = unsafe { *(tentativa.value.cast::<*mut c_void>()) };
+    let payload = unsafe { &*payload.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(payload.data, payload.len as usize) },
+        b"nihil"
+    );
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn provider_toml_solve_fails_closed_unsupported() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let wire = FaberRtSliceV1::from_static(b"creatus = 1979-05-27T07:32:00Z");
+    let solved = unsafe { __faber_rt_v1_toml_solve(context, &raw const wire) };
+    assert_eq!(solved.status, STATUS_UNSUPPORTED);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn opaque_ptr_conversion_preserves_handle() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let wire = FaberRtSliceV1::from_static(b"ada");
+    let text = unsafe { __faber_rt_v1_valor_text(context, &raw const wire) };
+    assert_eq!(text.status, STATUS_OK);
+    let converted = unsafe { __faber_rt_v1_convert_runtime_1_ptr_to_ptr(context, text.value) };
+    assert_eq!(converted.status, STATUS_OK);
+    assert_eq!(converted.value, text.value);
+    let null = unsafe { __faber_rt_v1_convert_runtime_1_ptr_to_ptr(context, ptr::null_mut()) };
+    assert_eq!(null.status, STATUS_INVALID_ARGUMENT);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn option_unwrap_ptr_passes_through_box() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let boxed = super::StableBox::new(ptr::null_mut::<c_void>());
+    let handle = boxed.handle();
+    assert_eq!(unsafe { __faber_rt_v1_option_unwrap_ptr(handle) }, handle);
+    drop(boxed);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn aggregate_set_index_ptr_i64_sets_text_i64_map_entry() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let map = unsafe { __faber_rt_v1_map_new(context, VALUE_KIND_TEXT, VALUE_KIND_I64) };
+    assert_eq!(map.status, STATUS_OK);
+    let key = FaberRtSliceV1::from_static(b"alpha");
+    unsafe { __faber_rt_v1_aggregate_set_index_ptr_i64(map.value, &raw const key, 7) };
+    let mut output = 0_i64;
+    let key_handle = ptr::from_ref(&key).cast_mut().cast::<c_void>();
+    let status = unsafe {
+        __faber_rt_v1_map_get(
+            context,
+            map.value,
+            VALUE_KIND_TEXT,
+            ptr::from_ref(&key_handle).cast(),
+            VALUE_KIND_I64,
+            ptr::from_mut(&mut output).cast(),
+        )
+    };
+    assert_eq!(status, STATUS_OK);
+    assert_eq!(output, 7);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn format_1_ptr_to_ptr_renders_opaque_lista_debug_shape() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let array = unsafe { __faber_rt_v1_array_new(context, VALUE_KIND_I64) };
+    assert_eq!(array.status, STATUS_OK);
+    for value in [1_i64, 2, 3] {
+        let status = unsafe {
+            __faber_rt_v1_array_push(
+                context,
+                array.value,
+                VALUE_KIND_I64,
+                ptr::from_ref(&value).cast(),
+            )
+        };
+        assert_eq!(status, STATUS_OK);
+    }
+    let formatted = unsafe {
+        __faber_rt_v1_format_1_ptr_to_ptr(
+            context,
+            FaberRtSliceV1::from_static(b"nums=\xC2\xA7"),
+            array.value,
+        )
+    };
+    assert_eq!(formatted.status, STATUS_OK);
+    assert_eq!(
+        unsafe { &*formatted.value.cast::<RuntimeText>() }.value,
+        "nums=[1, 2, 3]"
+    );
+    // Unknown handles fail closed (STATUS_UNSUPPORTED), never panic.
+    let bogus = unsafe {
+        __faber_rt_v1_format_1_ptr_to_ptr(
+            context,
+            FaberRtSliceV1::from_static(b"x"),
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(bogus.status, STATUS_UNSUPPORTED);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn regex_literal_1_ptr_to_ptr_builds_pattern_carrier() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let pattern = b"\\d+\0";
+    let flags = b"i\0";
+    let descriptor = super::regex_rt::RegexLiteralDescriptorV1 {
+        pattern: pattern.as_ptr().cast(),
+        flags: flags.as_ptr().cast(),
+    };
+    let result =
+        unsafe { __faber_rt_v1_regex_literal_1_ptr_to_ptr(context, &raw const descriptor) };
+    assert_eq!(result.status, STATUS_OK);
+    let text = unsafe { __faber_rt_v1_regex_get_text(context, result.value) };
+    assert_eq!(text.status, STATUS_OK);
+    assert_eq!(unsafe { &*text.value.cast::<RuntimeText>() }.value, "\\d+");
+    // Null descriptor fails closed with STATUS_INVALID_ARGUMENT.
+    let invalid = unsafe { __faber_rt_v1_regex_literal_1_ptr_to_ptr(context, ptr::null()) };
+    assert_eq!(invalid.status, STATUS_INVALID_ARGUMENT);
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn read_line_0_to_ptr_rejects_null_context_and_links() {
+    // The symbol must be exported and fail closed on a null context; the
+    // live-stdin read path is exercised by the repro link pipeline (stdin is
+    // a process-global the test runner cannot inject).
+    let result = unsafe { __faber_rt_v1_read_line_0_to_ptr(ptr::null_mut()) };
+    assert_eq!(result.status, STATUS_INVALID_ARGUMENT);
+}
+
+// ---------------------------------------------------------------------------
+// Stage 8 S8.2 — static CLI descriptor decode, argv parse, exit policy.
+// ---------------------------------------------------------------------------
+
+/// Hand-constructed `cli_descriptor` v1 bytes for a single-command program
+/// with one numeric operand (`exitum`) and a `Binding` exit policy, in the
+/// radix `cli_descriptor` byte format (an independent decoder check).
+fn descriptor_single_numerus_binding() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"FCLI");
+    bytes.push(1); // version
+    bytes.push(0); // mode single
+    bytes.push(0); // no version
+    bytes.push(0); // no description
+    // name
+    bytes.extend_from_slice(&5u16.to_le_bytes());
+    bytes.extend_from_slice(b"smoke");
+    // exit: Binding("exitum")
+    bytes.push(2);
+    bytes.extend_from_slice(&6u16.to_le_bytes());
+    bytes.extend_from_slice(b"exitum");
+    // global options: 0
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    // global operands: 0
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    // options: 0
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    // operands: 1 (numerus, rest=false, no desc, no default, "exitum")
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.push(1); // ty numerus
+    bytes.push(0); // rest
+    bytes.push(0); // has_description
+    bytes.push(0); // has_default
+    bytes.extend_from_slice(&6u16.to_le_bytes());
+    bytes.extend_from_slice(b"exitum");
+    // commands: 0
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn cli_parse_returns_typed_value_table_and_binding_exit_code() {
+    let descriptor = descriptor_single_numerus_binding();
+    let program = std::ffi::CString::new("prog").unwrap();
+    let operand = std::ffi::CString::new("7").unwrap();
+    let argv = [program.as_ptr(), operand.as_ptr()];
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(2, argv.as_ptr(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+
+    let result = unsafe {
+        __faber_rt_v1_cli_parse(context, descriptor.as_ptr(), descriptor.len())
+    };
+    assert!(result.status.is_ok(), "descriptor decode + argv parse must succeed");
+    assert!(!result.value.is_null(), "typed value table must be returned");
+    assert_eq!(
+        unsafe { __faber_rt_v1_cli_field_i64(context, result.value, 0) },
+        7,
+        "numeric operand must parse to i64"
+    );
+    // The Binding exit policy resolves the record field by binding name.
+    assert_eq!(
+        unsafe { __faber_rt_v1_cli_exit_code(context) },
+        7,
+        "Binding exit policy must resolve the numeric record field"
+    );
+    assert_eq!(
+        unsafe { __faber_rt_v1_cli_selected_command(context) },
+        -1,
+        "single-command mode has no selected command"
+    );
     unsafe { __faber_rt_v1_shutdown(context) };
 }

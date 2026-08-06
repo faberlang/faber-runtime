@@ -1,11 +1,12 @@
 //! Arena-owned typed maps and sets for the LLVM host ABI.
 
 use super::array::{find_array, read_value, store_array, valid_kind, write_value, RuntimeValue};
+use super::format::text_value;
 use super::option::store_option;
 use super::RuntimeContext;
 use faber::host_abi::{
     FaberRtContextV1, FaberRtPtrResultV1, FaberRtSliceV1, FaberRtStatusV1, FaberRtValueKindV1,
-    STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_TEXT,
+    STATUS_INVALID_ARGUMENT, STATUS_OK, STATUS_PANIC, VALUE_KIND_I64, VALUE_KIND_TEXT,
 };
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
@@ -74,6 +75,50 @@ pub unsafe extern "C" fn __faber_rt_v1_map_put(
         }
         STATUS_OK
     })
+}
+
+/// Set one entry of a `tabula<textus, numerus>` map through a direct handle.
+///
+/// The generic aggregate index-assignment path (`aggregate[text_key] ← i64`)
+/// emits `set_index(aggregate, key, value)` with a text key and an i64 value
+/// when the destination aggregate is not a recognized collection carrier. The
+/// aggregate handle must be a live map created by this runtime with text keys
+/// and i64 values; unrecognized shapes fail closed by leaving the map
+/// unchanged.
+///
+/// # Safety
+///
+/// `aggregate` must be a live map handle created by this runtime; `key` must
+/// be a readable text descriptor.
+#[no_mangle]
+pub unsafe extern "C" fn __faber_rt_v1_aggregate_set_index_ptr_i64(
+    aggregate: *mut c_void,
+    key: *const FaberRtSliceV1,
+    value: i64,
+) {
+    let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+        let Some(_key_text) = text_value(key) else {
+            return;
+        };
+        // SAFETY: per the v1 ABI contract, `aggregate` is a live map handle
+        // created by this runtime; the handle is a stable box pointer.
+        let Some(map) = (unsafe { (aggregate as *mut RuntimeMap).as_mut() }) else {
+            return;
+        };
+        if map.key_kind != VALUE_KIND_TEXT || map.value_kind != VALUE_KIND_I64 {
+            return;
+        }
+        let key = RuntimeValue::Ptr(key.cast::<c_void>().cast_mut());
+        if let Some((_, existing)) = map
+            .entries
+            .iter_mut()
+            .find(|(candidate, _)| values_equal(VALUE_KIND_TEXT, *candidate, key))
+        {
+            *existing = RuntimeValue::I64(value);
+        } else {
+            map.entries.push((key, RuntimeValue::I64(value)));
+        }
+    }));
 }
 
 #[no_mangle]
@@ -269,8 +314,34 @@ fn map_values(context: *mut FaberRtContextV1, map: *mut c_void, keys: bool) -> F
                 )
             }
         };
+        // L19: the snapshot array must be stored with the element kind the
+        // array consumers pass (`array_get`/`array_set` reject a kind
+        // mismatch). The emitter canonicalizes every pointer-carried element
+        // (textus/ascii/valor/instans/octeti/regex …) to VALUE_KIND_PTR, so a
+        // `tabula<textus, T>` key snapshot stored with the raw map key kind
+        // (VALUE_KIND_TEXT) made `itera de <tabula>` fail every element read
+        // (STATUS_INVALID_ARGUMENT) — no keys printed and a nonzero exit code
+        // latched. The map entries themselves are stored as `RuntimeValue::Ptr`
+        // for these kinds, so the PTR snapshot reads them identically.
+        let kind = canonical_array_element_kind(kind);
         store_array(runtime, kind, values)
     })
+}
+
+/// Canonical element kind used by array consumers for a map key/value kind.
+///
+/// Pointer-carried kinds (textus, ascii, valor, instans, octeti, regex …)
+/// cross the array ABI as `VALUE_KIND_PTR` handles; numeric kinds pass
+/// through unchanged.
+fn canonical_array_element_kind(kind: faber::host_abi::FaberRtValueKindV1) -> faber::host_abi::FaberRtValueKindV1 {
+    match kind {
+        faber::host_abi::VALUE_KIND_TEXT
+        | faber::host_abi::VALUE_KIND_ASCII
+        | faber::host_abi::VALUE_KIND_VALOR
+        | faber::host_abi::VALUE_KIND_OPTION_I64
+        | faber::host_abi::VALUE_KIND_INSTANS => faber::host_abi::VALUE_KIND_PTR,
+        other => other,
+    }
 }
 
 #[no_mangle]
@@ -630,7 +701,7 @@ pub(super) fn store_map(
     FaberRtPtrResultV1::success(handle)
 }
 
-fn store_set(
+pub(super) fn store_set(
     runtime: &mut RuntimeContext,
     kind: FaberRtValueKindV1,
     values: Vec<RuntimeValue>,
@@ -655,7 +726,7 @@ fn find_map_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&mu
         .find(|map| std::ptr::eq(map.as_ref(), handle.cast_const().cast()))
         .map(super::StableBox::as_mut)
 }
-fn find_set(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeSet> {
+pub(super) fn find_set(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeSet> {
     runtime
         .sets
         .iter()

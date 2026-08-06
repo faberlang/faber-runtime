@@ -23,6 +23,26 @@ fn gradient_symbols_cohere_with_radix_host_abi() {
 }
 
 #[test]
+fn solum_symbols_cohere_with_radix_host_abi() {
+    assert_eq!(
+        radix_host_abi::SYMBOL_SOLUM_READ_TEXT,
+        SYMBOL_SOLUM_READ_TEXT,
+    );
+    assert_eq!(
+        radix_host_abi::SYMBOL_SOLUM_READ_LINES,
+        SYMBOL_SOLUM_READ_LINES,
+    );
+    assert_eq!(
+        radix_host_abi::SYMBOL_SOLUM_READ_BYTES,
+        SYMBOL_SOLUM_READ_BYTES,
+    );
+    assert_eq!(
+        radix_host_abi::SYMBOL_SOLUM_WRITE_TEXT,
+        SYMBOL_SOLUM_WRITE_TEXT,
+    );
+}
+
+#[test]
 fn host_abi_v1_slice_carrier_layout() {
     assert_eq!(size_of::<FaberRtSliceV1>(), 16);
     assert_eq!(align_of::<FaberRtSliceV1>(), 8);
@@ -53,8 +73,8 @@ fn host_abi_v1_context_carrier_layout() {
 }
 
 #[test]
-fn host_abi_v1_diagnostic_symbol_count_is_22() {
-    assert_eq!(DIAGNOSTIC_SYMBOLS_V1.len(), 22);
+fn host_abi_v1_diagnostic_symbol_count_is_23() {
+    assert_eq!(DIAGNOSTIC_SYMBOLS_V1.len(), 23);
 }
 
 #[test]
@@ -116,6 +136,7 @@ fn host_abi_v1_core_symbols_have_v1_prefix() {
         SYMBOL_FORMAT_I64_I64,
         SYMBOL_FORMAT_I64_I64_I64,
         SYMBOL_FORMAT_F64,
+        SYMBOL_FORMAT_F32,
         SYMBOL_TEXT_I64,
         SYMBOL_TEXT_F64,
         SYMBOL_TEXT_I1,
@@ -239,7 +260,7 @@ fn host_abi_v1_llvm_slice_type_definition() {
 fn host_abi_v1_llvm_exit_type_definition() {
     assert_eq!(
         LLVM_EXIT_TYPE_DEFINITION,
-        "%FaberRtExitV1 = type { i32, i32 }"
+        "%FaberRtExitV1 = type i64"
     );
 }
 
