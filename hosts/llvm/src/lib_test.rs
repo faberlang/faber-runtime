@@ -4468,3 +4468,138 @@ fn cli_parse_returns_typed_value_table_and_binding_exit_code() {
     );
     unsafe { __faber_rt_v1_shutdown(context) };
 }
+
+// ===========================================================================
+// P8 — sermo materialization surface (promotion packet sermo-runtime-surface)
+// ===========================================================================
+//
+// The five ad/sermo-* fixtures' captured shapes each get a row here:
+//   - sermo-conversio  (convert_1_aggregate_to_text):  SermoOpen + sermo->textus
+//   - sermo-recovery   (convert_2_aggregate_i64_to_i64): sermo->valor + the
+//     _or scalar recovery row (fallback substitutes on type mismatch)
+//   - sermo-live-directional / sermo-tuus / sermo-vacuum (value-returning
+//     runtime call): SermoOpen now returns an opaque stream handle
+
+fn sermo_context() -> *mut FaberRtContextV1 {
+    let mut context = ptr::null_mut();
+    let status = unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) };
+    assert_eq!(status, STATUS_OK);
+    assert!(!context.is_null());
+    context
+}
+
+/// Store a payload valor in the arena so the binding can read it by pointer.
+fn store_payload(context: *mut FaberRtContextV1, value: Valor) -> *const Valor {
+    let result = convert::store_valor(context, value);
+    assert!(result.status.is_ok(), "payload valor must store");
+    result.value.cast::<Valor>()
+}
+
+fn find_numeric(runtime: &RuntimeContext, handle: *mut c_void) -> Option<i64> {
+    runtime
+        .numeric_boxes
+        .iter()
+        .find(|value| std::ptr::eq(value.as_ref(), handle.cast()))
+        .map(StableBox::as_ref)
+        .copied()
+}
+
+#[test]
+fn sermo_open_returns_an_opaque_stream_handle() {
+    let context = sermo_context();
+    let payload = store_payload(context, Valor::Nihil);
+    let opened = unsafe { __faber_rt_v1_sermo_open(context, &FaberRtSliceV1::from_static(b"runtime:echo"), payload) };
+    assert!(opened.status.is_ok(), "SermoOpen must succeed");
+    assert!(
+        !opened.value.is_null(),
+        "SermoOpen must return an opaque stream handle (value-returning runtime call)"
+    );
+    let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+    assert_eq!(runtime.sermos.len(), 1, "stream handle registered in the arena");
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn sermo_open_and_materialize_text_echoes_the_opener() {
+    let context = sermo_context();
+    let payload = store_payload(context, Valor::Textus("salve, munde".into()));
+    let opened = unsafe { __faber_rt_v1_sermo_open(context, &FaberRtSliceV1::from_static(b"runtime:echo"), payload) };
+    assert!(opened.status.is_ok(), "SermoOpen must succeed");
+
+    // ad/sermo-conversio.fab shape: `ad 'runtime:echo'(payload) ↦ textus`.
+    let materialized = unsafe { __faber_rt_v1_sermo_materialize_text(context, opened.value) };
+    assert!(materialized.status.is_ok(), "sermo -> textus must succeed");
+    let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+    let text = format::find_text(runtime, materialized.value).expect("textus in arena");
+    assert_eq!(text.value, "salve, munde");
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn sermo_materialize_valor_returns_the_frame_payload() {
+    let context = sermo_context();
+    let payload = store_payload(context, Valor::Textus("salve".into()));
+    let opened = unsafe { __faber_rt_v1_sermo_open(context, &FaberRtSliceV1::from_static(b"runtime:echo"), payload) };
+    assert!(opened.status.is_ok());
+
+    // ad/sermo-* shape: `sermo ↦ valor` — the stream materializes to a valor
+    // carrier (recovery fixtures then extract scalars from it).
+    let result = unsafe { __faber_rt_v1_sermo_materialize_valor(context, opened.value) };
+    assert!(result.status.is_ok(), "sermo -> valor must succeed");
+    let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+    let valor = convert::find_valor(runtime, result.value).expect("valor in arena");
+    assert_eq!(valor, &Valor::Textus("salve".into()));
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn sermo_set_opener_replaces_the_request_payload() {
+    let context = sermo_context();
+    let payload = store_payload(context, Valor::Nihil);
+    let opened = unsafe { __faber_rt_v1_sermo_open(context, &FaberRtSliceV1::from_static(b"runtime:echo"), payload) };
+    assert!(opened.status.is_ok());
+
+    // SermoSetOpener replaces the first request frame's payload before the
+    // stream is consumed; runtime:echo echoes the opener back.
+    let ping = store_payload(context, Valor::Textus("ping".into()));
+    let status = unsafe { __faber_rt_v1_sermo_set_opener(context, opened.value, ping) };
+    assert!(status.is_ok(), "SermoSetOpener must succeed");
+
+    let materialized = unsafe { __faber_rt_v1_sermo_materialize_text(context, opened.value) };
+    assert!(materialized.status.is_ok());
+    let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+    let text = format::find_text(runtime, materialized.value).expect("textus in arena");
+    assert_eq!(text.value, "ping");
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn sermo_materialize_i64_or_extracts_a_numeric_payload() {
+    let context = sermo_context();
+    let payload = store_payload(context, Valor::Numerus(42));
+    let opened = unsafe { __faber_rt_v1_sermo_open(context, &FaberRtSliceV1::from_static(b"runtime:echo"), payload) };
+    assert!(opened.status.is_ok());
+
+    let result = unsafe { __faber_rt_v1_sermo_materialize_i64_or(context, opened.value, 0) };
+    assert!(result.status.is_ok());
+    let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+    assert_eq!(find_numeric(runtime, result.value), Some(42));
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
+fn sermo_materialize_i64_or_recovers_on_type_mismatch() {
+    let context = sermo_context();
+    let payload = store_payload(context, Valor::Textus("non-numeric".into()));
+    let opened = unsafe { __faber_rt_v1_sermo_open(context, &FaberRtSliceV1::from_static(b"runtime:echo"), payload) };
+    assert!(opened.status.is_ok());
+
+    // ad/sermo-recovery.fab shape: `ad 'runtime:echo'(payload) ↦ i64 ⇥ 0` —
+    // the echo returns textus, the scalar extraction fails, and the `_or`
+    // fallback substitutes instead of aborting (convert_2_aggregate_i64_to_i64).
+    let result = unsafe { __faber_rt_v1_sermo_materialize_i64_or(context, opened.value, 0) };
+    assert!(result.status.is_ok(), "recovery row must not abort");
+    let runtime = unsafe { &*context.cast::<RuntimeContext>() };
+    assert_eq!(find_numeric(runtime, result.value), Some(0));
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
