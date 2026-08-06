@@ -79,6 +79,24 @@ pub const SYMBOL_INSTANS_FROM_TEXT: &str = "__faber_rt_v1_instans_from_text";
 pub const SYMBOL_INSTANS_FROM_VALOR: &str = "__faber_rt_v1_instans_from_valor";
 pub const SYMBOL_INSTANS_RETAG: &str = "__faber_rt_v1_instans_retag";
 pub const SYMBOL_INSTANS_GET_TEXT: &str = "__faber_rt_v1_instans_get_text";
+// P6 (promotion packet or-recovery-rows): mirror of the shared `⇥` recovery
+// family (radix-host-abi owns the values). Each `_or` row is a fixed
+// signature `(payload + fallback → payload)`: the typed extraction runs first
+// and the fallback substitutes on a missing or wrong-typed payload instead of
+// aborting. See `crate::or_recovery` for the host binding.
+pub const SYMBOL_VALOR_GET_I64_OR: &str = "__faber_rt_v1_valor_get_i64_or";
+pub const SYMBOL_VALOR_GET_F64_OR: &str = "__faber_rt_v1_valor_get_f64_or";
+pub const SYMBOL_VALOR_GET_I1_OR: &str = "__faber_rt_v1_valor_get_i1_or";
+pub const SYMBOL_VALOR_GET_TEXT_OR: &str = "__faber_rt_v1_valor_get_text_or";
+pub const SYMBOL_VALOR_GET_ASCII_OR: &str = "__faber_rt_v1_valor_get_ascii_or";
+pub const SYMBOL_VALOR_GET_OCTETI_OR: &str = "__faber_rt_v1_valor_get_octeti_or";
+pub const SYMBOL_VALOR_GET_ARRAY_OR: &str = "__faber_rt_v1_valor_get_array_or";
+pub const SYMBOL_VALOR_GET_MAP_OR: &str = "__faber_rt_v1_valor_get_map_or";
+pub const SYMBOL_VALOR_GET_GENUS_OR: &str = "__faber_rt_v1_valor_get_genus_or";
+pub const SYMBOL_OCTETI_GET_TEXT_OR: &str = "__faber_rt_v1_octeti_get_text_or";
+pub const SYMBOL_OCTETI_GET_ASCII_OR: &str = "__faber_rt_v1_octeti_get_ascii_or";
+pub const SYMBOL_INSTANS_FROM_TEXT_OR: &str = "__faber_rt_v1_instans_from_text_or";
+pub const SYMBOL_INSTANS_FROM_VALOR_OR: &str = "__faber_rt_v1_instans_from_valor_or";
 pub const SYMBOL_COMPARE_LT: &str = "__faber_rt_v1_compare_lt_2_ptr_ptr_to_i1";
 pub const SYMBOL_COMPARE_GT: &str = "__faber_rt_v1_compare_gt_2_ptr_ptr_to_i1";
 pub const SYMBOL_COMPARE_LTE: &str = "__faber_rt_v1_compare_lte_2_ptr_ptr_to_i1";

@@ -26,6 +26,7 @@ pub mod http;
 pub mod instans;
 pub mod intervallum;
 pub mod json;
+pub mod or_recovery;
 pub mod packed_numeric;
 pub mod partition;
 pub mod policy;
@@ -57,6 +58,11 @@ pub use host_abi::{FaberRtContextV1, FaberRtExitV1, FaberRtSliceV1, FaberRtStatu
 pub use instans::{Instans, InstansPraecisio};
 pub use intervallum::{Intervallum, IntervallumKind, IntervallumNumeric, IntervallumWalk};
 pub use json::{Json, JsonError, JsonErrorKind};
+pub use or_recovery::{
+    instans_from_text_or, instans_from_valor_or, octeti_get_ascii_or, octeti_get_text_or,
+    valor_get_array_or, valor_get_ascii_or, valor_get_f64_or, valor_get_genus_or, valor_get_i1_or,
+    valor_get_i64_or, valor_get_map_or, valor_get_octeti_or, valor_get_text_or,
+};
 pub use packed_numeric::{
     packed_u4_tensor_integration_rows, PackedBitOrder, PackedTensorIntegrationOperation,
     PackedTensorIntegrationRow, PackedTensorIntegrationStatus, PackedU4Block, PackedU4Layout,

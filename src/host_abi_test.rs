@@ -30,6 +30,68 @@ fn cursor_stream_symbol_coheres_with_radix_host_abi() {
 }
 
 #[test]
+fn or_recovery_symbols_cohere_with_radix_host_abi() {
+    // P6: the `_or` recovery family mirrors the radix-host-abi table.
+    for (runtime, shared) in [
+        (
+            SYMBOL_VALOR_GET_I64_OR,
+            radix_host_abi::SYMBOL_VALOR_GET_I64_OR,
+        ),
+        (
+            SYMBOL_VALOR_GET_F64_OR,
+            radix_host_abi::SYMBOL_VALOR_GET_F64_OR,
+        ),
+        (
+            SYMBOL_VALOR_GET_I1_OR,
+            radix_host_abi::SYMBOL_VALOR_GET_I1_OR,
+        ),
+        (
+            SYMBOL_VALOR_GET_TEXT_OR,
+            radix_host_abi::SYMBOL_VALOR_GET_TEXT_OR,
+        ),
+        (
+            SYMBOL_VALOR_GET_ASCII_OR,
+            radix_host_abi::SYMBOL_VALOR_GET_ASCII_OR,
+        ),
+        (
+            SYMBOL_VALOR_GET_OCTETI_OR,
+            radix_host_abi::SYMBOL_VALOR_GET_OCTETI_OR,
+        ),
+        (
+            SYMBOL_VALOR_GET_ARRAY_OR,
+            radix_host_abi::SYMBOL_VALOR_GET_ARRAY_OR,
+        ),
+        (
+            SYMBOL_VALOR_GET_MAP_OR,
+            radix_host_abi::SYMBOL_VALOR_GET_MAP_OR,
+        ),
+        (
+            SYMBOL_VALOR_GET_GENUS_OR,
+            radix_host_abi::SYMBOL_VALOR_GET_GENUS_OR,
+        ),
+        (
+            SYMBOL_OCTETI_GET_TEXT_OR,
+            radix_host_abi::SYMBOL_OCTETI_GET_TEXT_OR,
+        ),
+        (
+            SYMBOL_OCTETI_GET_ASCII_OR,
+            radix_host_abi::SYMBOL_OCTETI_GET_ASCII_OR,
+        ),
+        (
+            SYMBOL_INSTANS_FROM_TEXT_OR,
+            radix_host_abi::SYMBOL_INSTANS_FROM_TEXT_OR,
+        ),
+        (
+            SYMBOL_INSTANS_FROM_VALOR_OR,
+            radix_host_abi::SYMBOL_INSTANS_FROM_VALOR_OR,
+        ),
+    ] {
+        assert_eq!(runtime, shared, "runtime/radix-host-abi `_or` row drift");
+        assert!(runtime.starts_with("__faber_rt_v1_"), "{runtime}");
+    }
+}
+
+#[test]
 fn solum_symbols_cohere_with_radix_host_abi() {
     assert_eq!(
         radix_host_abi::SYMBOL_SOLUM_READ_TEXT,
