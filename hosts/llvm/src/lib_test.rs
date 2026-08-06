@@ -3659,6 +3659,127 @@ fn opaque_nota_renders_lista_textus_and_octeti_in_rust_debug_shape() {
     unsafe { __faber_rt_v1_shutdown(context) };
 }
 
+/// L10 (fa1a5d8c): numeric `lista` elements render in the Rust oracle's Debug
+/// shape (`[1.0, 4.0, 9.0, 16.0]` / `[2, 3]`), and a `valor` renders via the
+/// oracle's `display_valor` (`42`, `{"alpha": 10}`) with octeti payloads
+/// rendering as byte lists (`[222, 173]`, the oracle's `bytes ↦ valor` Lista
+/// Debug shape).
+#[test]
+fn opaque_nota_renders_numeric_lista_and_valor_in_rust_debug_shape() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
+
+    // lista<f32>: array of f32 elements renders [1.0, 4.0, 9.0, 16.0].
+    let f32_array = array::store_array(
+        runtime,
+        faber::host_abi::VALUE_KIND_F32,
+        vec![
+            array::RuntimeValue::F32(1.0),
+            array::RuntimeValue::F32(4.0),
+            array::RuntimeValue::F32(9.0),
+            array::RuntimeValue::F32(16.0),
+        ],
+    );
+    assert_eq!(f32_array.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, f32_array.value),
+        Some("[1.0, 4.0, 9.0, 16.0]".to_owned())
+    );
+
+    // lista<numerus>: renders [2, 3].
+    let i64_array = array::store_array(
+        runtime,
+        faber::host_abi::VALUE_KIND_I64,
+        vec![array::RuntimeValue::I64(2), array::RuntimeValue::I64(3)],
+    );
+    assert_eq!(i64_array.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, i64_array.value),
+        Some("[2, 3]".to_owned())
+    );
+
+    // valor numerus renders its displayed magnitude.
+    let numerus = convert::store_valor(context, faber::Valor::Numerus(42));
+    assert_eq!(numerus.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, numerus.value),
+        Some("42".to_owned())
+    );
+
+    // valor octeti renders the byte-list Debug shape ([222, 173]).
+    let octeti_valor = convert::store_valor(context, faber::Valor::Octeti(vec![0xde, 0xad]));
+    assert_eq!(octeti_valor.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, octeti_valor.value),
+        Some("[222, 173]".to_owned())
+    );
+
+    // valor tabula renders display_valor's map shape.
+    let mut tabula = std::collections::BTreeMap::new();
+    tabula.insert("alpha".to_owned(), faber::Valor::Numerus(10));
+    let tabula_valor = convert::store_valor(context, faber::Valor::Tabula(tabula));
+    assert_eq!(tabula_valor.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, tabula_valor.value),
+        Some(r#"{"alpha": 10}"#.to_owned())
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+/// L10 (fa1a5d8c): a `tabula` handle renders in the Rust oracle's derived
+/// `Json(Valor::Tabula({...}))` Debug shape, and a `copia` handle renders
+/// `{1, 2, 3}` in stored order.
+#[test]
+fn opaque_nota_renders_tabula_and_copia_in_rust_debug_shape() {
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+    let runtime = unsafe { &mut *context.cast::<RuntimeContext>() };
+
+    // tabula<textus, numerus>: JSON-literal map renders Json(Tabula({...})).
+    let key = format::store_text(context, "alpha".to_owned());
+    assert_eq!(key.status, STATUS_OK);
+    let map = collection_map::store_map(
+        runtime,
+        faber::host_abi::VALUE_KIND_TEXT,
+        faber::host_abi::VALUE_KIND_I64,
+        vec![(
+            array::RuntimeValue::Ptr(key.value),
+            array::RuntimeValue::I64(10),
+        )],
+    );
+    assert_eq!(map.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, map.value),
+        Some(r#"Json(Tabula({"alpha": Numerus(10)}))"#.to_owned())
+    );
+
+    // copia<numerus>: renders {1, 2, 3}.
+    let set = collection_map::store_set(
+        runtime,
+        faber::host_abi::VALUE_KIND_I64,
+        vec![
+            array::RuntimeValue::I64(1),
+            array::RuntimeValue::I64(2),
+            array::RuntimeValue::I64(3),
+        ],
+    );
+    assert_eq!(set.status, STATUS_OK);
+    assert_eq!(
+        super::opaque_diagnostic_text(runtime, set.value),
+        Some("{1, 2, 3}".to_owned())
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
 #[test]
 fn instans_compare_family_orders_handles() {
     let mut context = ptr::null_mut();

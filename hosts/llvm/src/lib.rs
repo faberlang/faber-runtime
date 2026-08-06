@@ -467,63 +467,115 @@ fn unsupported_opaque_diagnostic(context: *mut FaberRtContextV1) -> FaberRtStatu
 }
 
 /// Render an opaque handle the LLVM host can display: an arena-owned `lista`
-/// handle (numeric or text elements) or an `octeti` byte payload. Both render
-/// in the Rust oracle's Debug shape (`[1, 2, 3]` / `["prima", "secunda"]` /
-/// `[112, 114, …]`). Returns `None` for unrecognized or unsupported handles
-/// (fail-closed).
+/// handle (numeric or text elements), an `octeti` byte payload, a `valor`, a
+/// `tabula`, or a `copia`. Each renders in the Rust oracle's Debug shape
+/// (`[1, 2, 3]` / `["prima", "secunda"]` / `[112, 114, …]` /
+/// `Json(Tabula({...}))` / `{1, 2, 3}`). Returns `None` for unrecognized or
+/// unsupported handles (fail-closed).
 pub(crate) fn opaque_value_text(runtime: &RuntimeContext, handle: *mut c_void) -> Option<String> {
     if let Some(array) = array::find_array(runtime, handle) {
         let mut rendered = Vec::with_capacity(array.values.len());
         for element in &array.values {
-            let text = match (array.kind, element) {
-                (faber::host_abi::VALUE_KIND_PTR, array::RuntimeValue::Ptr(element_handle)) => {
-                    // Debug of the text payload quotes it (`"prima"`), matching
-                    // `Vec<String>` Debug shape.
-                    format!("{:?}", format::find_text(runtime, *element_handle)?.value)
-                }
-                (faber::host_abi::VALUE_KIND_I1, array::RuntimeValue::I1(value)) => {
-                    format!("{:?}", *value != 0)
-                }
-                (faber::host_abi::VALUE_KIND_I8, array::RuntimeValue::I8(value)) => {
-                    format!("{value}")
-                }
-                (faber::host_abi::VALUE_KIND_I16, array::RuntimeValue::I16(value)) => {
-                    format!("{value}")
-                }
-                (faber::host_abi::VALUE_KIND_I32, array::RuntimeValue::I32(value)) => {
-                    format!("{value}")
-                }
-                (faber::host_abi::VALUE_KIND_I64, array::RuntimeValue::I64(value)) => {
-                    format!("{value}")
-                }
-                (faber::host_abi::VALUE_KIND_U8, array::RuntimeValue::U8(value)) => {
-                    format!("{value}")
-                }
-                (faber::host_abi::VALUE_KIND_U16, array::RuntimeValue::U16(value)) => {
-                    format!("{value}")
-                }
-                (faber::host_abi::VALUE_KIND_U32, array::RuntimeValue::U32(value)) => {
-                    format!("{value}")
-                }
-                (faber::host_abi::VALUE_KIND_U64, array::RuntimeValue::U64(value)) => {
-                    format!("{value}")
-                }
-                (faber::host_abi::VALUE_KIND_F32, array::RuntimeValue::F32(value)) => {
-                    display_fractus(*value)
-                }
-                (faber::host_abi::VALUE_KIND_F64, array::RuntimeValue::F64(value)) => {
-                    display_fractus(*value)
-                }
-                _ => return None,
-            };
-            rendered.push(text);
+            rendered.push(opaque_element_text(runtime, array.kind, element)?);
         }
         return Some(format!("[{}]", rendered.join(", ")));
     }
     if let Some(bytes) = valor_aggregate::find_octeti(runtime, handle) {
         return Some(format!("{bytes:?}"));
     }
+    if let Some(valor) = convert::find_valor(runtime, handle) {
+        return Some(match valor {
+            // `bytes ↦ valor` boxes the payload; the Rust oracle renders the
+            // equivalent `Valor::Lista` of numeri as the byte-list Debug shape,
+            // so an octeti payload renders `[222, 173]` rather than
+            // `display_valor`'s `<n bytes>` placeholder.
+            Valor::Octeti(bytes) => format!("{bytes:?}"),
+            other => faber::display_valor(other),
+        });
+    }
+    if let Some(map) = collection_map::find_map(runtime, handle) {
+        // JSON-literal `tabula` values render in the Rust oracle's derived
+        // `Json(Valor::Tabula({...}))` Debug shape. Non-text keys fail closed.
+        let mut entries = std::collections::BTreeMap::new();
+        for (key, value) in &map.entries {
+            let Some(Valor::Textus(key)) =
+                valor_aggregate::runtime_value_to_valor(runtime, map.key_kind, *key)
+            else {
+                return None;
+            };
+            let Some(value) =
+                valor_aggregate::runtime_value_to_valor(runtime, map.value_kind, *value)
+            else {
+                return None;
+            };
+            entries.insert(key, value);
+        }
+        let valor = Valor::Tabula(entries);
+        return Some(format!("Json({valor:?})"));
+    }
+    if let Some(set) = collection_map::find_set(runtime, handle) {
+        // `copia` values render `{1, 2, 3}` in stored order (the Rust oracle's
+        // `HashSet` Debug order is per-instance nondeterministic, so no
+        // byte-exact order is guaranteed).
+        let mut rendered = Vec::with_capacity(set.values.len());
+        for element in &set.values {
+            rendered.push(opaque_element_text(runtime, set.kind, element)?);
+        }
+        return Some(format!("{{{}}}", rendered.join(", ")));
+    }
     None
+}
+
+/// Render one `lista`/`copia` element in the Rust oracle's Debug shape.
+fn opaque_element_text(
+    runtime: &RuntimeContext,
+    kind: faber::host_abi::FaberRtValueKindV1,
+    element: &array::RuntimeValue,
+) -> Option<String> {
+    Some(match (kind, element) {
+        (faber::host_abi::VALUE_KIND_PTR, array::RuntimeValue::Ptr(element_handle)) => {
+            // Text payload (arena handle or static text-literal descriptor)
+            // quotes it (`"prima"`), matching `Vec<String>` Debug shape.
+            let payload = format::find_text(runtime, *element_handle)
+                .map(|text| text.value.clone())
+                .or_else(|| format::text_value(element_handle.cast()));
+            format!("{:?}", payload?)
+        }
+        (faber::host_abi::VALUE_KIND_I1, array::RuntimeValue::I1(value)) => {
+            format!("{:?}", *value != 0)
+        }
+        (faber::host_abi::VALUE_KIND_I8, array::RuntimeValue::I8(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_I16, array::RuntimeValue::I16(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_I32, array::RuntimeValue::I32(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_I64, array::RuntimeValue::I64(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_U8, array::RuntimeValue::U8(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_U16, array::RuntimeValue::U16(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_U32, array::RuntimeValue::U32(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_U64, array::RuntimeValue::U64(value)) => {
+            format!("{value}")
+        }
+        (faber::host_abi::VALUE_KIND_F32, array::RuntimeValue::F32(value)) => {
+            display_fractus(*value)
+        }
+        (faber::host_abi::VALUE_KIND_F64, array::RuntimeValue::F64(value)) => {
+            display_fractus(*value)
+        }
+        _ => return None,
+    })
 }
 
 /// Render an opaque `nota`/`mone` handle the LLVM host can display (see

@@ -204,6 +204,15 @@ pub(super) fn store_valor(context: *mut FaberRtContextV1, value: Valor) -> Faber
     .unwrap_or(FaberRtPtrResultV1::failure(STATUS_PANIC))
 }
 
+/// Look up an arena-owned `valor` handle by pointer equality.
+pub(super) fn find_valor(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&Valor> {
+    runtime
+        .valors
+        .iter()
+        .find(|valor| std::ptr::eq(valor.as_ref(), handle.cast()))
+        .map(super::StableBox::as_ref)
+}
+
 /// Re-tag one opaque runtime handle as another opaque carrier (`↦` between
 /// carrier types that share the same runtime representation).
 ///

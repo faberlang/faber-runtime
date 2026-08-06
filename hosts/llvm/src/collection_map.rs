@@ -675,7 +675,7 @@ pub(super) fn store_map(
     FaberRtPtrResultV1::success(handle)
 }
 
-fn store_set(
+pub(super) fn store_set(
     runtime: &mut RuntimeContext,
     kind: FaberRtValueKindV1,
     values: Vec<RuntimeValue>,
@@ -700,7 +700,7 @@ fn find_map_mut(runtime: &mut RuntimeContext, handle: *mut c_void) -> Option<&mu
         .find(|map| std::ptr::eq(map.as_ref(), handle.cast_const().cast()))
         .map(super::StableBox::as_mut)
 }
-fn find_set(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeSet> {
+pub(super) fn find_set(runtime: &RuntimeContext, handle: *mut c_void) -> Option<&RuntimeSet> {
     runtime
         .sets
         .iter()
