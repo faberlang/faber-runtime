@@ -12,6 +12,7 @@ mod octeti;
 mod option;
 mod provider;
 mod regex_rt;
+mod sermo;
 mod solum;
 mod sparsa;
 mod tensor;
@@ -122,6 +123,11 @@ use provider::{
 use regex_rt::{
     __faber_rt_v1_regex_from_ascii, __faber_rt_v1_regex_from_text, __faber_rt_v1_regex_get_text,
     __faber_rt_v1_regex_literal_1_ptr_to_ptr,
+};
+#[cfg(test)]
+use sermo::{
+    __faber_rt_v1_sermo_materialize_i64_or, __faber_rt_v1_sermo_materialize_text,
+    __faber_rt_v1_sermo_materialize_valor, __faber_rt_v1_sermo_open, __faber_rt_v1_sermo_set_opener,
 };
 #[cfg(test)]
 use solum::{
@@ -245,6 +251,7 @@ struct RuntimeContext {
     regexes: Vec<StableBox<faber::Regex>>,
     intervals: Vec<StableBox<faber::Intervallum<i64>>>,
     union_boxes: Vec<StableBox<*mut std::ffi::c_void>>,
+    sermos: Vec<StableBox<faber::frame::Sermo>>,
 }
 
 /// Initialize one process-lifetime LLVM host context.
@@ -298,6 +305,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
             regexes: Vec::new(),
             intervals: Vec::new(),
             union_boxes: Vec::new(),
+            sermos: Vec::new(),
         });
         *out_context = Box::into_raw(context).cast();
         STATUS_OK
