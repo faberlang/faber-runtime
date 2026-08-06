@@ -32,6 +32,7 @@ pub mod or_recovery;
 pub mod packed_numeric;
 pub mod partition;
 pub mod policy;
+pub mod prefill;
 pub mod quantized_tensor_layout;
 pub mod regex;
 pub mod repack_plan;
@@ -154,6 +155,10 @@ mod cpu_oracle_test;
 #[cfg(test)]
 #[path = "greedy_run_test.rs"]
 mod greedy_run_test;
+
+#[cfg(test)]
+#[path = "prefill_test.rs"]
+mod prefill_test;
 
 #[cfg(test)]
 #[path = "capability_test.rs"]
