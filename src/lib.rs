@@ -7,6 +7,7 @@ pub mod arena;
 pub mod ascii;
 mod autograd;
 pub mod bound_plan;
+pub mod decoder_ops;
 pub mod dequant;
 pub mod device;
 pub mod device_identity;
@@ -125,3 +126,7 @@ mod tensor_view_test;
 #[cfg(test)]
 #[path = "dequant_test.rs"]
 mod dequant_test;
+
+#[cfg(test)]
+#[path = "decoder_ops_test.rs"]
+mod decoder_ops_test;
