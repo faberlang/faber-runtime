@@ -67,8 +67,11 @@
 //! threshold authority): window positions 0..16 (prompt end + first 16
 //! decode); top-1 exact over non-EOG {0,2} vs `correctness-top1.json`; top-k
 //! k=5 ≥4/5 on raw normalized logits; per-element band Δ=1e-5 in log-softmax
-//! space full vocab; finite gate; first-divergence rule. Training
-//! `numeric-policy.md` rows never apply (memo `fdc2a448`).
+//! space full vocab; finite gate; first-divergence rule. The first-divergence
+//! record (contract §4.5, [`DivergenceRecord`]) names the comparator trace
+//! token, the EOG-excluded oracle top-1, and the failing threshold(s) at the
+//! first failing position. Training `numeric-policy.md` rows never apply
+//! (memo `fdc2a448`).
 //!
 //! BAND STATUS (honest, as of the GI2-3 closeout): the oracle meets **top-1
 //! exact at all 17 window positions** (including the EOG-exclusion case at
@@ -990,7 +993,38 @@ pub fn max_band_deviation(a: &[f32], b: &[f32]) -> f32 {
         .fold(0.0f32, |m, (x, y)| m.max((x - y).abs()))
 }
 
+/// A named numeric-contract threshold that can fail at a window position
+/// (numeric contract §4.5: the divergence record names the failing
+/// threshold(s), not just a boolean).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailingThreshold {
+    /// §4.1 — exact top-1 over non-EOG {0, 2} vs the comparator trace token.
+    Top1,
+    /// §4.2 — top-k (k=5) overlap ≥4/5 vs the comparator top-5 set.
+    TopK,
+    /// §4.3 — per-element log-softmax band Δ ≤ 1e-5 over the full vocab.
+    Band,
+    /// §4.4 — finite-value gate (finite logits/logp, in-range ids).
+    Finite,
+}
+
+impl fmt::Display for FailingThreshold {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Top1 => write!(f, "top-1"),
+            Self::TopK => write!(f, "top-k"),
+            Self::Band => write!(f, "band"),
+            Self::Finite => write!(f, "finite"),
+        }
+    }
+}
+
 /// Per-position verdict of the numeric contract at one window position.
+///
+/// Every verdict carries the contract's first-divergence fields (numeric
+/// contract §4.5): the comparator trace token, the oracle's EOG-excluded
+/// top-1, and the named failing thresholds — per position, so the window is
+/// replayable position by position.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PositionVerdict {
     /// Window position (0 = prompt end; `i` = after `i` teacher-forced trace
@@ -1001,6 +1035,12 @@ pub struct PositionVerdict {
     /// §4.1 probe: the oracle's raw (EOG-included) argmax at this position —
     /// records the EOG-exclusion scenario (e.g. position 1 raw argmax = 2).
     pub raw_argmax: i64,
+    /// §4.1/§4.5: the pinned comparator greedy trace token id at this
+    /// position (`correctness-top1.json`).
+    pub trace_token: i64,
+    /// §4.1/§4.5: the oracle's **EOG-excluded** top-1 id at this position —
+    /// the contract surface (not the raw argmax; EOG {0,2} never counts).
+    pub oracle_top1: i64,
     /// §4.2: overlap size of the oracle vs comparator top-5 sets (≥4 = pass).
     pub topk_overlap: usize,
     /// §4.2 pass (≥4/5).
@@ -1012,8 +1052,50 @@ pub struct PositionVerdict {
     pub band_matches: bool,
     /// §4.4: every raw logit and normalized logp finite, ids in range.
     pub all_finite: bool,
+    /// §4.5: the named failing threshold(s) at this position; empty when
+    /// every threshold passes (`ok`).
+    pub failing_thresholds: Vec<FailingThreshold>,
     /// All of §4.1–§4.4.
     pub ok: bool,
+}
+
+/// The durable first-divergence record (numeric contract §4.5): taken at the
+/// **first** diverging token position — the lowest generation position `i`
+/// at which any threshold fails — with the comparator trace token id, the
+/// oracle token id (the EOG-excluded top-1, §4.1), the named failing
+/// threshold(s), and the max band deviation at that position. Later
+/// disagreements never replace or obscure the first diverging position.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DivergenceRecord {
+    /// Window position of the first diverging token (0 = prompt end).
+    pub position: u32,
+    /// §4.1/§4.5: the pinned comparator greedy trace token id.
+    pub comparator_trace_token: i64,
+    /// §4.1/§4.5: the oracle's EOG-excluded top-1 token id.
+    pub oracle_top1: i64,
+    /// §4.5: the named failing threshold(s) (top-1, top-k, band, finite).
+    pub failing_thresholds: Vec<FailingThreshold>,
+    /// §4.3/§4.5: max per-element |logp_oracle − logp_comparator| at the
+    /// first diverging position.
+    pub max_band_deviation: f32,
+}
+
+impl DivergenceRecord {
+    /// The first-divergence record over a full window of verdicts, or `None`
+    /// when every position passes (contract §4.5: the lowest generation
+    /// position `i` at which any threshold fails wins; later failures never
+    /// replace it).
+    #[must_use]
+    pub fn first(verdicts: &[PositionVerdict]) -> Option<DivergenceRecord> {
+        let v = verdicts.iter().find(|v| !v.ok)?;
+        Some(DivergenceRecord {
+            position: v.position,
+            comparator_trace_token: v.trace_token,
+            oracle_top1: v.oracle_top1,
+            failing_thresholds: v.failing_thresholds.clone(),
+            max_band_deviation: v.max_band_deviation,
+        })
+    }
 }
 
 /// Compare one window position against the pinned comparator reference under
@@ -1060,15 +1142,34 @@ pub fn compare_position(
     let max_dev = max_band_deviation(&oracle_logp, comparator_logp);
     let band_matches = max_dev <= BAND_DELTA;
 
+    // §4.5: the named failing threshold(s) at this position.
+    let mut failing_thresholds = Vec::new();
+    if !top1_matches {
+        failing_thresholds.push(FailingThreshold::Top1);
+    }
+    if !topk_matches {
+        failing_thresholds.push(FailingThreshold::TopK);
+    }
+    if !band_matches {
+        failing_thresholds.push(FailingThreshold::Band);
+    }
+    if !all_finite {
+        failing_thresholds.push(FailingThreshold::Finite);
+    }
+    let ok = failing_thresholds.is_empty();
+
     Ok(PositionVerdict {
         position,
         top1_matches,
         raw_argmax,
+        trace_token,
+        oracle_top1,
         topk_overlap: overlap,
         topk_matches,
         max_band_deviation: max_dev,
         band_matches,
         all_finite,
-        ok: top1_matches && topk_matches && band_matches && all_finite,
+        failing_thresholds,
+        ok,
     })
 }
