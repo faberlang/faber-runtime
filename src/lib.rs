@@ -7,6 +7,7 @@ pub mod arena;
 pub mod ascii;
 mod autograd;
 pub mod bound_plan;
+pub mod capability;
 pub mod cpu_oracle;
 pub mod decoder_ops;
 pub mod dequant;
@@ -29,6 +30,7 @@ pub mod partition;
 pub mod policy;
 pub mod quantized_tensor_layout;
 pub mod regex;
+pub mod repack_plan;
 pub mod sparsa;
 pub mod tensor;
 pub mod tensor_view;
@@ -138,3 +140,11 @@ mod decoder_ops_test;
 #[cfg(test)]
 #[path = "cpu_oracle_test.rs"]
 mod cpu_oracle_test;
+
+#[cfg(test)]
+#[path = "capability_test.rs"]
+mod capability_test;
+
+#[cfg(test)]
+#[path = "repack_plan_test.rs"]
+mod repack_plan_test;
