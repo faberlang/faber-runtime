@@ -12,6 +12,9 @@
 use faber::Tensor;
 use std::process::Command;
 
+mod common;
+use common::{parse_f32_values, parse_step_loss_trace};
+
 const FINITE_DIFFERENCE_TOLERANCE: f32 = 2.0e-3;
 
 // MLP: 64 trainable params × 8 FD-oracle SGD steps (fixture lr 0.1)
@@ -170,97 +173,6 @@ fn run_exemplum() -> std::io::Result<std::process::Output> {
 
     let _ = std::fs::remove_dir_all(&temp_exemplum);
     result
-}
-
-/// Extract all f32 values from stdout, handling `nota` output formats.
-///
-/// Handles both bare f32 lines (single `nota` of a scalar) and bracketed
-/// list format: `[3.14, 1.23, ...]` (output from `nota lista<f32>`).
-fn parse_f32_values(stdout: &str) -> Vec<f32> {
-    let mut values = Vec::new();
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        // Try bare f32 parse first.
-        if let Ok(v) = trimmed.parse::<f32>() {
-            values.push(v);
-            continue;
-        }
-        // Bracketed list: [val, val, ...]
-        values.extend(parse_bracketed_f32_list(trimmed));
-    }
-    values
-}
-
-/// Parse a bracketed f32 list: `[3.14, 1.23, ...]`. Returns an empty vec for
-/// any other input shape.
-fn parse_bracketed_f32_list(line: &str) -> Vec<f32> {
-    let line = line.trim();
-    if !(line.starts_with('[') && line.ends_with(']')) {
-        return Vec::new();
-    }
-    let inner = &line[1..line.len() - 1];
-    let mut values = Vec::new();
-    for part in inner.split(',') {
-        let part = part.trim();
-        if !part.is_empty() {
-            if let Ok(v) = part.parse::<f32>() {
-                values.push(v);
-            }
-        }
-    }
-    values
-}
-
-/// Extract the per-step loss trace from the device route's training report.
-///
-/// The RepeatingStep route (S5-U5, `faber/src/package/device/run.rs`) prints
-/// the loss trace as one line per step:
-///
-/// ```text
-/// device: training: 100 step(s) on ONE session; per-step observation (loss) trace:
-/// device:   step 0: [1.5764482]
-/// device:   step 1: [1.3989581]
-/// ...
-/// ```
-///
-/// Values are placed at their explicit step index — not by stdout position —
-/// because the route prints the final loss observation buffer line *before*
-/// the trace, so a naive line-order scan would misorder the first value.
-fn parse_step_loss_trace(stdout: &str) -> Vec<f32> {
-    let mut trace: Vec<f32> = Vec::new();
-    for line in stdout.lines() {
-        let line = line.trim();
-        let Some(after_step) = line
-            .strip_prefix("device:")
-            .and_then(|rest| rest.trim().strip_prefix("step "))
-        else {
-            continue;
-        };
-        let digit_len = after_step
-            .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .count();
-        if digit_len == 0 {
-            continue;
-        }
-        let Ok(step) = after_step[..digit_len].parse::<usize>() else {
-            continue;
-        };
-        let Some(list) = after_step[digit_len..].strip_prefix(':') else {
-            continue;
-        };
-        let values = parse_bracketed_f32_list(list);
-        if values.is_empty() {
-            continue;
-        }
-        if trace.len() <= step {
-            trace.resize(step + values.len(), 0.0);
-        }
-        for (offset, &value) in values.iter().enumerate() {
-            trace[step + offset] = value;
-        }
-    }
-    trace
 }
 
 /// Parse the loss value from `nota` output.

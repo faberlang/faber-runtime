@@ -7,6 +7,8 @@
 //!
 //! Run: cargo test -p faber-runtime compiler_generated_bert_tiny
 
+mod common;
+use common::parse_step_loss_trace;
 use faber::Tensor;
 use std::process::Command;
 
@@ -86,30 +88,6 @@ fn run_bert_tiny_exemplum() -> std::io::Result<std::process::Output> {
 
     let _ = std::fs::remove_dir_all(&temp_exemplum);
     result
-}
-
-/// Extract all f32 values from stdout, handling `nota` output formats.
-fn parse_f32_values(stdout: &str) -> Vec<f32> {
-    let mut values = Vec::new();
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        if let Ok(v) = trimmed.parse::<f32>() {
-            values.push(v);
-            continue;
-        }
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            let inner = &trimmed[1..trimmed.len() - 1];
-            for part in inner.split(',') {
-                let part = part.trim();
-                if !part.is_empty() {
-                    if let Ok(v) = part.parse::<f32>() {
-                        values.push(v);
-                    }
-                }
-            }
-        }
-    }
-    values
 }
 
 // ---------------------------------------------------------------------------
@@ -329,8 +307,9 @@ fn compiler_generated_bert_tiny_loss_trace_matches_tape_oracle() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Parse loss trace from nota output (8 values).
-    let exemplum_trace_raw = parse_f32_values(&stdout);
+    // Parse the loss trace from the device route's per-step observation
+    // lines (the S5-U5 training report), in step order.
+    let exemplum_trace_raw = parse_step_loss_trace(&stdout);
     assert!(
         exemplum_trace_raw.len() >= STEPS,
         "expected ≥ {STEPS} loss values, got {}.\nstdout:\n{stdout}",
