@@ -132,8 +132,7 @@ use sermo::{
 };
 #[cfg(test)]
 use solum::{
-    __faber_rt_v1_read_line_0_to_ptr, __faber_rt_v1_solum_read_bytes,
-    __faber_rt_v1_solum_read_lines, __faber_rt_v1_solum_read_text, __faber_rt_v1_solum_write_text,
+    __faber_rt_v1_read_line_0_to_ptr, __faber_rt_v1_solum_read_bytes, __faber_rt_v1_solum_read_lines,
 };
 use sparsa::RuntimeSparse;
 #[cfg(test)]
@@ -273,7 +272,7 @@ pub unsafe extern "C" fn __faber_rt_v1_init(
         if out_context.is_null() || argc < 0 || (argc > 0 && argv.is_null()) {
             return STATUS_INVALID_ARGUMENT;
         }
-        // SAFETY: `argc` is checked non-negative above (line 229).
+        // SAFETY: `argc` is checked non-negative by the guard above.
         let argc = usize::try_from(argc).unwrap_or(0);
         // Faber argumenta semantics: argv excludes the host argv[0] program
         // path (the Rust oracle's `std::env::args()` excludes it too), so the
