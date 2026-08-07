@@ -131,6 +131,18 @@ pub const SYMBOL_VALOR_GET_ARRAY: &str = "__faber_rt_v1_valor_get_array";
 pub const SYMBOL_VALOR_GET_MAP: &str = "__faber_rt_v1_valor_get_map";
 pub const SYMBOL_VALOR_GENUS: &str = "__faber_rt_v1_valor_genus";
 pub const SYMBOL_VALOR_GET_GENUS: &str = "__faber_rt_v1_valor_get_genus";
+// P7 (promotion packet valor-genus-field-layout): mirror of the shared genus
+// field-layout + defaulted-extraction ABI contract (radix-host-abi owns the
+// values). `valor ↦ genus` extraction crosses the host boundary through the
+// ordered field-descriptor table of `__faber_rt_v1_valor_get_genus`
+// (names/kinds/policies/outputs in declaration order); the policy flag tells
+// the host whether a missing key may keep the pre-seeded output slot
+// (DEFAULTABLE — declared default or sponte zero/nihil seed) or must fail the
+// whole extraction (MANDATORY — latched for `⇥` recovery). See the LLVM host
+// `valor_genus` binding.
+pub type FaberRtGenusFieldPolicyV1 = u8;
+pub const GENUS_FIELD_POLICY_MANDATORY: FaberRtGenusFieldPolicyV1 = 0;
+pub const GENUS_FIELD_POLICY_DEFAULTABLE: FaberRtGenusFieldPolicyV1 = 1;
 pub const SYMBOL_ARRAY_NEW: &str = "__faber_rt_v1_array_new";
 pub const SYMBOL_ARRAY_PUSH: &str = "__faber_rt_v1_array_push";
 pub const SYMBOL_ARRAY_EXTEND: &str = "__faber_rt_v1_array_extend";

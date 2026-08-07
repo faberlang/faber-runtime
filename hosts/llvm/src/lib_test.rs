@@ -1598,6 +1598,176 @@ fn genus_valor_field_table_boxes_and_extracts_atomically() {
 }
 
 #[test]
+fn valor_genus_defaulted_extraction_matches_valor_genus_fixture() {
+    // P7 (promotion packet valor-genus-field-layout): the
+    // `conversio/valor-genus.fab` fixture's expected behavior through the
+    // host ABI. The `Persona` genus has a mandatory field (`nomen`), a
+    // sponte field (`aetas optional` → nihil seed), a declared default
+    // (`regio = "Roma"`), and a mandatory instant (`born`); the payload
+    // omits `aetas`/`regio` and carries an extra ignored key. The
+    // `valor_get_genus` row must keep pre-seeded output slots on
+    // DEFAULTABLE-policy missing keys, fail the whole extraction (the `⇥`
+    // recovery latch) on a MANDATORY-policy missing key, and ignore keys
+    // outside the descriptor table.
+    let mut context = ptr::null_mut();
+    assert_eq!(
+        unsafe { __faber_rt_v1_init(0, ptr::null(), &raw mut context) },
+        STATUS_OK
+    );
+
+    let nomen_text = FaberRtSliceV1::from_static(b"nomen");
+    let aetas_text = FaberRtSliceV1::from_static(b"aetas");
+    let regio_text = FaberRtSliceV1::from_static(b"regio");
+    let born_text = FaberRtSliceV1::from_static(b"born");
+    let extra_text = FaberRtSliceV1::from_static(b"extra");
+    let persona_names = [
+        ptr::from_ref(&nomen_text),
+        ptr::from_ref(&aetas_text),
+        ptr::from_ref(&regio_text),
+        ptr::from_ref(&born_text),
+    ];
+    let persona_kinds = [
+        VALUE_KIND_TEXT,
+        faber::host_abi::VALUE_KIND_OPTION_I64,
+        VALUE_KIND_TEXT,
+        faber::host_abi::VALUE_KIND_INSTANS,
+    ];
+    let persona_policies = [
+        faber::host_abi::GENUS_FIELD_POLICY_MANDATORY,
+        faber::host_abi::GENUS_FIELD_POLICY_DEFAULTABLE,
+        faber::host_abi::GENUS_FIELD_POLICY_DEFAULTABLE,
+        faber::host_abi::GENUS_FIELD_POLICY_MANDATORY,
+    ];
+
+    // `good` payload: `{"nomen": "Marcus", "born": "1979-05-27T07:32:00Z",
+    // "extra": "ignored"}` — `aetas` and `regio` keys are absent, `extra`
+    // is outside the descriptor table and must be ignored.
+    let nomen_value = FaberRtSliceV1::from_static(b"Marcus");
+    let nomen_handle = ptr::from_ref(&nomen_value).cast_mut().cast::<c_void>();
+    let born_wire = FaberRtSliceV1::from_static(b"1979-05-27T07:32:00Z");
+    let born = unsafe {
+        __faber_rt_v1_instans_from_text(context, &raw const born_wire, INSTANS_PRECISION_SECONDS)
+    };
+    assert_eq!(born.status, STATUS_OK);
+    let born_handle = born.value;
+    let extra_value = FaberRtSliceV1::from_static(b"ignored");
+    let extra_handle = ptr::from_ref(&extra_value).cast_mut().cast::<c_void>();
+    let good_names = [
+        ptr::from_ref(&nomen_text),
+        ptr::from_ref(&born_text),
+        ptr::from_ref(&extra_text),
+    ];
+    let good_kinds = [
+        VALUE_KIND_TEXT,
+        faber::host_abi::VALUE_KIND_INSTANS,
+        VALUE_KIND_TEXT,
+    ];
+    let good_values = [
+        ptr::from_ref(&nomen_handle).cast(),
+        ptr::from_ref(&born_handle).cast(),
+        ptr::from_ref(&extra_handle).cast(),
+    ];
+    let good = unsafe {
+        __faber_rt_v1_valor_genus(
+            context,
+            3,
+            good_names.as_ptr(),
+            good_kinds.as_ptr(),
+            good_values.as_ptr(),
+        )
+    };
+    assert_eq!(good.status, STATUS_OK);
+
+    // Extraction with pre-seeded construction-default slots: `aetas` seeded
+    // nihil, `regio` seeded "Roma".
+    let regio_seed = FaberRtSliceV1::from_static(b"Roma");
+    let mut out_nomen: *mut c_void = ptr::null_mut();
+    let mut out_aetas: *mut c_void = ptr::null_mut();
+    let mut out_regio: *mut c_void = ptr::from_ref(&regio_seed).cast_mut().cast();
+    let mut out_born: *mut c_void = ptr::null_mut();
+    let outputs = [
+        ptr::from_mut(&mut out_nomen).cast(),
+        ptr::from_mut(&mut out_aetas).cast(),
+        ptr::from_mut(&mut out_regio).cast(),
+        ptr::from_mut(&mut out_born).cast(),
+    ];
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_valor_get_genus(
+                context,
+                good.value.cast(),
+                4,
+                persona_names.as_ptr(),
+                persona_kinds.as_ptr(),
+                persona_policies.as_ptr(),
+                outputs.as_ptr(),
+            )
+        },
+        STATUS_OK
+    );
+    let extracted_nomen = unsafe { &*out_nomen.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(extracted_nomen.data, extracted_nomen.len as usize) },
+        b"Marcus"
+    );
+    assert!(out_aetas.is_null(), "sponte `aetas` keeps its nihil seed");
+    let extracted_regio = unsafe { &*out_regio.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(extracted_regio.data, extracted_regio.len as usize) },
+        b"Roma",
+        "missing `regio` keeps the declared default seed"
+    );
+    let rendered = unsafe { __faber_rt_v1_instans_get_text(context, out_born) };
+    assert_eq!(rendered.status, STATUS_OK);
+    let rendered = unsafe { &*rendered.value.cast::<FaberRtSliceV1>() };
+    assert_eq!(
+        unsafe { std::slice::from_raw_parts(rendered.data, rendered.len as usize) },
+        b"1979-05-27T07:32:00Z"
+    );
+
+    // `stale ↦ Persona` failure: `{"nomen": "Livia"}` lacks the mandatory
+    // `born` key, so the whole extraction fails (the `⇥` recovery latch).
+    let livia_value = FaberRtSliceV1::from_static(b"Livia");
+    let livia_handle = ptr::from_ref(&livia_value).cast_mut().cast::<c_void>();
+    let stale_names = [ptr::from_ref(&nomen_text)];
+    let stale_kinds = [VALUE_KIND_TEXT];
+    let stale_values = [ptr::from_ref(&livia_handle).cast()];
+    let stale = unsafe {
+        __faber_rt_v1_valor_genus(
+            context,
+            1,
+            stale_names.as_ptr(),
+            stale_kinds.as_ptr(),
+            stale_values.as_ptr(),
+        )
+    };
+    assert_eq!(stale.status, STATUS_OK);
+    let stale_outputs = [
+        ptr::from_mut(&mut out_nomen).cast(),
+        ptr::from_mut(&mut out_aetas).cast(),
+        ptr::from_mut(&mut out_regio).cast(),
+        ptr::from_mut(&mut out_born).cast(),
+    ];
+    assert_eq!(
+        unsafe {
+            __faber_rt_v1_valor_get_genus(
+                context,
+                stale.value.cast(),
+                4,
+                persona_names.as_ptr(),
+                persona_kinds.as_ptr(),
+                persona_policies.as_ptr(),
+                stale_outputs.as_ptr(),
+            )
+        },
+        STATUS_INVALID_ARGUMENT,
+        "missing mandatory `born` must fail the whole genus extraction"
+    );
+
+    unsafe { __faber_rt_v1_shutdown(context) };
+}
+
+#[test]
 fn array_family_round_trips_every_value_kind_and_spreads() {
     let mut context = ptr::null_mut();
     assert_eq!(

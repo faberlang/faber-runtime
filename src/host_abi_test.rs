@@ -107,6 +107,29 @@ fn failable_rows_cohere_with_radix_host_abi() {
 }
 
 #[test]
+fn genus_field_policy_rows_cohere_with_radix_host_abi() {
+    // P7: the genus field-layout default-policy rows mirror radix-host-abi.
+    assert_eq!(
+        radix_host_abi::GENUS_FIELD_POLICY_MANDATORY,
+        GENUS_FIELD_POLICY_MANDATORY,
+    );
+    assert_eq!(
+        radix_host_abi::GENUS_FIELD_POLICY_DEFAULTABLE,
+        GENUS_FIELD_POLICY_DEFAULTABLE,
+    );
+    assert_eq!(GENUS_FIELD_POLICY_MANDATORY, 0);
+    assert_eq!(GENUS_FIELD_POLICY_DEFAULTABLE, 1);
+    for (name, code) in radix_host_abi::GENUS_FIELD_POLICY_ROWS {
+        let runtime = match *name {
+            "GENUS_FIELD_POLICY_MANDATORY" => GENUS_FIELD_POLICY_MANDATORY,
+            "GENUS_FIELD_POLICY_DEFAULTABLE" => GENUS_FIELD_POLICY_DEFAULTABLE,
+            _ => unreachable!("unknown radix-host-abi genus policy row {name}"),
+        };
+        assert_eq!(runtime as u32, *code, "runtime/radix-host-abi policy drift");
+    }
+}
+
+#[test]
 fn solum_symbols_cohere_with_radix_host_abi() {
     assert_eq!(
         radix_host_abi::SYMBOL_SOLUM_READ_TEXT,
