@@ -13,8 +13,12 @@ pub struct Tensor<T> {
     view: bool,
 }
 
-// ── Contract-authority re-exports ───────────────────────────────────────────
-// Single canonical definition lives at
+// ── Error messages ─────────────────────────────────────────────────────────
+// Shared error strings are the contract authority's; ops implemented in this
+// file own their local domain messages. Both surfaces resolve through
+// `faber::tensor::*`.
+
+// Contract-authority re-exports: the single canonical definition lives at
 // radix-runtime-contract/src/tensor.rs (the compiler-side authority).
 pub use radix_runtime_contract::tensor::{
     tensor_dim_non_negative, tensor_flat_offset, tensor_shape_element_count,
@@ -27,6 +31,11 @@ pub use radix_runtime_contract::tensor::{
     ERR_PERMUTE_DUPLICATE_AXIS, ERR_PERMUTE_NEGATIVE_AXIS, ERR_PERMUTE_RANK,
     ERR_PONDE_INVALID_INDEX, ERR_SECTIO_INVALID_SLICE_BOUNDS, ERR_TRANSPOSE_RANK,
 };
+
+// Local domain messages, grouped by op so each kernel's error surface is
+// visible at a glance. `pub(crate)` = internal to faber-runtime; the `pub`
+// layernorm messages are part of the generated-code error surface.
+// ── relu / sqrt / gelu ──
 pub(crate) const ERR_RELU_NON_FINITE_INPUT: &str =
     "ReLU requires finite input; NaN or inf was given.";
 pub(crate) const ERR_SQRT_NON_FINITE_INPUT: &str =
@@ -34,14 +43,17 @@ pub(crate) const ERR_SQRT_NON_FINITE_INPUT: &str =
 pub(crate) const ERR_SQRT_NEGATIVE_INPUT: &str = "Sqrt requires non-negative input.";
 pub(crate) const ERR_GELU_NON_FINITE_INPUT: &str =
     "Gelu input must be finite; NaN or inf was given.";
+// ── exp / log ──
 pub(crate) const ERR_EXP_NON_FINITE_INPUT: &str = "Exp input must be finite; NaN or inf was given.";
 pub(crate) const ERR_EXP_OVERFLOW: &str = "Exp overflow: output is non-finite.";
 pub(crate) const ERR_LOG_NON_FINITE_INPUT: &str = "Log input must be finite; NaN or inf was given.";
 pub(crate) const ERR_LOG_NON_POSITIVE_INPUT: &str = "Log requires positive input.";
 pub(crate) const ERR_LOG_NON_FINITE_RESULT: &str = "Log produced non-finite result.";
+// ── softmax ──
 pub(crate) const ERR_SOFTMAX_NON_FINITE_INPUT: &str =
     "Softmax input must be finite; NaN or inf was given.";
 pub(crate) const ERR_SOFTMAX_EMPTY_TENSOR: &str = "Softmax requires non-empty tensor.";
+// ── crux_entropia ──
 pub(crate) const ERR_CRUX_ENTROPIA_NON_FINITE_INPUT: &str =
     "Cross-entropy logits must be finite; NaN or inf was given.";
 pub(crate) const ERR_CRUX_ENTROPIA_EMPTY_TENSOR: &str = "Cross-entropy requires non-empty tensor.";
@@ -51,6 +63,7 @@ pub(crate) const ERR_CRUX_ENTROPIA_TARGET_RANGE: &str = "Cross-entropy targets m
 pub(crate) const ERR_CRUX_ENTROPIA_SHAPE_MISMATCH: &str =
     "Cross-entropy logits and targets must have the same shape.";
 pub(crate) const ERR_CRUX_ENTROPIA_RANK: &str = "Cross-entropy requires rank-1 or rank-2 tensor.";
+// ── layernorm (pub) ──
 pub const ERR_LAYERNORM_NON_FINITE_INPUT: &str =
     "layernorm requires finite input; NaN or inf was given.";
 pub const ERR_LAYERNORM_EMPTY_TENSOR: &str = "layernorm requires non-empty tensor.";
@@ -720,7 +733,10 @@ impl Tensor<f32> {
         if self.element_count() == 0 {
             return Err(ERR_SOFTMAX_EMPTY_TENSOR);
         }
-        for &value in self.planata().iter() {
+        // Materialize once; the flat buffer feeds both the domain check and
+        // every batch slice below.
+        let flat = self.planata();
+        for &value in &flat {
             if !value.is_finite() {
                 return Err(ERR_SOFTMAX_NON_FINITE_INPUT);
             }
@@ -736,13 +752,13 @@ impl Tensor<f32> {
             // Find max for numerical stability.
             let mut max_val = f32::NEG_INFINITY;
             for i in 0..last_dim {
-                max_val = max_val.max(self.planata()[base + i]);
+                max_val = max_val.max(flat[base + i]);
             }
             // Compute exp(x_i - max) and sum.
             let mut exps = Vec::with_capacity(last_dim);
             let mut exp_sum = 0.0_f32;
             for i in 0..last_dim {
-                let exp_val = (self.planata()[base + i] - max_val).exp();
+                let exp_val = (flat[base + i] - max_val).exp();
                 exps.push(exp_val);
                 exp_sum += exp_val;
             }
@@ -951,7 +967,6 @@ impl Tensor<f32> {
         if rank == 1 {
             // Normalize over the entire vector
             let cols = self.shape[0];
-            let _n = cols as f32;
 
             // Compute mean
             let mean: f64 = input_data.iter().map(|&v| v as f64).sum::<f64>() / cols as f64;
@@ -997,8 +1012,13 @@ impl Tensor<f32> {
             // For axis=0: normalize each column independently
             let normalize_along_cols = axis_usize == 1;
 
+            // Hoisted once: gamma/beta are fixed for the call, so their flat
+            // data feeds every row/column slice instead of being re-materialized
+            // per element (mirrors the rank-1 branch above).
+            let gamma_data = gamma.map(|g| g.planata());
+            let beta_data = beta.map(|b| b.planata());
+
             let result: Vec<f32> = if normalize_along_cols {
-                let _n = cols as f32;
                 let mut result = vec![0.0_f32; rows * cols];
 
                 for r in 0..rows {
@@ -1028,20 +1048,10 @@ impl Tensor<f32> {
                         let centered = input_data[idx] - mean;
                         let norm = centered * inv_std;
 
-                        result[idx] = match (gamma, beta) {
-                            (Some(g), Some(b)) => {
-                                let gd = g.planata();
-                                let bd = b.planata();
-                                norm * gd[c] + bd[c]
-                            }
-                            (Some(g), None) => {
-                                let gd = g.planata();
-                                norm * gd[c]
-                            }
-                            (None, Some(b)) => {
-                                let bd = b.planata();
-                                norm + bd[c]
-                            }
+                        result[idx] = match (&gamma_data, &beta_data) {
+                            (Some(g), Some(b)) => norm * g[c] + b[c],
+                            (Some(g), None) => norm * g[c],
+                            (None, Some(b)) => norm + b[c],
                             (None, None) => norm,
                         };
                     }
@@ -1049,7 +1059,6 @@ impl Tensor<f32> {
                 result
             } else {
                 // axis=0: normalize each column independently
-                let _n = rows as f32;
                 let mut result = vec![0.0_f32; rows * cols];
 
                 for c in 0..cols {
@@ -1074,22 +1083,11 @@ impl Tensor<f32> {
                         let centered = input_data[idx] - mean;
                         let norm = centered * inv_std;
 
-                        result[idx] = match (gamma, beta) {
-                            (Some(g), Some(b)) => {
-                                let gd = g.planata();
-                                let bd = b.planata();
-                                norm * gd[r] + bd[r]
-                            }
-                            (Some(_), None) => {
-                                // Gamma for axis=0: shape matches rows
-                                // For axis=0 normalization, gamma has shape[rows], apply per row
-                                let gd = gamma.unwrap().planata();
-                                norm * gd[r]
-                            }
-                            (None, Some(_)) => {
-                                let bd = beta.unwrap().planata();
-                                norm + bd[r]
-                            }
+                        result[idx] = match (&gamma_data, &beta_data) {
+                            (Some(g), Some(b)) => norm * g[r] + b[r],
+                            // Gamma/beta for axis=0: shape matches rows, apply per row.
+                            (Some(g), None) => norm * g[r],
+                            (None, Some(b)) => norm + b[r],
                             (None, None) => norm,
                         };
                     }
