@@ -28,6 +28,7 @@ pub mod http;
 pub mod instans;
 pub mod intervallum;
 pub mod json;
+pub mod kv_cache;
 pub mod or_recovery;
 pub mod packed_numeric;
 pub mod partition;
@@ -36,6 +37,7 @@ pub mod prefill;
 pub mod quantized_tensor_layout;
 pub mod regex;
 pub mod repack_plan;
+pub mod session;
 pub mod sparsa;
 pub mod tensor;
 pub mod tensor_view;
@@ -167,3 +169,11 @@ mod capability_test;
 #[cfg(test)]
 #[path = "repack_plan_test.rs"]
 mod repack_plan_test;
+
+#[cfg(test)]
+#[path = "kv_cache_test.rs"]
+mod kv_cache_test;
+
+#[cfg(test)]
+#[path = "session_test.rs"]
+mod session_test;
