@@ -63,9 +63,10 @@ enum DescriptorExit {
     None,
     Fixed(i64),
     Binding(String),
-    #[allow(dead_code)]
+    /// EXIT_FIELD policy. Only the `field` half carries runtime behavior on
+    /// this host; the decoder still consumes the `object` half (v1 byte
+    /// contract) but does not retain it.
     Field {
-        object: String,
         field: String,
     },
     Unsupported,
@@ -105,12 +106,6 @@ struct DescriptorOperand {
 struct DescriptorCommand {
     path: Vec<String>,
     aliases: Vec<String>,
-    /// Target function identity carried by the descriptor contract (the
-    /// emitted adapter dispatches to the MIR symbol by the same identity).
-    #[allow(dead_code)]
-    function: String,
-    #[allow(dead_code)]
-    args_binding: Option<String>,
     options: Vec<DescriptorOption>,
     operands: Vec<DescriptorOperand>,
     description: Option<String>,
@@ -252,7 +247,7 @@ pub unsafe extern "C" fn __faber_rt_v1_cli_exit_code(context: *mut FaberRtContex
         DescriptorExit::None => 0,
         DescriptorExit::Fixed(code) => *code,
         DescriptorExit::Binding(binding) => table_entry_by_binding(table, binding).unwrap_or(0),
-        DescriptorExit::Field { field, .. } => table_entry_by_binding(table, field).unwrap_or(0),
+        DescriptorExit::Field { field } => table_entry_by_binding(table, field).unwrap_or(0),
         DescriptorExit::Unsupported => 0,
     }
 }
@@ -1261,10 +1256,15 @@ fn decode_exit(reader: &mut DescrReader<'_>) -> Result<DescriptorExit, String> {
         EXIT_NONE => Ok(DescriptorExit::None),
         EXIT_FIXED => Ok(DescriptorExit::Fixed(reader.i64()?)),
         EXIT_BINDING => Ok(DescriptorExit::Binding(reader.string()?)),
-        EXIT_FIELD => Ok(DescriptorExit::Field {
-            object: reader.string()?,
-            field: reader.string()?,
-        }),
+        EXIT_FIELD => {
+            // The `object` half of the EXIT_FIELD policy is part of the v1
+            // descriptor byte contract but carries no runtime behavior on
+            // this host; consume it to keep the reader aligned.
+            reader.string()?;
+            Ok(DescriptorExit::Field {
+                field: reader.string()?,
+            })
+        }
         EXIT_UNSUPPORTED => Ok(DescriptorExit::Unsupported),
         other => Err(format!("unknown exit tag {other}")),
     }
@@ -1314,15 +1314,16 @@ fn decode_command(reader: &mut DescrReader<'_>) -> Result<DescriptorCommand, Str
         aliases.push(reader.string()?);
     }
     let description = reader.opt_string()?;
-    let function = reader.string()?;
-    let args_binding = reader.opt_string()?;
+    // The v1 command record also carries the target `function` identity and
+    // an `args_binding`, but neither drives runtime behavior on this host;
+    // consume both to keep the reader aligned for options/operands.
+    reader.string()?;
+    reader.opt_string()?;
     let options = decode_options(reader)?;
     let operands = decode_operands(reader)?;
     Ok(DescriptorCommand {
         path,
         aliases,
-        function,
-        args_binding,
         options,
         operands,
         description,
