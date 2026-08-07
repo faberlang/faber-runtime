@@ -1341,6 +1341,49 @@ impl HostStagedAdapter {
             rate_observations: self.rate_observations.clone(),
         }
     }
+
+    /// Execute the labeled + timed staged copy (T2 §7) for a validated spec:
+    /// pinned host staging allocated at copy start (accounted at full size,
+    /// T1 §2.3), the byte-exact move of the validated range, and the S4
+    /// timeout/failure policy against the measured elapsed. The in-flight
+    /// staging is released on **every** path; validation and budget checks
+    /// happen before this helper runs (a rejection allocates nothing).
+    /// Returns the staging record (for the S4 selected-transfer record), the
+    /// destination content, and the measured elapsed time.
+    fn run_staged_copy(
+        &mut self,
+        spec: &TransferSpec,
+        source: &SourceValue,
+        bytes: u64,
+    ) -> Result<(StagingBufferRecord, Vec<u8>, Duration), TransferError> {
+        let staging = self.staging_pool.allocate(bytes);
+
+        let start = Instant::now();
+        if !self.simulated_delay.is_zero() {
+            std::thread::sleep(self.simulated_delay);
+        }
+        let destination_bytes = match &self.simulated_failure {
+            Some(detail) => {
+                self.staging_pool.release(staging.id.clone());
+                return Err(TransferError::Failed {
+                    transfer: spec.transfer_ref().clone(),
+                    detail: detail.clone(),
+                });
+            }
+            None => source.slice(spec.range()),
+        };
+        let elapsed = start.elapsed();
+        self.staging_pool.release(staging.id.clone());
+
+        if elapsed > spec.timeout() {
+            return Err(TransferError::Timeout {
+                transfer: spec.transfer_ref().clone(),
+                declared_timeout: spec.timeout(),
+                elapsed_nanos: elapsed.as_nanos() as u64,
+            });
+        }
+        Ok((staging, destination_bytes, elapsed))
+    }
 }
 
 impl TransportAdapter for HostStagedAdapter {
@@ -1371,40 +1414,17 @@ impl TransportAdapter for HostStagedAdapter {
             });
         }
 
-        // 3. Pinned host staging, accounted at full size (T1 §2.3).
-        let staging = self.staging_pool.allocate(bytes);
+        // 3. The labeled + timed staged copy (T2 §7 — no silent host
+        //    staging) with the S4 timeout/failure policy. In-flight staging
+        //    is allocated at copy start and released on every path inside
+        //    the helper.
+        let (staging, destination_bytes, elapsed) = self.run_staged_copy(spec, source, bytes)?;
 
-        // 4. The labeled + timed copy (T2 §7 — no silent host staging).
-        let start = Instant::now();
-        if !self.simulated_delay.is_zero() {
-            std::thread::sleep(self.simulated_delay);
-        }
-        if let Some(detail) = &self.simulated_failure {
-            self.staging_pool.release(staging.id.clone());
-            return Err(TransferError::Failed {
-                transfer: spec.transfer_ref().clone(),
-                detail: detail.clone(),
-            });
-        }
-        let destination_bytes = source.slice(spec.range());
-        let elapsed = start.elapsed();
-
-        // 5. Timeout/failure policy (S4): a copy past its declared deadline
-        //    surfaces a transfer error the coordinator aborts on.
-        if elapsed > spec.timeout() {
-            self.staging_pool.release(staging.id.clone());
-            return Err(TransferError::Timeout {
-                transfer: spec.transfer_ref().clone(),
-                declared_timeout: spec.timeout(),
-                elapsed_nanos: elapsed.as_nanos() as u64,
-            });
-        }
-
-        // 6. Account the budget at the measured rates (T2 §8.6).
+        // 4. Account the budget at the measured rates (T2 §8.6).
         self.used_bytes = self.used_bytes.saturating_add(bytes);
         self.used_time_nanos = self.used_time_nanos.saturating_add(expected);
 
-        // 7. Label the selected transport and record it (S4) — the actual
+        // 5. Label the selected transport and record it (S4) — the actual
         //    selected transport records to the receipt, never to the
         //    portable logical plan.
         self.next_engine += 1;
@@ -1412,7 +1432,7 @@ impl TransportAdapter for HostStagedAdapter {
         let record = SelectedTransferRecord {
             transfer_ref: spec.transfer_ref().clone(),
             copy_path: CopyPath::HostStaged,
-            staging: staging.clone(),
+            staging,
             engine: EngineId::new(self.next_engine),
             event: EventId::new(self.next_event),
             timeout: spec.timeout(),
@@ -1423,9 +1443,6 @@ impl TransportAdapter for HostStagedAdapter {
             destination: destination.clone(),
         };
         self.records.push(record.clone());
-
-        // 8. The in-flight staging is released at copy end.
-        self.staging_pool.release(staging.id);
         Ok(TransferOutcome {
             record,
             destination_bytes,
@@ -1450,7 +1467,6 @@ impl TransportAdapter for HostStagedAdapter {
 #[derive(Debug, Clone, Default)]
 pub struct PeerAdapter {
     registry: PeerPairRegistry,
-    records: Vec<SelectedTransferRecord>,
 }
 
 impl PeerAdapter {
@@ -1508,8 +1524,10 @@ impl TransportAdapter for PeerAdapter {
         })
     }
 
+    // The peer path never executes a copy (NOT ATTEMPTED), so there is
+    // never a selected-transport record (S4) — always empty.
     fn selected_transfer_records(&self) -> &[SelectedTransferRecord] {
-        &self.records
+        &[]
     }
 }
 
