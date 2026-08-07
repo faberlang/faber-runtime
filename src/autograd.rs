@@ -12,7 +12,12 @@
 //! parent. It does not implement sessions, optimizers, host ABI gradient
 //! handles, or mutation semantics.
 
-#![allow(dead_code)]
+// Test-only autograd proof boundary (see docs/factory/autograd-substrate-
+// inventory.md): the only consumers are this module's own tests and the
+// `autograd_reference_test` oracle, both compiled under `cfg(test)`. Non-test
+// builds still compile the module, so dead_code stays allowed there; under
+// `cfg(test)` the lint is active and every item must justify itself.
+#![cfg_attr(not(test), allow(dead_code))]
 
 use crate::tensor::{tensor_flat_offset, tensor_shape_element_count};
 use crate::Tensor;
@@ -112,10 +117,6 @@ pub(crate) struct AutogradNode {
 }
 
 impl AutogradNode {
-    pub(crate) fn id(&self) -> AutogradNodeId {
-        self.id
-    }
-
     pub(crate) fn op(&self) -> AutogradOp {
         self.op.clone()
     }
@@ -545,15 +546,11 @@ impl AutogradTape {
                     )?;
                 }
                 AutogradOp::Neg => {
-                    let &[parent] = node.parents.as_slice() else {
-                        return Err(AutogradError::MissingNode);
-                    };
+                    let parent = single_parent(node)?;
                     gradients.accumulate(parent, upstream.neg())?;
                 }
                 AutogradOp::Relu => {
-                    let &[parent] = node.parents.as_slice() else {
-                        return Err(AutogradError::MissingNode);
-                    };
+                    let parent = single_parent(node)?;
                     // VJP: grad * (forward_output > 0), i.e. gradient passes
                     // through where forward was positive, zero otherwise.
                     // Since forward_output is relu(x), forward_output > 0 iff x > 0.
@@ -571,9 +568,7 @@ impl AutogradTape {
                     gradients.accumulate(parent, grad)?;
                 }
                 AutogradOp::Sqrt => {
-                    let &[parent] = node.parents.as_slice() else {
-                        return Err(AutogradError::MissingNode);
-                    };
+                    let parent = single_parent(node)?;
                     // VJP: d/dx sqrt(x) = 1/(2*sqrt(x))
                     // IEEE 754 at x=0: forward_output=0 → denom=0,
                     // so upstream/0.0 produces ±inf (or NaN if upstream=0).
@@ -593,9 +588,7 @@ impl AutogradTape {
                     gradients.accumulate(parent, grad)?;
                 }
                 AutogradOp::Exp => {
-                    let &[parent] = node.parents.as_slice() else {
-                        return Err(AutogradError::MissingNode);
-                    };
+                    let parent = single_parent(node)?;
                     // VJP: d/dx exp(x) = exp(x) = forward_output
                     let forward_output = self.value(node.id)?;
                     let grad = upstream
@@ -604,9 +597,7 @@ impl AutogradTape {
                     gradients.accumulate(parent, grad)?;
                 }
                 AutogradOp::Log => {
-                    let &[parent] = node.parents.as_slice() else {
-                        return Err(AutogradError::MissingNode);
-                    };
+                    let parent = single_parent(node)?;
                     // VJP: d/dx log(x) = 1/x = upstream / x
                     // The parent's saved value is the input x (not log(x)).
                     let input = self.value(parent)?;
@@ -614,9 +605,7 @@ impl AutogradTape {
                     gradients.accumulate(parent, grad)?;
                 }
                 AutogradOp::Gelu => {
-                    let &[parent] = node.parents.as_slice() else {
-                        return Err(AutogradError::MissingNode);
-                    };
+                    let parent = single_parent(node)?;
                     // VJP: d/dx gelu(x) = 0.5*(1+tanh(t)) + 0.5*x*(1-tanh²(t))*α*(1+3β*x²)
                     // where t = α*(x + β*x³), α = √(2/π), β = 0.044715.
                     // Precompute tanh(t) and sech²(t) = 1 - tanh²(t) to simplify.
@@ -663,15 +652,11 @@ impl AutogradTape {
                     )?;
                 }
                 AutogradOp::Scala { factor } => {
-                    let &[parent] = node.parents.as_slice() else {
-                        return Err(AutogradError::MissingNode);
-                    };
+                    let parent = single_parent(node)?;
                     gradients.accumulate(parent, upstream.scala(f32::from_bits(factor)))?;
                 }
                 AutogradOp::Forma => {
-                    let &[parent] = node.parents.as_slice() else {
-                        return Err(AutogradError::MissingNode);
-                    };
+                    let parent = single_parent(node)?;
                     let parent_shape = parent_shape(self, parent)?;
                     gradients.accumulate(
                         parent,
@@ -681,9 +666,7 @@ impl AutogradTape {
                     )?;
                 }
                 AutogradOp::Permute { axes } => {
-                    let &[parent] = node.parents.as_slice() else {
-                        return Err(AutogradError::MissingNode);
-                    };
+                    let parent = single_parent(node)?;
                     let inverse_axes = inverse_permutation_axes(&axes)?;
                     gradients.accumulate(
                         parent,
@@ -693,9 +676,7 @@ impl AutogradTape {
                     )?;
                 }
                 AutogradOp::Sectio { start } => {
-                    let &[parent] = node.parents.as_slice() else {
-                        return Err(AutogradError::MissingNode);
-                    };
+                    let parent = single_parent(node)?;
                     let parent_shape = parent_shape(self, parent)?;
                     gradients.accumulate(
                         parent,
@@ -703,24 +684,16 @@ impl AutogradTape {
                     )?;
                 }
                 AutogradOp::Summa => {
-                    let &[parent] = node.parents.as_slice() else {
-                        return Err(AutogradError::MissingNode);
-                    };
+                    let parent = single_parent(node)?;
                     let scalar = rank_zero_scalar(&upstream)?;
-                    let parent_shape = self
-                        .node(parent)
-                        .ok_or(AutogradError::MissingNode)?
-                        .shape
-                        .clone();
+                    let parent_shape = parent_shape(self, parent)?;
                     gradients.accumulate(
                         parent,
                         Tensor::crea(&parent_shape, scalar).map_err(AutogradError::Tensor)?,
                     )?;
                 }
                 AutogradOp::Media => {
-                    let &[parent] = node.parents.as_slice() else {
-                        return Err(AutogradError::MissingNode);
-                    };
+                    let parent = single_parent(node)?;
                     let scalar = rank_zero_scalar(&upstream)?;
                     let parent_shape = parent_shape(self, parent)?;
                     let count = tensor_shape_element_count(&parent_shape)
@@ -738,267 +711,24 @@ impl AutogradTape {
                             .map_err(AutogradError::Tensor)?,
                     )?;
                 }
-                // VJP: Ba, J. L., Kiros, J. R., & Hinton, G. E. (2016).
-                // Layer Normalization. arXiv:1607.06450.
                 AutogradOp::LayerNorm {
                     axis,
                     epsilon,
                     has_gamma,
                     has_beta,
                 } => {
-                    let epsilon = f32::from_bits(epsilon);
-                    let parents = node.parents.as_slice();
-                    let input_id = parents[0];
-
-                    let input = self.value(input_id)?;
-                    // forward_output is the post-affine output z = y*γ + β
-                    let dy = &upstream;
-
-                    let rank = input.magnitudines().len();
-                    if rank == 1 {
-                        let input_data = input.planata();
-                        let n_elems = input_data.len();
-                        let n = n_elems as f32;
-
-                        // Recompute forward statistics and pre-affine normalized y
-                        let mean: f64 =
-                            input_data.iter().map(|&v| v as f64).sum::<f64>() / n_elems as f64;
-                        let mean = mean as f32;
-                        let var: f64 = input_data
-                            .iter()
-                            .map(|&v| {
-                                let d = v as f64 - mean as f64;
-                                d * d
-                            })
-                            .sum::<f64>()
-                            / n_elems as f64;
-                        let var = var as f32;
-                        let inv_std = 1.0 / (var + epsilon).sqrt();
-
-                        // Pre-affine normalized y_i = (x_i - mean) * inv_std
-                        let y_norm: Vec<f32> =
-                            input_data.iter().map(|&v| (v - mean) * inv_std).collect();
-
-                        // Chain dy through gamma to get dy_norm w.r.t. pre-affine y
-                        let dy_data = dy.planata();
-                        let dy_norm: Vec<f32> = if has_gamma {
-                            let gamma_id = parents[1];
-                            let gamma = self.value(gamma_id)?.planata();
-                            dy_data
-                                .iter()
-                                .zip(gamma.iter())
-                                .map(|(&d, &g)| d * g)
-                                .collect()
-                        } else {
-                            dy_data.clone()
-                        };
-
-                        // Ba et al. 2016 VJP
-                        let sum_dy: f32 = dy_norm.iter().sum();
-                        let sum_dy_y: f32 =
-                            dy_norm.iter().zip(y_norm.iter()).map(|(d, y)| d * y).sum();
-
-                        let dx_data: Vec<f32> = dy_norm
-                            .iter()
-                            .zip(y_norm.iter())
-                            .map(|(&dy_i, &y_i)| {
-                                (inv_std / n) * (n * dy_i - sum_dy - y_i * sum_dy_y)
-                            })
-                            .collect();
-
-                        let dx = Tensor::structa(dx_data, &[n_elems as i64])
-                            .map_err(AutogradError::Tensor)?;
-                        gradients.accumulate(input_id, dx)?;
-
-                        // dgamma: Σ dy * y_norm (dy is upstream, y_norm is pre-affine)
-                        if has_gamma {
-                            let gamma_id = parents[1];
-                            let dgamma_data: Vec<f32> = dy_data
-                                .iter()
-                                .zip(y_norm.iter())
-                                .map(|(d, y)| d * y)
-                                .collect();
-                            let dgamma = Tensor::structa(dgamma_data, &[n_elems as i64])
-                                .map_err(AutogradError::Tensor)?;
-                            gradients.accumulate(gamma_id, dgamma)?;
-                        }
-
-                        // dbeta: Σ dy
-                        if has_beta {
-                            let beta_id = if has_gamma { parents[2] } else { parents[1] };
-                            let dbeta = Tensor::structa(dy_data, &[n_elems as i64])
-                                .map_err(AutogradError::Tensor)?;
-                            gradients.accumulate(beta_id, dbeta)?;
-                        }
-                    } else {
-                        // Rank-2
-                        let shape = input.magnitudines();
-                        let rows = shape[0] as usize;
-                        let cols = shape[1] as usize;
-
-                        let input_data = input.planata();
-                        let dy_data = dy.planata();
-
-                        let normalize_along_cols = axis == 1;
-
-                        let (norm_dim, batch_dim): (usize, usize) = if normalize_along_cols {
-                            (cols, rows)
-                        } else {
-                            (rows, cols)
-                        };
-                        let n = norm_dim as f32;
-
-                        // Get gamma data if present
-                        let gamma_data: Option<Vec<f32>> = if has_gamma {
-                            let gamma_id = parents[1];
-                            Some(self.value(gamma_id)?.planata())
-                        } else {
-                            None
-                        };
-
-                        // Recompute pre-affine normalized y from input
-                        let mut y_norm = vec![0.0_f32; rows * cols];
-                        let mut inv_stds = vec![0.0_f32; batch_dim];
-
-                        for (b, inv_std_slot) in inv_stds.iter_mut().enumerate().take(batch_dim) {
-                            let mut sum: f64 = 0.0;
-                            let slice_start = if normalize_along_cols { b * cols } else { b };
-                            for k in 0..norm_dim {
-                                let idx = if normalize_along_cols {
-                                    slice_start + k
-                                } else {
-                                    k * cols + b
-                                };
-                                sum += input_data[idx] as f64;
-                            }
-                            let mean = (sum / norm_dim as f64) as f32;
-
-                            let mut var_sum: f64 = 0.0;
-                            for k in 0..norm_dim {
-                                let idx = if normalize_along_cols {
-                                    slice_start + k
-                                } else {
-                                    k * cols + b
-                                };
-                                let d = input_data[idx] as f64 - mean as f64;
-                                var_sum += d * d;
-                            }
-                            let var = (var_sum / norm_dim as f64) as f32;
-                            let inv_std = 1.0 / (var + epsilon).sqrt();
-                            *inv_std_slot = inv_std;
-
-                            for k in 0..norm_dim {
-                                let idx = if normalize_along_cols {
-                                    slice_start + k
-                                } else {
-                                    k * cols + b
-                                };
-                                y_norm[idx] = (input_data[idx] - mean) * inv_std;
-                            }
-                        }
-
-                        // Chain dy through gamma to get dy_norm (w.r.t. pre-affine y)
-                        let dy_norm: Vec<f32> = if let Some(ref gd) = gamma_data {
-                            dy_data
-                                .iter()
-                                .enumerate()
-                                .map(|(i, &d)| {
-                                    let k = if normalize_along_cols {
-                                        i % cols
-                                    } else {
-                                        i / cols
-                                    };
-                                    d * gd[k]
-                                })
-                                .collect()
-                        } else {
-                            dy_data.clone()
-                        };
-
-                        // Compute dx using Ba et al. 2016 VJP
-                        let mut dx_data = vec![0.0_f32; rows * cols];
-                        for (b, inv_std) in inv_stds.iter().copied().enumerate().take(batch_dim) {
-                            let slice_start = if normalize_along_cols { b * cols } else { b };
-
-                            let mut sum_dy: f32 = 0.0;
-                            let mut sum_dy_y: f32 = 0.0;
-                            for k in 0..norm_dim {
-                                let idx = if normalize_along_cols {
-                                    slice_start + k
-                                } else {
-                                    k * cols + b
-                                };
-                                sum_dy += dy_norm[idx];
-                                sum_dy_y += dy_norm[idx] * y_norm[idx];
-                            }
-
-                            for k in 0..norm_dim {
-                                let idx = if normalize_along_cols {
-                                    slice_start + k
-                                } else {
-                                    k * cols + b
-                                };
-                                dx_data[idx] = (inv_std / n)
-                                    * (n * dy_norm[idx] - sum_dy - y_norm[idx] * sum_dy_y);
-                            }
-                        }
-
-                        let dx = Tensor::structa(dx_data, &shape).map_err(AutogradError::Tensor)?;
-                        gradients.accumulate(input_id, dx)?;
-
-                        // dgamma: Σ over batch of (dy * y_norm) where dy is upstream
-                        if has_gamma {
-                            let gamma_id = parents[1];
-                            let gamma_len = if normalize_along_cols { cols } else { rows };
-                            let mut dgamma_data = vec![0.0_f32; gamma_len];
-
-                            for (k, dgamma) in dgamma_data.iter_mut().enumerate().take(norm_dim) {
-                                let mut sum: f32 = 0.0;
-                                for b in 0..batch_dim {
-                                    let idx = if normalize_along_cols {
-                                        b * cols + k
-                                    } else {
-                                        k * cols + b
-                                    };
-                                    sum += dy_data[idx] * y_norm[idx];
-                                }
-                                *dgamma = sum;
-                            }
-
-                            let dgamma = Tensor::structa(dgamma_data, &[gamma_len as i64])
-                                .map_err(AutogradError::Tensor)?;
-                            gradients.accumulate(gamma_id, dgamma)?;
-                        }
-
-                        // dbeta: Σ over batch of dy
-                        if has_beta {
-                            let beta_id = if has_gamma { parents[2] } else { parents[1] };
-                            let beta_len = if normalize_along_cols { cols } else { rows };
-                            let mut dbeta_data = vec![0.0_f32; beta_len];
-
-                            for (k, dbeta) in dbeta_data.iter_mut().enumerate().take(norm_dim) {
-                                let mut sum: f32 = 0.0;
-                                for b in 0..batch_dim {
-                                    let idx = if normalize_along_cols {
-                                        b * cols + k
-                                    } else {
-                                        k * cols + b
-                                    };
-                                    sum += dy_data[idx];
-                                }
-                                *dbeta = sum;
-                            }
-
-                            let dbeta = Tensor::structa(dbeta_data, &[beta_len as i64])
-                                .map_err(AutogradError::Tensor)?;
-                            gradients.accumulate(beta_id, dbeta)?;
-                        }
-                    }
+                    self.layer_norm_vjp(
+                        node,
+                        &upstream,
+                        f32::from_bits(epsilon),
+                        axis,
+                        has_gamma,
+                        has_beta,
+                        &mut gradients,
+                    )?;
                 }
                 AutogradOp::Softmax => {
-                    let &[parent] = node.parents.as_slice() else {
-                        return Err(AutogradError::MissingNode);
-                    };
+                    let parent = single_parent(node)?;
                     // VJP: y * (upstream - sum(y * upstream))
                     // where y = softmax(x) = forward_output.
                     // Scalar Summa — correct for rank-1 only (rank>1
@@ -1042,6 +772,269 @@ impl AutogradTape {
         }
 
         Ok(gradients)
+    }
+
+    /// LayerNorm backward VJP per Ba, J. L., Kiros, J. R., & Hinton, G. E.
+    /// (2016). Layer Normalization. arXiv:1607.06450.
+    /// Parents are `[input]` plus optional `gamma`/`beta`; `dy` is the
+    /// upstream gradient w.r.t. the post-affine output z = y*γ + β.
+    fn layer_norm_vjp(
+        &self,
+        node: &AutogradNode,
+        dy: &Tensor<f32>,
+        epsilon: f32,
+        axis: i64,
+        has_gamma: bool,
+        has_beta: bool,
+        gradients: &mut AutogradGradients,
+    ) -> Result<(), AutogradError> {
+        let parents = node.parents.as_slice();
+        let input_id = parents[0];
+
+        let input = self.value(input_id)?;
+        // forward_output is the post-affine output z = y*γ + β
+        let rank = input.magnitudines().len();
+        if rank == 1 {
+            let input_data = input.planata();
+            let n_elems = input_data.len();
+            let n = n_elems as f32;
+
+            // Recompute forward statistics and pre-affine normalized y
+            let mean: f64 =
+                input_data.iter().map(|&v| v as f64).sum::<f64>() / n_elems as f64;
+            let mean = mean as f32;
+            let var: f64 = input_data
+                .iter()
+                .map(|&v| {
+                    let d = v as f64 - mean as f64;
+                    d * d
+                })
+                .sum::<f64>()
+                / n_elems as f64;
+            let var = var as f32;
+            let inv_std = 1.0 / (var + epsilon).sqrt();
+
+            // Pre-affine normalized y_i = (x_i - mean) * inv_std
+            let y_norm: Vec<f32> =
+                input_data.iter().map(|&v| (v - mean) * inv_std).collect();
+
+            // Chain dy through gamma to get dy_norm w.r.t. pre-affine y
+            let dy_data = dy.planata();
+            let dy_norm: Vec<f32> = if has_gamma {
+                let gamma_id = parents[1];
+                let gamma = self.value(gamma_id)?.planata();
+                dy_data
+                    .iter()
+                    .zip(gamma.iter())
+                    .map(|(&d, &g)| d * g)
+                    .collect()
+            } else {
+                dy_data.clone()
+            };
+
+            // Ba et al. 2016 VJP
+            let sum_dy: f32 = dy_norm.iter().sum();
+            let sum_dy_y: f32 =
+                dy_norm.iter().zip(y_norm.iter()).map(|(d, y)| d * y).sum();
+
+            let dx_data: Vec<f32> = dy_norm
+                .iter()
+                .zip(y_norm.iter())
+                .map(|(&dy_i, &y_i)| {
+                    (inv_std / n) * (n * dy_i - sum_dy - y_i * sum_dy_y)
+                })
+                .collect();
+
+            let dx = Tensor::structa(dx_data, &[n_elems as i64])
+                .map_err(AutogradError::Tensor)?;
+            gradients.accumulate(input_id, dx)?;
+
+            // dgamma: Σ dy * y_norm (dy is upstream, y_norm is pre-affine)
+            if has_gamma {
+                let gamma_id = parents[1];
+                let dgamma_data: Vec<f32> = dy_data
+                    .iter()
+                    .zip(y_norm.iter())
+                    .map(|(d, y)| d * y)
+                    .collect();
+                let dgamma = Tensor::structa(dgamma_data, &[n_elems as i64])
+                    .map_err(AutogradError::Tensor)?;
+                gradients.accumulate(gamma_id, dgamma)?;
+            }
+
+            // dbeta: Σ dy
+            if has_beta {
+                let beta_id = if has_gamma { parents[2] } else { parents[1] };
+                let dbeta = Tensor::structa(dy_data, &[n_elems as i64])
+                    .map_err(AutogradError::Tensor)?;
+                gradients.accumulate(beta_id, dbeta)?;
+            }
+        } else {
+            // Rank-2
+            let shape = input.magnitudines();
+            let rows = shape[0] as usize;
+            let cols = shape[1] as usize;
+
+            let input_data = input.planata();
+            let dy_data = dy.planata();
+
+            let normalize_along_cols = axis == 1;
+
+            let (norm_dim, batch_dim): (usize, usize) = if normalize_along_cols {
+                (cols, rows)
+            } else {
+                (rows, cols)
+            };
+            let n = norm_dim as f32;
+
+            // Get gamma data if present
+            let gamma_data: Option<Vec<f32>> = if has_gamma {
+                let gamma_id = parents[1];
+                Some(self.value(gamma_id)?.planata())
+            } else {
+                None
+            };
+
+            // Recompute pre-affine normalized y from input
+            let mut y_norm = vec![0.0_f32; rows * cols];
+            let mut inv_stds = vec![0.0_f32; batch_dim];
+
+            for (b, inv_std_slot) in inv_stds.iter_mut().enumerate().take(batch_dim) {
+                let mut sum: f64 = 0.0;
+                let slice_start = if normalize_along_cols { b * cols } else { b };
+                for k in 0..norm_dim {
+                    let idx = if normalize_along_cols {
+                        slice_start + k
+                    } else {
+                        k * cols + b
+                    };
+                    sum += input_data[idx] as f64;
+                }
+                let mean = (sum / norm_dim as f64) as f32;
+
+                let mut var_sum: f64 = 0.0;
+                for k in 0..norm_dim {
+                    let idx = if normalize_along_cols {
+                        slice_start + k
+                    } else {
+                        k * cols + b
+                    };
+                    let d = input_data[idx] as f64 - mean as f64;
+                    var_sum += d * d;
+                }
+                let var = (var_sum / norm_dim as f64) as f32;
+                let inv_std = 1.0 / (var + epsilon).sqrt();
+                *inv_std_slot = inv_std;
+
+                for k in 0..norm_dim {
+                    let idx = if normalize_along_cols {
+                        slice_start + k
+                    } else {
+                        k * cols + b
+                    };
+                    y_norm[idx] = (input_data[idx] - mean) * inv_std;
+                }
+            }
+
+            // Chain dy through gamma to get dy_norm (w.r.t. pre-affine y)
+            let dy_norm: Vec<f32> = if let Some(ref gd) = gamma_data {
+                dy_data
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &d)| {
+                        let k = if normalize_along_cols {
+                            i % cols
+                        } else {
+                            i / cols
+                        };
+                        d * gd[k]
+                    })
+                    .collect()
+            } else {
+                dy_data.clone()
+            };
+
+            // Compute dx using Ba et al. 2016 VJP
+            let mut dx_data = vec![0.0_f32; rows * cols];
+            for (b, inv_std) in inv_stds.iter().copied().enumerate().take(batch_dim) {
+                let slice_start = if normalize_along_cols { b * cols } else { b };
+
+                let mut sum_dy: f32 = 0.0;
+                let mut sum_dy_y: f32 = 0.0;
+                for k in 0..norm_dim {
+                    let idx = if normalize_along_cols {
+                        slice_start + k
+                    } else {
+                        k * cols + b
+                    };
+                    sum_dy += dy_norm[idx];
+                    sum_dy_y += dy_norm[idx] * y_norm[idx];
+                }
+
+                for k in 0..norm_dim {
+                    let idx = if normalize_along_cols {
+                        slice_start + k
+                    } else {
+                        k * cols + b
+                    };
+                    dx_data[idx] = (inv_std / n)
+                        * (n * dy_norm[idx] - sum_dy - y_norm[idx] * sum_dy_y);
+                }
+            }
+
+            let dx = Tensor::structa(dx_data, &shape).map_err(AutogradError::Tensor)?;
+            gradients.accumulate(input_id, dx)?;
+
+            // dgamma: Σ over batch of (dy * y_norm) where dy is upstream
+            if has_gamma {
+                let gamma_id = parents[1];
+                let gamma_len = if normalize_along_cols { cols } else { rows };
+                let mut dgamma_data = vec![0.0_f32; gamma_len];
+
+                for (k, dgamma) in dgamma_data.iter_mut().enumerate().take(norm_dim) {
+                    let mut sum: f32 = 0.0;
+                    for b in 0..batch_dim {
+                        let idx = if normalize_along_cols {
+                            b * cols + k
+                        } else {
+                            k * cols + b
+                        };
+                        sum += dy_data[idx] * y_norm[idx];
+                    }
+                    *dgamma = sum;
+                }
+
+                let dgamma = Tensor::structa(dgamma_data, &[gamma_len as i64])
+                    .map_err(AutogradError::Tensor)?;
+                gradients.accumulate(gamma_id, dgamma)?;
+            }
+
+            // dbeta: Σ over batch of dy
+            if has_beta {
+                let beta_id = if has_gamma { parents[2] } else { parents[1] };
+                let beta_len = if normalize_along_cols { cols } else { rows };
+                let mut dbeta_data = vec![0.0_f32; beta_len];
+
+                for (k, dbeta) in dbeta_data.iter_mut().enumerate().take(norm_dim) {
+                    let mut sum: f32 = 0.0;
+                    for b in 0..batch_dim {
+                        let idx = if normalize_along_cols {
+                            b * cols + k
+                        } else {
+                            k * cols + b
+                        };
+                        sum += dy_data[idx];
+                    }
+                    *dbeta = sum;
+                }
+
+                let dbeta = Tensor::structa(dbeta_data, &[beta_len as i64])
+                    .map_err(AutogradError::Tensor)?;
+                gradients.accumulate(beta_id, dbeta)?;
+            }
+        }
+
+        Ok(())
     }
 
     fn binary(
@@ -1149,6 +1142,13 @@ fn parent_pair(node: &AutogradNode) -> Result<&[AutogradNodeId; 2], AutogradErro
         .as_slice()
         .try_into()
         .map_err(|_| AutogradError::MissingNode)
+}
+
+fn single_parent(node: &AutogradNode) -> Result<AutogradNodeId, AutogradError> {
+    let &[parent] = node.parents.as_slice() else {
+        return Err(AutogradError::MissingNode);
+    };
+    Ok(parent)
 }
 
 fn parent_shape(tape: &AutogradTape, id: AutogradNodeId) -> Result<Vec<i64>, AutogradError> {
